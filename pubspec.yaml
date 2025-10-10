@@ -1,0 +1,33 @@
+name: bumbleapp
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_launcher_icons: ^0.14.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/Heart.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/Heart.png
+    - assets/images/bg1.jpg
+    - assets/images/bg2.jpg
+    - assets/images/bg3.jpg
+    - assets/images/bg4.jpg
