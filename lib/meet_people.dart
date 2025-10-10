@@ -1,4 +1,5 @@
 /// lib/meet_people.dart
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'login.dart';
@@ -16,28 +17,24 @@ class _MeetPeoplePageState extends State<MeetPeoplePage> {
 
   final List<_OnboardData> _pages = const [
     _OnboardData(
-      icon: Icons.people,
+      icon: CupertinoIcons.person_2,
       title: "Meet People",
-      description:
-          "People meet naturally based on innumerable attraction. So, choose your partner from your interest",
+      description: "People meet naturally based on innumerable attraction. So, choose your partner from your interest",
     ),
     _OnboardData(
-      icon: Icons.chat_bubble_outline,
+      icon: CupertinoIcons.chat_bubble,
       title: "Start Chatting",
-      description:
-          "Connect instantly and start meaningful conversations with people you like.",
+      description: "Connect instantly and start meaningful conversations with people you like.",
     ),
     _OnboardData(
-      icon: Icons.videocam_outlined,
+      icon: CupertinoIcons.videocam,
       title: "Go Live",
-      description:
-          "Go live to stream yourself and jump into video calls with people you match—real-time, fun, and safe.",
+      description: "Go live to stream yourself and jump into video calls with people you match—real-time, fun, and safe.",
     ),
     _OnboardData(
-      icon: Icons.favorite_border,
+      icon: CupertinoIcons.heart,
       title: "Find Love",
-      description:
-          "Build deeper connections and maybe find the love of your life.",
+      description: "Build deeper connections and maybe find the love of your life.",
     ),
   ];
 

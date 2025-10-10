@@ -1,5 +1,6 @@
 // lib/conversation.dart
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 class ConversationScreen extends StatefulWidget {
@@ -78,7 +79,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back),
+                      icon: const Icon(CupertinoIcons.arrow_left),
                       onPressed: () => Navigator.pop(context),
                     ),
                     CircleAvatar(
@@ -112,13 +113,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     // Audio call
                     IconButton(
                       onPressed: () => _startCall(video: false),
-                      icon: const Icon(Icons.call, color: Colors.black87),
+                      icon: const Icon(CupertinoIcons.phone_fill, color: Colors.black87),
                     ),
 
                     // Video call
                     IconButton(
                       onPressed: () => _startCall(video: true),
-                      icon: const Icon(Icons.videocam, color: Colors.black87),
+                      icon: const Icon(CupertinoIcons.video_camera_solid, color: Colors.black87),
                     ),
                   ],
                 ),
@@ -212,7 +213,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                         child: const Padding(
                           padding: EdgeInsets.all(12),
                           child: Icon(
-                            Icons.send,
+                            CupertinoIcons.arrowtriangle_right_fill,
                             color: Colors.white,
                             size: 20,
                           ),

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'discover_page.dart';
 
@@ -138,7 +139,7 @@ class _SelfieOnboardingPageState extends State<SelfieOnboardingPage>
                               _PulseRings(controller: _pulseCtrl),
                               // camera icon
                               Icon(
-                                Icons.camera_alt_rounded,
+                                CupertinoIcons.camera,
                                 size: 148,
                                 color: SelfieOnboardingPage.kPrimary,
                               ),

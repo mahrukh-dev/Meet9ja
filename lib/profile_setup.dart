@@ -1,4 +1,5 @@
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/selfie_onboarding.dart';
 
@@ -102,8 +103,8 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                   child: IconButton(
                     onPressed: _back,
                     icon: const Icon(
-                      Icons.arrow_back_ios_new,
                       color: Colors.black87,
+                      CupertinoIcons.back,
                     ),
                   ),
                 ),
@@ -117,7 +118,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                   foregroundColor: Colors.white,
                   elevation: 2,
                   shape: const CircleBorder(),
-                  child: const Icon(Icons.arrow_right_alt, size: 30),
+                  child: const Icon(CupertinoIcons.arrow_right, size: 30),
                 ),
               ),
             ],
@@ -376,14 +377,14 @@ class _PhotoTile extends StatelessWidget {
 
   factory _PhotoTile.add({VoidCallback? onTap}) {
     return _PhotoTile._(
-      const Icon(Icons.add, size: 42, color: _ProfileSetupPageState.kPrimary),
+      const Icon(CupertinoIcons.add, size: 42, color: _ProfileSetupPageState.kPrimary),
       onTap: onTap,
     );
   }
 
   factory _PhotoTile.sample() {
     return const _PhotoTile._(
-      Icon(Icons.photo, size: 38, color: _ProfileSetupPageState.kPrimary),
+      Icon(CupertinoIcons.photo, size: 38, color: _ProfileSetupPageState.kPrimary),
     );
   }
 
@@ -458,7 +459,7 @@ class _SelectCard extends StatelessWidget {
               ),
             ),
             Icon(
-              selected ? Icons.check_circle : Icons.circle_outlined,
+              selected ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.circle,
               color: pink,
             ),
           ],
@@ -507,7 +508,7 @@ class _RadioCard extends StatelessWidget {
               ),
             ),
             Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              selected ? CupertinoIcons.circle_filled : CupertinoIcons.circle,
               color: pink,
             ),
           ],

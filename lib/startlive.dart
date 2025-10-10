@@ -1,10 +1,10 @@
-// lib/startlive.dart
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class StartLivePage extends StatefulWidget {
   const StartLivePage({super.key});
 
-  // Brand pink
   static const Color kPrimary = Color(0xFFE43AA8);
 
   @override
@@ -15,7 +15,6 @@ class _StartLivePageState extends State<StartLivePage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
-  // LIVE tab filters (screenshot style)
   final List<String> _liveFilters = const [
     "All",
     "Drops & Loot",
@@ -24,39 +23,37 @@ class _StartLivePageState extends State<StartLivePage>
   ];
   int _liveFilterIndex = 0;
 
-  // Mock reels data (replace with your API)
   final List<_ReelItem> _followingReels = List.generate(
     8,
-    (i) => _ReelItem(
+        (i) => _ReelItem(
       user: "Creator ${i + 1}",
       title:
-          "Hanging out — say hi! 👋  | Day ${i + 1} | 15% to charity | Nigeria schools",
+      "Hanging out — say hi! 👋  | Day ${i + 1} | 15% to charity | Nigeria schools",
       viewers: (32000 + i * 1200),
       thumb:
-          "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1080&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1080&auto=format&fit=crop",
     ),
   );
 
   final List<_ReelItem> _clipsReels = List.generate(
     10,
-    (i) => _ReelItem(
+        (i) => _ReelItem(
       user: "ProGamer_${i + 1}",
       title: "Insane clutch 🔥 — clip #$i",
       viewers: (7800 + i * 300),
       thumb:
-          "https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop",
     ),
   );
 
-  // Live grid (thumbnail style list)
   final List<_LiveCard> _liveRooms = List.generate(
     12,
-    (i) => _LiveCard(
+        (i) => _LiveCard(
       title: "MAFIATHON 3 ▪ Day ${i + 1}",
       user: "KaiCenat",
       viewers: 186000 + (i * 1200),
       thumb:
-          "https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop",
       game: i.isEven ? "Fortnite" : "Just Chatting",
     ),
   );
@@ -64,7 +61,7 @@ class _StartLivePageState extends State<StartLivePage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this, initialIndex: 1); // Live open
+    _tab = TabController(length: 3, vsync: this, initialIndex: 1);
   }
 
   @override
@@ -75,106 +72,111 @@ class _StartLivePageState extends State<StartLivePage>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.grey,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         titleSpacing: 0,
+        leading: Icon(FontAwesomeIcons.arrowLeft),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                const SizedBox(width: 16),
-                Text(
-                  timeOfDayText(),
-                  style: const TextStyle(
-                    color: Colors.black54,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+            // 🌸 Glassmorphic Tabs
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24, width: 1.2),
+                  ),
+                  child: TabBar(
+                    controller: _tab,
+                    indicator: BoxDecoration(
+                      color: Colors.white.withOpacity(0.85),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    labelColor: Colors.black87,
+                    unselectedLabelColor: Colors.white,
+                    labelStyle: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    overlayColor: WidgetStateProperty.all(Colors.transparent),
+                    dividerColor: Colors.transparent, // Remove default divider
+                    splashFactory: NoSplash.splashFactory, // Remove splash effect
+                    padding: const EdgeInsets.all(6), // Add padding inside the container
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 8), // Space between label and tab edges
+                    tabs: const [
+                      Tab(text: "Following"),
+                      Tab(text: "Live"),
+                      Tab(text: "Clips"),
+                    ],
                   ),
                 ),
-              ],
-            ),
-            // Top Tabs: Following | Live | Clips
-            TabBar(
-              controller: _tab,
-              padding: const EdgeInsets.only(left: 8, right: 8, top: 8),
-              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-              indicatorSize: TabBarIndicatorSize.label,
-              indicator: UnderlineTabIndicator(
-                borderSide: BorderSide(color: StartLivePage.kPrimary, width: 3),
-                insets: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              labelColor: Colors.black,
-              unselectedLabelColor: Colors.black54,
-              labelStyle: const TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
-              tabs: const [
-                Tab(text: "Following"),
-                Tab(text: "Live"),
-                Tab(text: "Clips"),
-              ],
             ),
           ],
         ),
       ),
 
-      // Body switches per tab
-      body: TabBarView(
-        controller: _tab,
-        children: [
-          // FOLLOWING => reels feed
-          _ReelsFeed(items: _followingReels),
+      // Body content
+      body: Container(
+        color: Colors.grey,
+        child: TabBarView(
 
-          // LIVE => filters + live grid
-          Column(
-            children: [
-              const SizedBox(height: 8),
-              _LiveFiltersBar(
-                filters: _liveFilters,
-                selected: _liveFilterIndex,
-                onTap: (i) => setState(() => _liveFilterIndex = i),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: CustomScrollView(
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      sliver: SliverGrid(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, i) => _LiveTile(room: _liveRooms[i]),
-                          childCount: _liveRooms.length,
-                        ),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 10,
-                              crossAxisSpacing: 10,
-                              childAspectRatio: 9 / 14,
-                            ),
-                      ),
-                    ),
-                  ],
+          controller: _tab,
+
+          children: [
+            _ReelsFeed(items: _followingReels),
+            Column(
+              children: [
+                const SizedBox(height: 8),
+                _LiveFiltersBar(
+                  filters: _liveFilters,
+                  selected: _liveFilterIndex,
+                  onTap: (i) => setState(() => _liveFilterIndex = i),
                 ),
-              ),
-            ],
-          ),
-
-          // CLIPS => reels feed
-          _ReelsFeed(items: _clipsReels),
-        ],
+                const SizedBox(height: 8),
+                Expanded(
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        sliver: SliverGrid(
+                          delegate: SliverChildBuilderDelegate(
+                                (context, i) => _LiveTile(room: _liveRooms[i]),
+                            childCount: _liveRooms.length,
+                          ),
+                          gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            childAspectRatio: 9 / 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            _ReelsFeed(items: _clipsReels),
+          ],
+        ),
       ),
 
-      // Bottom nav like screenshot (Home, Browse, Create, Activity, Profile)
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -186,11 +188,12 @@ class _StartLivePageState extends State<StartLivePage>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: const [
-            _BottomItem(icon: Icons.home_filled, label: "Home", selected: true),
-            _BottomItem(icon: Icons.search, label: "Browse"),
+            _BottomItem(
+                icon: FontAwesomeIcons.house, label: "Home", selected: true),
+            _BottomItem(icon: FontAwesomeIcons.compass, label: "Browse"),
             _BottomCreateButton(),
-            _BottomItem(icon: Icons.notifications_none, label: "Activity"),
-            _BottomItem(icon: Icons.person_outline, label: "Profile"),
+            _BottomItem(icon: FontAwesomeIcons.bell, label: "Activity"),
+            _BottomItem(icon: FontAwesomeIcons.user, label: "Profile"),
           ],
         ),
       ),
@@ -206,8 +209,7 @@ class _StartLivePageState extends State<StartLivePage>
   }
 }
 
-/* ----------------------- LIVE: Filters Bar ----------------------- */
-
+/* ----------------------- LIVE FILTER BAR ----------------------- */
 class _LiveFiltersBar extends StatelessWidget {
   const _LiveFiltersBar({
     required this.filters,
@@ -262,8 +264,7 @@ class _LiveFiltersBar extends StatelessWidget {
   }
 }
 
-/* ----------------------- LIVE: Grid Tile ----------------------- */
-
+/* ----------------------- LIVE TILE ----------------------- */
 class _LiveTile extends StatelessWidget {
   const _LiveTile({required this.room});
   final _LiveCard room;
@@ -276,7 +277,6 @@ class _LiveTile extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           Image.network(room.thumb, fit: BoxFit.cover),
-          // Gradient fade
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -289,7 +289,6 @@ class _LiveTile extends StatelessWidget {
               ),
             ),
           ),
-          // LIVE pill + viewers
           Positioned(
             top: 8,
             left: 8,
@@ -313,11 +312,10 @@ class _LiveTile extends StatelessWidget {
             top: 8,
             right: 8,
             child: _pill(
-              icon: Icons.visibility_outlined,
+              icon: FontAwesomeIcons.eye,
               text: _formatViewers(room.viewers),
             ),
           ),
-          // Bottom meta
           Positioned(
             left: 8,
             right: 8,
@@ -338,7 +336,8 @@ class _LiveTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(Icons.verified, size: 14, color: Colors.white70),
+                    const Icon(FontAwesomeIcons.solidCircleCheck,
+                        size: 14, color: Colors.white70),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
@@ -400,14 +399,12 @@ class _LiveTile extends StatelessWidget {
 }
 
 /* ----------------------- REELS FEED ----------------------- */
-
 class _ReelsFeed extends StatelessWidget {
   const _ReelsFeed({required this.items});
   final List<_ReelItem> items;
 
   @override
   Widget build(BuildContext context) {
-    // Fullscreen vertical pager like IG Reels/TikTok
     return PageView.builder(
       scrollDirection: Axis.vertical,
       itemCount: items.length,
@@ -416,9 +413,7 @@ class _ReelsFeed extends StatelessWidget {
         return Stack(
           fit: StackFit.expand,
           children: [
-            // Thumbnail / video placeholder (plug video_player here)
             Image.network(it.thumb, fit: BoxFit.cover),
-            // Overlay gradient for text legibility
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -430,21 +425,19 @@ class _ReelsFeed extends StatelessWidget {
                 ),
               ),
             ),
-            // Right side actions (share, like, etc.)
             Positioned(
               right: 12,
               bottom: 110,
               child: Column(
                 children: [
-                  _CircleIcon(icon: Icons.favorite_border, onTap: () {}),
+                  _CircleIcon(icon: FontAwesomeIcons.heart, onTap: () {}),
                   const SizedBox(height: 16),
-                  _CircleIcon(icon: Icons.comment_outlined, onTap: () {}),
+                  _CircleIcon(icon: FontAwesomeIcons.comment, onTap: () {}),
                   const SizedBox(height: 16),
-                  _CircleIcon(icon: Icons.share_outlined, onTap: () {}),
+                  _CircleIcon(icon: FontAwesomeIcons.share, onTap: () {}),
                 ],
               ),
             ),
-            // Bottom meta
             Positioned(
               left: 12,
               right: 80,
@@ -454,7 +447,8 @@ class _ReelsFeed extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.verified, color: Colors.white, size: 16),
+                      const Icon(FontAwesomeIcons.solidCircleCheck,
+                          color: Colors.white, size: 16),
                       const SizedBox(width: 6),
                       Text(
                         it.user,
@@ -498,7 +492,7 @@ class _ReelsFeed extends StatelessWidget {
                   Row(
                     children: [
                       const Icon(
-                        Icons.visibility_outlined,
+                        FontAwesomeIcons.eye,
                         color: Colors.white70,
                         size: 16,
                       ),
@@ -528,8 +522,7 @@ class _ReelsFeed extends StatelessWidget {
   }
 }
 
-/* ----------------------- Models ----------------------- */
-
+/* ----------------------- MODELS ----------------------- */
 class _ReelItem {
   final String user;
   final String title;
@@ -558,8 +551,7 @@ class _LiveCard {
   });
 }
 
-/* ----------------------- Bottom Nav ----------------------- */
-
+/* ----------------------- BOTTOM NAV ----------------------- */
 class _BottomItem extends StatelessWidget {
   const _BottomItem({
     required this.icon,
@@ -575,7 +567,8 @@ class _BottomItem extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: selected ? StartLivePage.kPrimary : Colors.black87),
+        Icon(icon,
+            color: selected ? StartLivePage.kPrimary : Colors.black87, size: 20),
         const SizedBox(height: 4),
         Text(
           label,
@@ -609,12 +602,10 @@ class _BottomCreateButton extends StatelessWidget {
           ),
         ],
       ),
-      child: const Icon(Icons.add, color: Colors.white),
+      child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
     );
   }
 }
-
-/* ----------------------- Small bits ----------------------- */
 
 class _CircleIcon extends StatelessWidget {
   const _CircleIcon({required this.icon, required this.onTap});
@@ -634,7 +625,7 @@ class _CircleIcon extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white24),
         ),
-        child: Icon(icon, color: Colors.white),
+        child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
   }

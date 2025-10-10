@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'profile_setup.dart';
 
@@ -213,8 +214,8 @@ class _LoginPageState extends State<LoginPage>
                               width: double.infinity,
                               height: 56,
                               child: ElevatedButton.icon(
-                                icon: const Icon(
-                                  Icons.camera_alt_outlined,
+                                icon: Icon(
+                                  CupertinoIcons.camera,
                                   size: 20,
                                 ),
                                 style: ElevatedButton.styleFrom(

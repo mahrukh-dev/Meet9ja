@@ -1,6 +1,8 @@
 // lib/discover_page.dart
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/startlive.dart';
 import 'filter.dart';
 import 'discover.dart';
@@ -160,7 +162,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
                     const Expanded(child: Center(child: _Meet9jaLogo())),
                     IconButton(
                       icon: const Icon(
-                        Icons.filter_list,
+                        CupertinoIcons.line_horizontal_3_decrease,
                         color: DiscoverPage.kPrimary,
                       ),
                       onPressed: () {
@@ -271,7 +273,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  icon: const Icon(Icons.radio_button_checked_rounded),
+                  icon: const Icon(CupertinoIcons.circle_filled),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: DiscoverPage.kPrimary,
                     foregroundColor: Colors.white,
@@ -300,7 +302,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.live_tv_outlined),
+                  icon: const Icon(CupertinoIcons.tv),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(
                       color: Colors.black12,
@@ -523,7 +525,7 @@ class _ProfileCard extends StatelessWidget {
             Positioned(
               right: 10,
               top: 10,
-              child: _CircleBtn(icon: Icons.ios_share_rounded, onTap: () {}),
+              child: _CircleBtn(icon: CupertinoIcons.share, onTap: () {}),
             ),
 
             Align(
@@ -551,7 +553,7 @@ class _ProfileCard extends StatelessWidget {
                       children: [
                         if (profile.newHere) const _Chip("New here"),
                         if (profile.verified)
-                          const _Chip.icon("Photo verified", Icons.verified),
+                          const _Chip.icon("Photo verified", CupertinoIcons.checkmark_circle_fill),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -566,14 +568,14 @@ class _ProfileCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     if (profile.job.isNotEmpty)
-                      _InfoRow(icon: Icons.work_outline, text: profile.job),
+                      _InfoRow(icon: CupertinoIcons.briefcase, text: profile.job),
                     if (profile.edu.isNotEmpty)
-                      _InfoRow(icon: Icons.school_outlined, text: profile.edu),
+                      _InfoRow(icon: FontAwesomeIcons.graduationCap, text: profile.edu),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         _PillBtn(
-                          icon: Icons.close_rounded,
+                          icon: CupertinoIcons.multiply,
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -588,7 +590,7 @@ class _ProfileCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         _PillBtn(
-                          icon: Icons.favorite_rounded,
+                          icon: CupertinoIcons.heart_fill,
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -725,7 +727,7 @@ class _LivePill extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             const Icon(
-              Icons.live_tv_outlined,
+              CupertinoIcons.tv,
               size: 18,
               color: DiscoverPage.kPrimary,
             ),
@@ -752,7 +754,7 @@ class _LiveHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: const [
-        Icon(Icons.live_tv_outlined, color: DiscoverPage.kPrimary),
+        Icon(CupertinoIcons.tv, color: DiscoverPage.kPrimary),
         SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -891,11 +893,11 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icons = const [
-      Icons.person_outline,
-      Icons.explore_outlined,
-      Icons.people_alt_outlined,
-      Icons.favorite_border,
-      Icons.chat_bubble_outline,
+      CupertinoIcons.person,
+      FontAwesomeIcons.compass,
+      FontAwesomeIcons.userGroup,
+      FontAwesomeIcons.heart,
+      FontAwesomeIcons.comment,
     ];
     final labels = const [
       "Profile",
