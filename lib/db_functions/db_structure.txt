@@ -17,8 +17,10 @@ users: [{
         coin_balance: '',
         total_earning: '',
     }
-    interests: [""]
-
+    interests: [""],
+    created_at: ISODate,
+    updated_at: ISODate,
+    status: "active/inactive/banned"
 }]
 user_feed: [{
     ID: ''
