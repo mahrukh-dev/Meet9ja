@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "50499240357",
+    "project_id": "meet9ja-68065",
+    "storage_bucket": "meet9ja-68065.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:50499240357:android:c57a715ee568ad53f7e84c",
+        "android_client_info": {
+          "package_name": "com.example.meet9ja"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUWu1aoxK2c_FdAwvENKntglNVw8r9Saw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
