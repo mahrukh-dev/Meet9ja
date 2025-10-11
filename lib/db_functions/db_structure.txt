@@ -1,0 +1,115 @@
+users: [{
+    UID : "",
+    email: "",
+    photo_url: "",
+    age: 19,
+    bio: '',
+    location: '',
+    preferences: '',
+    type: "premium/nonpremium",
+    live_preferences: {
+        visibility: "public/friends/followers"
+    }
+    following: [UID]
+    followers: [UID]
+    live_status: 'true/false',
+    wallet: {
+        coin_balance: '',
+        total_earning: '',
+    }
+    interests: [""]
+
+}]
+user_feed: [{
+    ID: ''
+    UID: "",
+    date_time: ''
+    caption: '',
+    type: "post/story/live_replay",
+    media_url: '',
+    comments: [{
+      commenterUID: "",
+      date_time: "",
+      text:
+    }],
+    likes: [{
+          likerUID: "",
+          date_time: "",
+
+    }]
+}]
+saved_post: [{
+    ID: '',
+    post_id: '',
+    saved_by: '',
+}]
+chat_history: [{
+    chat_ID:
+    UID: '',
+    chat_with: [{
+        friendUID: "",
+        text: [{
+            date_time: "",
+            type: "text/image/vn",
+            media_url: "",
+            text: '',
+        }
+        ]
+    }]
+}]
+call_history: [{
+    UID: '',
+    call_with: [{
+        friendUID: "",
+        start_date_time: "",
+        end_date_time: ""
+    }]
+}]
+live_history: [{
+    live_id: ''
+    UID: '',
+    start_time: '',
+    end_time: '',
+    title: ''
+    status: "active/ended",
+    viewer_count: '',
+    total_gift_value: '',
+    live_replay_media_url: ''
+    live_attended: [{
+        friendUID: "",
+        start_date_time: "",
+        end_date_time: "",
+        gift: [{
+            type: 'coin/diamond',
+            qty: ''
+        }],
+        comments: [{
+            c_text: '',
+            c_date_time: '',
+        }]
+    }]
+}]
+matches: [{
+    matchId: '',
+    UID: '',
+    matched_user_ID; '',
+    status: 'like/pass'
+}]
+report_history: [{
+    report_id:
+    reported_by: '',
+    reported_who: '',
+    report_type: '',
+    report_date_time: '',
+    report_status: '',
+    report_text: '',
+    report_response: '',
+}]
+transaction: [{
+    transaction_id: "",
+    type: "gift/topup/withdraw",
+    UID: "",
+    amount: '',
+    date_time: '',
+    given_live: 'live_history.live_id'
+}]
