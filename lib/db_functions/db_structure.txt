@@ -2,10 +2,22 @@ users: [{
     UID : "",
     email: "",
     photo_url: "",
+    first_photos: {
+        photo1url: '',
+        photo2url: '',
+        photo3url: '',
+        photo4url: ''
+    }
+    mode: {
+        date: false,
+        travel_partner: false,
+        BFF: false,
+        bizz: true,
+    }
     age: 19,
     bio: '',
     location: '',
-    preferences: '',
+    preferences: 'women/men/couples/anyone',
     type: "premium/nonpremium",
     live_preferences: {
         visibility: "public/friends/followers"
@@ -96,6 +108,7 @@ matches: [{
     UID: '',
     matched_user_ID; '',
     status: 'like/pass'
+    time_stamp: '',
 }]
 report_history: [{
     report_id:

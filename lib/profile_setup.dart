@@ -1,7 +1,8 @@
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/selfie_onboarding.dart';
+
+import 'db_functions/firebase_service.dart';
 
 class ProfileSetupPage extends StatefulWidget {
   const ProfileSetupPage({super.key});
@@ -14,8 +15,11 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   final PageController _page = PageController();
   int _step = 0;
 
-  // Form state
+  // Form state with default values for testing
   final TextEditingController _nameCtrl = TextEditingController(text: "John");
+  final TextEditingController _emailCtrl = TextEditingController(text: "test@example.com");
+  final TextEditingController _passwordCtrl = TextEditingController(text: "123456");
+  final TextEditingController _ageCtrl = TextEditingController(text: "25");
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
 
@@ -26,10 +30,13 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   void dispose() {
     _page.dispose();
     _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _ageCtrl.dispose();
     super.dispose();
   }
 
-  void _next() {
+  void _next() async {
     if (_step < 3) {
       setState(() => _step++);
       _page.animateToPage(
@@ -38,11 +45,95 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         curve: Curves.easeOut,
       );
     } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const SelfieOnboardingPage()),
-      );
+      // Validate all fields before registration
+      if (_nameCtrl.text.isEmpty ||
+          _emailCtrl.text.isEmpty ||
+          _passwordCtrl.text.isEmpty ||
+          _ageCtrl.text.isEmpty) {
+        _showErrorDialog('Please fill in all fields');
+        return;
+      }
+
+      // Validate age
+      int? age = int.tryParse(_ageCtrl.text.trim());
+      if (age == null || age < 18 || age > 100) {
+        _showErrorDialog('Please enter a valid age between 18 and 100');
+        return;
+      }
+
+      // Validate email format
+      if (!_isValidEmail(_emailCtrl.text.trim())) {
+        _showErrorDialog('Please enter a valid email address');
+        return;
+      }
+
+      // Validate password length
+      if (_passwordCtrl.text.length < 6) {
+        _showErrorDialog('Password must be at least 6 characters long');
+        return;
+      }
+
+      // Complete registration
+      try {
+        await FirebaseService.completeRegistration(
+          email: _emailCtrl.text.trim(),
+          password: _passwordCtrl.text.trim(),
+          name: _nameCtrl.text.trim(),
+          age: age, // Use the validated age
+          selectedMode: _getSelectedMode(),
+          travelPreference: _getTravelPreference(),
+        );
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const SelfieOnboardingPage()),
+        );
+      } catch (e) {
+        _showErrorDialog(e.toString());
+      }
     }
+  }
+
+  // Helper methods
+  String _getSelectedMode() {
+    switch (_modeIndex) {
+      case 0: return 'Date';
+      case 1: return 'Travel partner';
+      case 2: return 'BFF';
+      case 3: return 'Bizz';
+      default: return 'Bizz';
+    }
+  }
+
+  String _getTravelPreference() {
+    switch (_travelWithIndex) {
+      case 0: return 'Women';
+      case 1: return 'Men';
+      case 2: return 'Couples';
+      case 3: return 'Anyone';
+      default: return 'Anyone';
+    }
+  }
+
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    return emailRegex.hasMatch(email);
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Registration Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _back() {
@@ -128,7 +219,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
     );
   }
 
-  // ---------- Step 1: Name ----------
+  // ---------- Step 1: Name & Basic Info ----------
   Widget _buildNameStep() {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: kSide),
@@ -136,13 +227,49 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _H1("What's your first\nname?"),
+            _H1("Let's create your\nprofile"),
             const SizedBox(height: 8),
-            const _BodyText("You won’t be able to change this later"),
+            const _BodyText("Fill in your basic information to get started"),
             const SizedBox(height: 28),
+
+            // Name
             const _SectionLabel("Name"),
             const SizedBox(height: 10),
-            _PinkField(controller: _nameCtrl, hint: "John"), // ✅ pink field
+            _PinkField(
+              controller: _nameCtrl,
+              hint: "Enter your name",
+            ),
+            const SizedBox(height: 20),
+
+            // Email
+            const _SectionLabel("Email"),
+            const SizedBox(height: 10),
+            _PinkField(
+              controller: _emailCtrl,
+              hint: "Enter your email",
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 20),
+
+            // Password
+            const _SectionLabel("Password"),
+            const SizedBox(height: 10),
+            _PinkField(
+              controller: _passwordCtrl,
+              hint: "Create a password",
+              obscureText: true,
+            ),
+            const SizedBox(height: 20),
+
+            // Age
+            const _SectionLabel("Age"),
+            const SizedBox(height: 10),
+            _PinkField(
+              controller: _ageCtrl,
+              hint: "Enter your age",
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -344,13 +471,23 @@ class _SectionLabel extends StatelessWidget {
 class _PinkField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
-  const _PinkField({required this.controller, required this.hint});
+  final bool obscureText;
+  final TextInputType keyboardType;
+
+  const _PinkField({
+    required this.controller,
+    required this.hint,
+    this.obscureText = false,
+    this.keyboardType = TextInputType.text,
+  });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       cursorColor: Colors.white,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white, fontSize: 16),
       decoration: InputDecoration(
         hintText: hint,
