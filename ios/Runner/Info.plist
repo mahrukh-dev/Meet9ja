@@ -15,6 +15,10 @@
 	<key>CFBundleName</key>
 	<string>meet9ja</string>
 	<key>CFBundlePackageType</key>
+	<key>NSCameraUsageDescription</key>
+    <string>We need access to your camera to enable live streaming.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>We need access to your microphone to record audio during the live stream.</string>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>

@@ -63,7 +63,6 @@ class _LoginPageState extends State<LoginPage>
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Fullscreen background with zoom effect
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _scaleAnim,

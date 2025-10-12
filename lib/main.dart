@@ -1,6 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:meet9ja/Discover.dart';
+import 'package:meet9ja/discover_page.dart';
+import 'package:meet9ja/messages.dart';
+import 'package:meet9ja/profile.dart';
 import 'package:meet9ja/splash.dart';
+import 'package:meet9ja/startlive.dart';
 
 import 'firebase_options.dart';
 
@@ -15,23 +20,20 @@ Future<void> main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Meet9ja', // Updated title
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // Using a custom seed color based on the app's primary pink
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFE43AA8), // DiscoverPage.kPrimary
-          // Optional: You can set primary color directly for consistency
+          seedColor: const Color(0xFFE43AA8),
           primary: const Color(0xFFE43AA8),
         ),
         useMaterial3: true,
-        fontFamily: 'Inter', // Assuming Inter font is used or desired
+        fontFamily: 'Inter',
       ),
-      home: const SplashScreen(), // Made const for performance
+      home: const StartLivePage(),
     );
   }
 }

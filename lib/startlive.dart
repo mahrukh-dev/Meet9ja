@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'livestream.dart';
+
 class StartLivePage extends StatefulWidget {
   const StartLivePage({super.key});
 
@@ -187,18 +189,28 @@ class _StartLivePageState extends State<StartLivePage>
         height: 58,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: const [
-            _BottomItem(
+          children: [ // Changed from const
+            const _BottomItem(
                 icon: FontAwesomeIcons.house, label: "Home", selected: true),
-            _BottomItem(icon: FontAwesomeIcons.compass, label: "Browse"),
-            _BottomCreateButton(),
-            _BottomItem(icon: FontAwesomeIcons.bell, label: "Activity"),
-            _BottomItem(icon: FontAwesomeIcons.user, label: "Profile"),
+            const _BottomItem(icon: FontAwesomeIcons.compass, label: "Browse"),
+            _BottomCreateButton( // 👈 Updated here with navigation logic
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LiveStreamPage(), // Navigate to the new screen
+                  ),
+                );
+              },
+            ),
+            const _BottomItem(icon: FontAwesomeIcons.bell, label: "Activity"),
+            const _BottomItem(icon: FontAwesomeIcons.user, label: "Profile"),
           ],
         ),
       ),
     );
   }
+
 
   String timeOfDayText() {
     final now = TimeOfDay.now();
@@ -584,25 +596,30 @@ class _BottomItem extends StatelessWidget {
 }
 
 class _BottomCreateButton extends StatelessWidget {
-  const _BottomCreateButton();
+  const _BottomCreateButton({required this.onTap});
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 36,
-      decoration: BoxDecoration(
-        color: StartLivePage.kPrimary,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: StartLivePage.kPrimary.withOpacity(.35),
-            blurRadius: 16,
-            spreadRadius: 1,
-          ),
-        ],
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: 52,
+        height: 36,
+        decoration: BoxDecoration(
+          color: StartLivePage.kPrimary,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: StartLivePage.kPrimary.withOpacity(.35),
+              blurRadius: 16,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
       ),
-      child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
     );
   }
 }

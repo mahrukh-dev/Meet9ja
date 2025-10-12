@@ -3,6 +3,9 @@
         android:label="meet9ja"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <uses-permission android:name="android.permission.CAMERA" />
+        <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
