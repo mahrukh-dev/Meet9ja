@@ -1,12 +1,13 @@
 // lib/messages.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:meet9ja/profile.dart';
 
-// App screens for bottom-nav routing
-import 'discover_page.dart'; // for kPrimary + People page
-import 'discover.dart'; // Discover feed
-import 'profile.dart'; // Profile page
+import 'Discover.dart';
 import 'conversation.dart';
+import 'discover_page.dart'; // <<< Font Awesome Import
+
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -16,6 +17,11 @@ class MessagesScreen extends StatefulWidget {
 }
 
 class _MessagesScreenState extends State<MessagesScreen> {
+  // --- Search State ---
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  // --------------------
+
   // ---- Stories (top) ----
   final List<_Story> stories = const [
     _Story("You", "https://i.pravatar.cc/150?img=1"),
@@ -65,6 +71,63 @@ class _MessagesScreenState extends State<MessagesScreen> {
   ];
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+
+  Widget _buildTitleBar(BuildContext context) {
+    if (_isSearching) {
+      // Search Bar View
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8.0, right: 8.0),
+          child: TextField(
+            controller: _searchController,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: "Search chats...",
+              hintStyle: const TextStyle(color: Colors.black54),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              isDense: true,
+              filled: true,
+              fillColor: Colors.grey.shade100,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(25),
+                borderSide: BorderSide.none,
+              ),
+              suffixIcon: IconButton(
+                icon: Icon(FontAwesomeIcons.multiply, color: DiscoverPage.kPrimary),
+                onPressed: () {
+                  _searchController.clear();
+                  // Optionally filter results here
+                },
+              ),
+            ),
+            onSubmitted: (value) {
+              // Handle search submission
+            },
+          ),
+        ),
+      );
+    } else {
+      // Default Title View
+      return const Expanded(
+        child: Center(
+          child: Text(
+            "Chats",
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       // Body now has a plain white background
@@ -73,41 +136,56 @@ class _MessagesScreenState extends State<MessagesScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Top Bar (center title, right search)
+              // Top Bar (now dynamic)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
                 child: Row(
                   children: [
-                    const SizedBox(width: 48), // balance for right icon
-                    const Expanded(
-                      child: Center(
-                        child: Text(
-                          "Chats",
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                          ),
+                    if (_isSearching)
+                      IconButton( // Back arrow when searching
+                        // CHANGED TO FONT AWESOME ICON
+                        icon: const FaIcon(
+                          FontAwesomeIcons.arrowLeft,
+                          color: Colors.black87,
+                          size: 20, // Match the search icon size
                         ),
+                        onPressed: () {
+                          setState(() {
+                            _isSearching = false;
+                            _searchController.clear();
+                          });
+                        },
+                      )
+                    else
+                      const SizedBox(width: 48), // balance for right icon
+
+                    _buildTitleBar(context), // Dynamic title/search input
+
+                    if (!_isSearching) // Only show search icon when not searching
+                      IconButton(
+                        // Search icon is already FA
+                        icon: const FaIcon(
+                          FontAwesomeIcons.magnifyingGlass,
+                          color: DiscoverPage.kPrimary,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _isSearching = true;
+                          });
+                        },
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.search,
-                        color: DiscoverPage.kPrimary,
-                      ),
-                      onPressed: () {},
-                    ),
                   ],
                 ),
               ),
 
-              // Content as a single scroll view
+              // Content as a single scroll view (always shown for now)
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
                   children: [
                     // Stories strip
-                    _SectionHeader("Stories"),
+                    const _SectionHeader("Stories"),
                     const SizedBox(height: 8),
                     SizedBox(
                       height: 92,
@@ -119,11 +197,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _SectionHeader("Conversations"),
+                    const _SectionHeader("Conversations"),
                     const SizedBox(height: 10),
                     ...List.generate(
                       chats.length,
-                      (i) => Column(
+                          (i) => Column(
                         children: [
                           _ChatTile(
                             chat: chats[i],
@@ -137,17 +215,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                     messages: chats[i].messages
                                         .map(
                                           (m) => {
-                                            'other': m.other,
-                                            'text': m.text,
-                                          },
-                                        )
+                                        'other': m.other,
+                                        'text': m.text,
+                                      },
+                                    )
                                         .toList(),
                                   ),
                                 ),
                               ).then((_) {
                                 // Mark read when returning
                                 setState(
-                                  () => chats[i] = chats[i].copyWith(unread: 0),
+                                      () => chats[i] = chats[i].copyWith(unread: 0),
                                 );
                               });
                             },
@@ -162,8 +240,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
               ),
 
               // Bottom nav — Chats selected (index 4)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 8, 12, 14),
                 child: _BottomNav(current: 4),
               ),
             ],
@@ -279,7 +357,12 @@ class _ChatTile extends StatelessWidget {
           fontWeight: chat.unread > 0 ? FontWeight.w800 : FontWeight.w500,
         ),
       ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.black26),
+      // UPDATED TO FA ICON
+      trailing: const FaIcon(
+        FontAwesomeIcons.chevronRight,
+        color: Colors.black26,
+        size: 16,
+      ),
     );
   }
 }
@@ -300,6 +383,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    // Must clone the list to allow local mutation
     msgs = List<_Msg>.from(widget.conv.messages);
   }
 
@@ -444,8 +528,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         onTap: _send,
                         child: const Padding(
                           padding: EdgeInsets.all(12),
-                          child: Icon(
-                            Icons.send,
+                          // UPDATED TO FA ICON
+                          child: FaIcon(
+                            FontAwesomeIcons.solidPaperPlane,
                             color: Colors.white,
                             size: 20,
                           ),
@@ -471,12 +556,13 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // UPDATED ICONS TO FAICONS
     final icons = const [
-      Icons.person_outline,
-      Icons.explore_outlined,
-      Icons.people_alt_outlined,
-      Icons.favorite_border,
-      Icons.chat_bubble_outline,
+      FontAwesomeIcons.solidUser, // Profile
+      FontAwesomeIcons.compass, // Discover
+      FontAwesomeIcons.solidCircleUser, // People
+      FontAwesomeIcons.solidHeart, // Liked You
+      FontAwesomeIcons.solidCommentDots, // Chats
     ];
     final labels = const [
       "Profile",
@@ -527,7 +613,7 @@ class _BottomNav extends StatelessWidget {
                   );
                   return;
                 }
-                // 3 (Liked You) – not wired; add your route when ready
+                // 3 (Liked You) – Add your route when ready
                 // 4 (Chats) – already here
               },
               child: AnimatedContainer(
@@ -542,9 +628,10 @@ class _BottomNav extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    // UPDATED TO FA ICON
+                    FaIcon(
                       icons[i],
-                      size: selected ? 30 : 28,
+                      size: selected ? 26 : 24,
                       color: selected ? DiscoverPage.kPrimary : Colors.black54,
                     ),
                     const SizedBox(height: 4),
@@ -588,7 +675,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// Kept the painter class in case you want to re-enable decorations later
 class _BackgroundLines extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
