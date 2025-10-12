@@ -1,12 +1,9 @@
-// live_stream_page.dart (or the relevant class in your file)
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:camera/camera.dart'; // 👈 Import the camera package
 
-// Note: kPrimary must be accessible or passed in
 const Color kPrimary = Color(0xFFE43AA8);
 
-// Global variable to hold available cameras
 late List<CameraDescription> cameras;
 
 class LiveStreamPage extends StatefulWidget {

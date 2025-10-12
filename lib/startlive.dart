@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:meet9ja/subscription_page.dart';
 
 import 'livestream.dart';
 
@@ -16,6 +17,8 @@ class StartLivePage extends StatefulWidget {
 class _StartLivePageState extends State<StartLivePage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
+
+  bool _isPremiumUser = false;
 
   final List<String> _liveFilters = const [
     "All",
@@ -72,6 +75,154 @@ class _StartLivePageState extends State<StartLivePage>
     super.dispose();
   }
 
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            constraints: const BoxConstraints(
+              maxWidth: 400,
+            ),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: StartLivePage.kPrimary.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        FontAwesomeIcons.crown,
+                        color: StartLivePage.kPrimary,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Go Premium to start live streaming',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // Content
+                Text(
+                  'Only Premium users can create and host live video streams. Upgrade now to unlock:',
+                  style: TextStyle(
+                    color: Colors.black87,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Features list
+                _FeatureItem(
+                  icon: FontAwesomeIcons.video,
+                  text: 'Start unlimited live streams',
+                ),
+                const SizedBox(height: 12),
+                _FeatureItem(
+                  icon: FontAwesomeIcons.film,
+                  text: 'HD video quality',
+                ),
+                const SizedBox(height: 12),
+                _FeatureItem(
+                  icon: FontAwesomeIcons.users,
+                  text: 'Priority viewer placement',
+                ),
+                const SizedBox(height: 12),
+                _FeatureItem(
+                  icon: FontAwesomeIcons.gem,
+                  text: 'Premium creator badge',
+                ),
+
+                const SizedBox(height: 24),
+
+                // Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          backgroundColor: Colors.grey.shade100,
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Colors.black54,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const SubscriptionPage(),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: StartLivePage.kPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 2,
+                        ),
+                        child: Text(
+                          'Upgrade to Premium',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -85,7 +236,6 @@ class _StartLivePageState extends State<StartLivePage>
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🌸 Glassmorphic Tabs
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: BackdropFilter(
@@ -131,14 +281,10 @@ class _StartLivePageState extends State<StartLivePage>
           ],
         ),
       ),
-
-      // Body content
       body: Container(
         color: Colors.grey,
         child: TabBarView(
-
           controller: _tab,
-
           children: [
             _ReelsFeed(items: _followingReels),
             Column(
@@ -186,21 +332,27 @@ class _StartLivePageState extends State<StartLivePage>
           ),
           color: Colors.white,
         ),
-        height: 58,
+        height: 70,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [ // Changed from const
+          children: [
             const _BottomItem(
                 icon: FontAwesomeIcons.house, label: "Home", selected: true),
             const _BottomItem(icon: FontAwesomeIcons.compass, label: "Browse"),
-            _BottomCreateButton( // 👈 Updated here with navigation logic
+            _BottomCreateButton(
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const LiveStreamPage(), // Navigate to the new screen
-                  ),
-                );
+                if (_isPremiumUser) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (
+                          context) => const LiveStreamPage(), // Navigate to the new screen
+                    ),
+                  );
+                }
+                else{
+                  _showUpgradeDialog();
+                }
               },
             ),
             const _BottomItem(icon: FontAwesomeIcons.bell, label: "Activity"),
@@ -218,6 +370,45 @@ class _StartLivePageState extends State<StartLivePage>
     final m = now.minute.toString().padLeft(2, '0');
     final suffix = now.period == DayPeriod.am ? "AM" : "PM";
     return "$h:$m $suffix";
+  }
+}
+
+/* ----------------------- FEATURE ITEM FOR DIALOG ----------------------- */
+class _FeatureItem extends StatelessWidget {
+  const _FeatureItem({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: StartLivePage.kPrimary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: StartLivePage.kPrimary,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -601,25 +792,38 @@ class _BottomCreateButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: 52,
-        height: 36,
-        decoration: BoxDecoration(
-          color: StartLivePage.kPrimary,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: StartLivePage.kPrimary.withOpacity(.35),
-              blurRadius: 16,
-              spreadRadius: 1,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        InkWell(
+          onTap: onTap,
+          child: Container(
+            width: 52,
+            height: 36,
+            decoration: BoxDecoration(
+              color: StartLivePage.kPrimary,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: StartLivePage.kPrimary.withOpacity(.35),
+                  blurRadius: 16,
+                  spreadRadius: 1,
+                ),
+              ],
             ),
-          ],
+            child: const Icon(FontAwesomeIcons.add, color: Colors.white, size: 20),
+          ),
         ),
-        child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
-      ),
+        const SizedBox(height: 4),
+        const Text(
+          "Live",
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 11,
+            color: Colors.black87,
+          ),
+        ),
+      ],
     );
   }
 }
