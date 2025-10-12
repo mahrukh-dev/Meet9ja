@@ -34,7 +34,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Inter',
       ),
-      home: const ProfileScreen(),
+      home: const DiscoverScreen(),
     );
   }
 }
