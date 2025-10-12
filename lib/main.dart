@@ -6,6 +6,7 @@ import 'package:meet9ja/messages.dart';
 import 'package:meet9ja/profile.dart';
 import 'package:meet9ja/splash.dart';
 import 'package:meet9ja/startlive.dart';
+import 'package:meet9ja/user_channel.dart';
 
 import 'firebase_options.dart';
 

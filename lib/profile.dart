@@ -1,6 +1,7 @@
 // lib/profile.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Font Awesome
 
 // navigate targets
 import 'discover.dart'; // DiscoverScreen (feed style)
@@ -41,11 +42,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.qr_code_2_outlined),
+                      icon: const Icon(FontAwesomeIcons.qrcode, size: 20), // ⭐ Replaced Icons.qr_code_2_outlined
                       onPressed: () {},
                     ),
                     IconButton(
-                      icon: const Icon(Icons.settings_outlined),
+                      icon: const Icon(FontAwesomeIcons.gear, size: 20), // ⭐ Replaced Icons.settings_outlined
                       onPressed: () {},
                     ),
                   ],
@@ -68,10 +69,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     if (_tab == 0)
                       _PayPlanTab(
                         onOpenMyProfile: () {
+                          // ⭐ NAVIGATE TO THE NEW TWITCH-STYLE PROFILE
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const UserChannelScreen(),
+                              builder: (_) => const UserChannelScreen(isMyProfile: true),
                             ),
                           );
                         },
@@ -243,7 +245,6 @@ class _PayPlanTab extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // ⬇️ NEW: My Profile button (this was the “green mark” spot)
                   TextButton.icon(
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.white,
@@ -257,7 +258,7 @@ class _PayPlanTab extends StatelessWidget {
                       ),
                     ),
                     onPressed: onOpenMyProfile,
-                    icon: const Icon(Icons.person_rounded, size: 18),
+                    icon: const Icon(FontAwesomeIcons.user, size: 16), // ⭐ Replaced Icons.person_rounded
                     label: const Text(
                       "My Profile",
                       style: TextStyle(fontWeight: FontWeight.w900),
@@ -346,7 +347,7 @@ class _FeatureCard extends StatelessWidget {
               color: Color(0xFFFAD3EA),
             ),
             child: const Icon(
-              Icons.star,
+              FontAwesomeIcons.star, // ⭐ Replaced Icons.star
               color: ProfileScreen.kPrimary,
               size: 18,
             ),
@@ -409,8 +410,8 @@ class _BenefitsRow extends StatelessWidget {
     );
 
     Widget tick(bool on, {bool faint = false}) => Icon(
-      Icons.check,
-      size: 18,
+      FontAwesomeIcons.check, // ⭐ Replaced Icons.check
+      size: 14,
       color: on ? Colors.black87 : Colors.black26,
     );
 
@@ -450,19 +451,19 @@ class _AdviceTab extends StatelessWidget {
               title: "How did it go? 5 post-date reflections",
               tag: "Short article",
               image:
-                  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4",
+              "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4",
             ),
             _AdviceCardData(
               title: "How emotionally available are you?",
               tag: "Short article",
               image:
-                  "https://images.unsplash.com/photo-1529336953121-a0f91c7d6429",
+              "https://images.unsplash.com/photo-1529336953121-a0f91c7d6429",
             ),
             _AdviceCardData(
               title: "4 questions to ask yourself before dating",
               tag: "Short article",
               image:
-                  "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846",
+              "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846",
             ),
           ],
         ),
@@ -479,13 +480,13 @@ class _AdviceTab extends StatelessWidget {
               title: "And breathe: calm pre-date nerves",
               tag: "Short",
               image:
-                  "https://images.unsplash.com/photo-1524504388940-b1c1722653e1",
+              "https://images.unsplash.com/photo-1524504388940-b1c1722653e1",
             ),
             _AdviceCardData(
               title: "Is it ok to date more than one person?",
               tag: "Short",
               image:
-                  "https://images.unsplash.com/photo-1520813792240-56fc4a3765a7",
+              "https://images.unsplash.com/photo-1520813792240-56fc4a3765a7",
             ),
           ],
         ),
@@ -542,7 +543,7 @@ class _CollectionsList extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Icon(Icons.chevron_right),
+                const Icon(FontAwesomeIcons.chevronRight, size: 16), // ⭐ Replaced Icons.chevron_right
               ],
             ),
           ),
@@ -651,7 +652,7 @@ class _PhotoInsightsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final bars = List.generate(
       7,
-      (i) => _BarWithThumb(heightFactor: 0.35 + (i % 4) * 0.12),
+          (i) => _BarWithThumb(heightFactor: 0.35 + (i % 4) * 0.12),
     );
 
     return Column(
@@ -666,7 +667,7 @@ class _PhotoInsightsTab extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: const [
-              Icon(Icons.bolt_outlined),
+              Icon(FontAwesomeIcons.bolt, size: 18), // ⭐ Replaced Icons.bolt_outlined
               SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -674,7 +675,7 @@ class _PhotoInsightsTab extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              Icon(Icons.chevron_right),
+              Icon(FontAwesomeIcons.chevronRight, size: 16), // ⭐ Replaced Icons.chevron_right
             ],
           ),
         ),
@@ -699,7 +700,7 @@ class _PhotoInsightsTab extends StatelessWidget {
         const SizedBox(height: 10),
         Row(
           children: const [
-            Icon(Icons.access_time, size: 18),
+            Icon(FontAwesomeIcons.clock, size: 16), // ⭐ Replaced Icons.access_time
             SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -757,12 +758,20 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ⭐ Replaced all Material Icons with Font Awesome Icons
     final icons = const [
-      Icons.person_outline, // Profile
-      Icons.explore_outlined, // Discover
-      Icons.people_alt_outlined, // People
-      Icons.favorite_border, // Liked You
-      Icons.chat_bubble_outline, // Chats
+      FontAwesomeIcons.solidUser, // Profile (solid for selected)
+      FontAwesomeIcons.compass, // Discover
+      FontAwesomeIcons.userGroup, // People
+      FontAwesomeIcons.heart, // Liked You
+      FontAwesomeIcons.solidCommentDots, // Chats
+    ];
+    final unselectedIcons = const [
+      FontAwesomeIcons.user, // Profile (outline for unselected)
+      FontAwesomeIcons.compass, // Discover
+      FontAwesomeIcons.userGroup, // People
+      FontAwesomeIcons.heart, // Liked You
+      FontAwesomeIcons.commentDots, // Chats
     ];
     final labels = const [
       "Profile",
@@ -816,8 +825,8 @@ class _BottomNav extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      icons[i],
-                      size: selected ? 30 : 28,
+                      selected ? icons[i] : unselectedIcons[i],
+                      size: selected ? 24 : 22, // Adjusted size for FA icons
                       color: selected ? ProfileScreen.kPrimary : Colors.black54,
                     ),
                     const SizedBox(height: 4),
