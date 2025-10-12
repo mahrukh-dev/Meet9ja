@@ -2,7 +2,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/Discover.dart';
 import 'package:meet9ja/discover_page.dart';
-import 'package:meet9ja/livestream.dart';
 import 'package:meet9ja/messages.dart';
 import 'package:meet9ja/profile.dart';
 import 'package:meet9ja/splash.dart';
@@ -35,7 +34,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Inter',
       ),
-      home: const StartLivePage(),
+      home: MessagesScreen(),
     );
   }
 }
