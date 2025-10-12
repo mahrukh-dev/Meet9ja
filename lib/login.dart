@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:meet9ja/signInScreen.dart';
 import 'profile_setup.dart';
 
 class LoginPage extends StatefulWidget {
@@ -231,7 +232,7 @@ class _LoginPageState extends State<LoginPage>
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => const ProfileSetupPage(),
+                                      builder: (_) => const Signinscreen(),
                                     ),
                                   );
                                 },

@@ -110,10 +110,40 @@ class FirebaseService {
     }
   }
 
+  // --- Login Method ---
+  static Future<User?> signInWithEmailAndPassword({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      print('🔥 Attempting to sign in user with email: $email');
+      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      print('✅ User signed in successfully: ${userCredential.user?.uid}');
+      return userCredential.user;
+    } on FirebaseAuthException catch (e) {
+      print('❌ Firebase Auth Error during login: ${e.code} - ${e.message}');
+      throw _handleAuthError(e); // Reuse the existing error handler
+    } catch (e) {
+      print('❌ Unexpected error during sign in: $e');
+      throw 'Failed to sign in: $e';
+    }
+  }
+
+
   // Error handling
   static String _handleAuthError(FirebaseAuthException e) {
     print('🔍 Handling auth error: ${e.code}');
     switch (e.code) {
+      case 'user-not-found':
+      case 'wrong-password':
+        return 'Invalid email or password. Please try again.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'user-disabled':
+        return 'Your account has been disabled. Please contact support.';
       case 'email-already-in-use':
         return 'This email is already registered. Please use a different email.';
       case 'invalid-email':
@@ -125,7 +155,7 @@ class FirebaseService {
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
       default:
-        return 'Registration failed: ${e.message}';
+        return 'Registration/Authentication failed: ${e.message}';
     }
   }
 }
