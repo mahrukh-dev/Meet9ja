@@ -1,6 +1,8 @@
 // lib/discover.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+// Note: Ensure 'filter.dart' and 'discover_page.dart' exist or remove these imports.
 import 'filter.dart';
 import 'discover_page.dart';
 
@@ -14,11 +16,9 @@ class DiscoverScreen extends StatefulWidget {
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
   final Set<String> liked = {};
-
-  // UI-only travel alerts toggle (for now)
   bool _travelAlertsOn = true;
 
-  // Sample data
+  // Sample data (kept as is)
   final List<_Person> recommended = [
     _Person(
       "Misbah",
@@ -159,7 +159,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     ),
                     IconButton(
                       icon: const Icon(
-                        Icons.filter_list,
+                        FontAwesomeIcons.sliders, // Filter icon (sliders)
                         color: DiscoverScreen.kPrimary,
                       ),
                       onPressed: () {
@@ -178,6 +178,25 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
                   children: [
+                    // --- NEW SEARCH BAR (without filter icon) ---
+                    const _SearchBar(),
+                    const SizedBox(height: 18),
+
+                    // --- NEW TRENDING CLIPS (with generic image) ---
+                    const _SectionHeader("Trending Clips 🎬"),
+                    const SizedBox(height: 10),
+                    const _TrendingClipsStrip(),
+                    const SizedBox(height: 22),
+
+                    // --- NEW POPULAR PROFILES ---
+                    const _SectionHeader("Popular Profiles ⭐"),
+                    const SizedBox(height: 10),
+                    _PopularProfilesStrip(
+                      people: similarInterests.take(6).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    // --- END OF NEW EXPLORE CONTENT ---
+
                     // pink pill + subtext (text -> BLACK now)
                     Align(
                       alignment: Alignment.centerLeft,
@@ -219,8 +238,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         const Spacer(),
                         Icon(
                           _travelAlertsOn
-                              ? Icons.notifications_active_rounded
-                              : Icons.notifications_none_rounded,
+                              ? FontAwesomeIcons.bell // notifications_active_rounded
+                              : FontAwesomeIcons.bellSlash, // notifications_none_rounded
                           size: 18,
                           color: _travelAlertsOn
                               ? DiscoverScreen.kPrimary
@@ -308,6 +327,163 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         liked.add(id);
       }
     });
+  }
+}
+
+// -------------------- NEW WIDGETS FOR EXPLORE --------------------
+
+class _SearchBar extends StatelessWidget {
+  const _SearchBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 50,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300, width: 1),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: const Row(
+        children: [
+          Icon(FontAwesomeIcons.magnifyingGlass, color: Colors.black54),
+          SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: "Search by name, tags, or location...",
+                hintStyle: TextStyle(color: Colors.black54),
+                border: InputBorder.none,
+              ),
+              style:
+              TextStyle(color: Colors.black87, fontWeight: FontWeight.w600),
+            ),
+          ),
+          // REMOVED: Icon(FontAwesomeIcons.filter, color: Colors.black54, size: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrendingClipsStrip extends StatelessWidget {
+  const _TrendingClipsStrip();
+
+  // Placeholder data for clips using a single, different generic image
+  final String genericClipThumb = "https://images.unsplash.com/photo-1504610926078-a1611febcad3";
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 180,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: 4, // Still showing 4 items
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (_, i) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              children: [
+                // Clip Thumbnail
+                Container(
+                  width: 120,
+                  height: 180,
+                  color: Colors.grey.shade200,
+                  child: Image.network(
+                    genericClipThumb,
+                    fit: BoxFit.cover,
+                    // Minimalistic overlay
+                    color: Colors.black.withOpacity(0.35),
+                    colorBlendMode: BlendMode.darken,
+                  ),
+                ),
+                // Play Icon
+                const Positioned.fill(
+                  child: Center(
+                    child: Icon(
+                      FontAwesomeIcons.solidCirclePlay,
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                  ),
+                ),
+                // Trending Text
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      "#${i + 1} Trending",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PopularProfilesStrip extends StatelessWidget {
+  const _PopularProfilesStrip({required this.people});
+  final List<_Person> people;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 120,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: people.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 16),
+        itemBuilder: (_, i) {
+          final p = people[i];
+          return Column(
+            children: [
+              // Circular Profile Image
+              Container(
+                width: 70,
+                height: 70,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border:
+                  Border.all(color: DiscoverScreen.kPrimary, width: 3),
+                  image: DecorationImage(
+                    image: NetworkImage(p.image),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              // Name
+              Text(
+                p.name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -586,7 +762,7 @@ class _BigCard extends StatelessWidget {
                             if (p.verified) ...[
                               const SizedBox(width: 6),
                               const Icon(
-                                Icons.verified,
+                                FontAwesomeIcons.certificate, // Verified icon
                                 size: 16,
                                 color: Colors.white,
                               ),
@@ -609,7 +785,7 @@ class _BigCard extends StatelessWidget {
                   IconButton(
                     onPressed: onLike,
                     icon: Icon(
-                      liked ? Icons.favorite : Icons.favorite_border,
+                      liked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart, // Heart icons
                       color: liked ? DiscoverScreen.kPrimary : Colors.white,
                     ),
                   ),
@@ -715,7 +891,7 @@ class _SmallCardsGrid extends StatelessWidget {
                           ),
                           if (p.verified)
                             const Icon(
-                              Icons.verified,
+                              FontAwesomeIcons.certificate, // Verified icon
                               size: 14,
                               color: Colors.white,
                             ),
@@ -730,7 +906,7 @@ class _SmallCardsGrid extends StatelessWidget {
                 right: 8,
                 bottom: 8,
                 child: _circleBtn(
-                  icon: likedNow ? Icons.favorite : Icons.favorite_border,
+                  icon: likedNow ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart, // Heart icons
                   color: likedNow ? DiscoverScreen.kPrimary : Colors.white,
                   onTap: () => onLikeToggle(p.id),
                 ),
@@ -787,12 +963,13 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // All Font Awesome Icons
     final icons = const [
-      Icons.person_outline,
-      Icons.explore_outlined, // Discover
-      Icons.people_alt_outlined, // People
-      Icons.favorite_border,
-      Icons.chat_bubble_outline,
+      FontAwesomeIcons.user, // Profile
+      FontAwesomeIcons.compass, // Discover
+      FontAwesomeIcons.userGroup, // People
+      FontAwesomeIcons.heart, // Liked You
+      FontAwesomeIcons.solidCommentDots, // Chats
     ];
     final labels = const [
       "Profile",
@@ -846,7 +1023,7 @@ class _BottomNav extends StatelessWidget {
                   children: [
                     Icon(
                       icons[i],
-                      size: selected ? 30 : 28,
+                      size: selected ? 24 : 22, // Adjusted size for FA icons
                       color: selected
                           ? DiscoverScreen.kPrimary
                           : Colors.black54,
@@ -887,11 +1064,11 @@ class _Person {
   String get id => "$name-$age";
 
   _Person(
-    this.name,
-    this.age,
-    this.image, {
-    this.verified = false,
-    this.tags = const [],
-    this.goal = "",
-  });
+      this.name,
+      this.age,
+      this.image, {
+        this.verified = false,
+        this.tags = const [],
+        this.goal = "",
+      });
 }

@@ -1,6 +1,8 @@
 // lib/filter.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
+// Import Font Awesome
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'discover_page.dart';
 
 class FilterPage extends StatefulWidget {
@@ -16,10 +18,13 @@ class FilterPage extends StatefulWidget {
 }
 
 class _FilterPageState extends State<FilterPage> {
-  // --- Basic
+  // --- Basic Filters
   String whoToDate = "Women";
   RangeValues age = const RangeValues(18, 28);
   bool flexAgeIfRunOut = true;
+  // ⭐ NEW STATE FOR LOCATION
+  String location = "10 miles (New York, NY)";
+  bool flexLocationIfRunOut = true;
 
   final List<String> allInterests = [
     "🎨 Art",
@@ -39,7 +44,7 @@ class _FilterPageState extends State<FilterPage> {
   bool flexInterestIfRunOut = true;
   bool verifiedOnly = true;
 
-  // --- Advanced
+  // --- Advanced Filters
   RangeValues heightCm = const RangeValues(140, 200);
   bool flexHeightIfRunOut = true;
 
@@ -78,7 +83,7 @@ class _FilterPageState extends State<FilterPage> {
                     children: [
                       // cross -> back to Discover
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 26),
+                        icon: const Icon(FontAwesomeIcons.xmark, size: 22),
                         onPressed: () {
                           if (Navigator.canPop(context)) {
                             Navigator.pop(context);
@@ -202,6 +207,20 @@ class _FilterPageState extends State<FilterPage> {
           _ValueTile(value: whoToDate, onTap: () => _openWhoSheet()),
           const SizedBox(height: 18),
 
+          // ⭐ LOCATION FILTER
+          const _SectionTitle("Where are they?"),
+          _ValueTile(value: location, onTap: () => _openLocationSheet()),
+          const SizedBox(height: 8),
+          _CardBox(
+            child: _SwitchLine(
+              label: "Show people outside this range if I run out",
+              value: flexLocationIfRunOut,
+              onChanged: (v) => setState(() => flexLocationIfRunOut = v),
+            ),
+          ),
+          const SizedBox(height: 18),
+          // ⭐ END LOCATION FILTER
+
           const _SectionTitle("How old are they?"),
           _CardBox(
             child: Column(
@@ -283,6 +302,7 @@ class _FilterPageState extends State<FilterPage> {
               label: "Verified profiles only",
               value: verifiedOnly,
               onChanged: (v) => setState(() => verifiedOnly = v),
+              icon: FontAwesomeIcons.certificate,
             ),
           ),
         ],
@@ -393,12 +413,69 @@ class _FilterPageState extends State<FilterPage> {
                   ),
                   trailing: whoToDate == o
                       ? const Icon(
-                          Icons.check_rounded,
-                          color: FilterPage.kPrimary,
-                        )
+                    FontAwesomeIcons.check,
+                    size: 16,
+                    color: FilterPage.kPrimary,
+                  )
                       : null,
                   onTap: () {
                     setState(() => whoToDate = o);
+                    Navigator.pop(context);
+                  },
+                ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ⭐ NEW LOCATION SHEET
+  void _openLocationSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        final options = [
+          "5 miles (Near Me)",
+          "10 miles (New York, NY)",
+          "25 miles (New Jersey)",
+          "50 miles (Pennsylvania)",
+          "Any distance",
+        ];
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final o in options)
+                ListTile(
+                  title: Text(
+                    o,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  trailing: location == o
+                      ? const Icon(
+                    FontAwesomeIcons.check,
+                    size: 16,
+                    color: FilterPage.kPrimary,
+                  )
+                      : null,
+                  onTap: () {
+                    setState(() => location = o);
                     Navigator.pop(context);
                   },
                 ),
@@ -415,6 +492,10 @@ class _FilterPageState extends State<FilterPage> {
       whoToDate = "Women";
       age = const RangeValues(18, 28);
       flexAgeIfRunOut = true;
+      // ⭐ Reset Location
+      location = "10 miles (New York, NY)";
+      flexLocationIfRunOut = true;
+
       selectedInterests
         ..clear()
         ..addAll({"🎨 Art", "📝 Writing", "🎟️ Gigs", "📺 Horror"});
@@ -515,7 +596,7 @@ class _ValueTile extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         title: Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-        trailing: const Icon(Icons.chevron_right_rounded),
+        trailing: const Icon(FontAwesomeIcons.chevronRight, size: 16),
         onTap: onTap,
       ),
     );
@@ -560,15 +641,21 @@ class _SwitchLine extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onChanged,
+    this.icon,
   });
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
+        if (icon != null) ...[
+          Icon(icon, size: 16, color: Colors.black54),
+          const SizedBox(width: 8),
+        ],
         Expanded(
           child: Text(
             label,
