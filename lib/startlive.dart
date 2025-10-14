@@ -198,7 +198,12 @@ class _StartLivePageState extends State<StartLivePage>
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const LiveStreamPage(), // Navigate to the new screen
+                    builder: (context) => LiveStreamPage(
+                      liveId: 'specific_live_id', // Provide specific live ID to join
+                      userId: 'audience_123',
+                      userName: 'Viewer',
+                      isHost: true,
+                    ), // Navigate to the new screen
                   ),
                 );
               },

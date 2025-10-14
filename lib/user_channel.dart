@@ -2,14 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-// You might need to define kPrimary here or import it from a common file.
-// Assuming a constant color definition for the pink accent.
 const Color kPrimary = Color(0xFFE43AA8);
 
 class UserChannelScreen extends StatefulWidget {
-  // Use this flag to determine if the profile belongs to the current user
   final bool isMyProfile;
-
   const UserChannelScreen({super.key, this.isMyProfile = true});
 
   @override
@@ -19,9 +15,8 @@ class UserChannelScreen extends StatefulWidget {
 class _UserChannelScreenState extends State<UserChannelScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  int _currentTab = 0;
 
-  // ---- Dummy user data (used for all tabs) ----
+  // ---- Dummy user data ----
   final String username = "@abdullah_k";
   final String displayName = "Abdullah Khan";
   final String location = "Lahore, PK";
@@ -39,13 +34,9 @@ class _UserChannelScreenState extends State<UserChannelScreen>
   final String xHandle = "@abdullah";
   final String instagram = "@abdullah.ig";
 
-  // Tabs change based on who is viewing
   List<String> get _tabLabels {
-    // ADDED "Live" as the first tab
     final baseTabs = ["Live", "Clips", "About"];
     if (widget.isMyProfile) {
-      // Wallet is visible only on your own profile
-      // ADDED "Live"
       return ["Live", "Clips", "Wallet", "About"];
     }
     return baseTabs;
@@ -54,76 +45,85 @@ class _UserChannelScreenState extends State<UserChannelScreen>
   @override
   void initState() {
     super.initState();
-    // Initialize TabController with the dynamic number of tabs
     _tabController = TabController(length: _tabLabels.length, vsync: this);
-    _tabController.addListener(_handleTabSelection);
-  }
-
-  void _handleTabSelection() {
-    setState(() {
-      _currentTab = _tabController.index;
-    });
   }
 
   @override
   void dispose() {
-    _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 360;
+
     return Scaffold(
       backgroundColor: Colors.white,
-      body: CustomScrollView(
-        slivers: [
-          // 1. Sliver Header (Twitch-Style Layout)
-          _SliverHeader(
-            isMyProfile: widget.isMyProfile,
-            displayName: displayName,
-            username: username,
-            followers: followers,
-            following: following,
-            subscribers: subscribers,
-            tabController: _tabController,
-            tabLabels: _tabLabels,
-          ),
+      body: DefaultTabController(
+        length: _tabLabels.length,
+        child: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) {
+            return [
+              _SliverHeader(
+                isMyProfile: widget.isMyProfile,
+                displayName: displayName,
+                username: username,
+                followers: followers,
+                following: following,
+                subscribers: subscribers,
+                isSmallScreen: isSmallScreen,
+              ),
 
-          // 2. Tab View for content (SliverFillRemaining for full height)
-          SliverFillRemaining(
-            hasScrollBody: true,
-            child: TabBarView(
-              controller: _tabController,
-              children: _getTabContent(),
-            ),
+              // Tab Bar
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _TabBarDelegate(
+                  TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    indicatorColor: kPrimary,
+                    labelColor: Colors.black,
+                    unselectedLabelColor: Colors.black54,
+                    labelStyle: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: isSmallScreen ? 14 : 16,
+                    ),
+                    unselectedLabelStyle: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: isSmallScreen ? 14 : 16,
+                    ),
+                    tabs: _tabLabels.map((label) =>
+                        Tab(text: label)
+                    ).toList(),
+                  ),
+                ),
+              ),
+            ];
+          },
+          body: TabBarView(
+            controller: _tabController,
+            children: _getTabContent(isSmallScreen),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  // Helper to dynamically generate TabBarView children
-  List<Widget> _getTabContent() {
-    final List<Widget> tabs = [];
+  List<Widget> _getTabContent(bool isSmallScreen) {
+    return [
+      // Live Tab
+      const _LiveTab(),
 
-    // The order of content must match the order in _tabLabels
+      // Clips Tab
+      const _ClipsTab(),
 
-    // Live Tab (ADDED)
-    tabs.add(const _LiveTab());
+      // Wallet Tab (only for my profile)
+      if (widget.isMyProfile) const _WalletTab(),
 
-    // Clips Tab (Always visible)
-    tabs.add(const _ClipsTab());
-
-    // Wallet Tab (Only for self)
-    if (widget.isMyProfile) {
-      tabs.add(const _WalletTab());
-    }
-
-    // About Tab (Always visible, contains all the old static info)
-    tabs.add(
+      // About Tab
       _AboutTab(
-        isMyProfile: widget.isMyProfile,
         bio: bio,
         location: location,
         joined: joined,
@@ -131,15 +131,39 @@ class _UserChannelScreenState extends State<UserChannelScreen>
         email: email,
         xHandle: xHandle,
         instagram: instagram,
+        isMyProfile: widget.isMyProfile,
       ),
-    );
-
-    return tabs;
+    ];
   }
 }
 
-/* ---------------- SLIVER HEADER (Twitch-Style) ---------------- */
+// Tab Bar Delegate for proper sizing
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  _TabBarDelegate(this._tabBar);
 
+  final TabBar _tabBar;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: Colors.white,
+      child: _tabBar,
+    );
+  }
+
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+
+  @override
+  bool shouldRebuild(_TabBarDelegate oldDelegate) {
+    return false;
+  }
+}
+
+/* ---------------- FIXED SLIVER HEADER ---------------- */
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
@@ -148,8 +172,7 @@ class _SliverHeader extends StatelessWidget {
     required this.followers,
     required this.following,
     required this.subscribers,
-    required this.tabController,
-    required this.tabLabels,
+    required this.isSmallScreen,
   });
 
   final bool isMyProfile;
@@ -158,217 +181,283 @@ class _SliverHeader extends StatelessWidget {
   final int followers;
   final int following;
   final int subscribers;
-  final TabController tabController;
-  final List<String> tabLabels;
+  final bool isSmallScreen;
 
   @override
   Widget build(BuildContext context) {
     return SliverAppBar(
-      // Height adjusts if less info
-      expandedHeight: isMyProfile ? 260.0 : 200.0,
+      expandedHeight: isSmallScreen ? 260.0 : 280.0,
       pinned: true,
       backgroundColor: Colors.white,
       foregroundColor: Colors.black,
+      elevation: 1,
+      shadowColor: Colors.black12,
 
-      // Top Right Actions (Settings or More options)
+      // ADD BACK BUTTON HERE
+      leading: IconButton(
+        icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.black),
+        onPressed: () {
+          Navigator.of(context).pop();
+        },
+      ),
+
       actions: [
-        if (isMyProfile) ...[
+        if (isMyProfile)
           IconButton(
             icon: const Icon(FontAwesomeIcons.gear, size: 20),
-            onPressed: () {
-              // Action: Go to profile settings
-            },
-          ),
-        ] else ...[
+            onPressed: () {},
+          )
+        else
           IconButton(
             icon: const Icon(FontAwesomeIcons.ellipsisVertical, size: 20),
-            onPressed: () {
-              // Action: Report, Block, Share options
-            },
+            onPressed: () {},
           ),
-        ]
       ],
 
       flexibleSpace: FlexibleSpaceBar(
         collapseMode: CollapseMode.pin,
-        titlePadding: const EdgeInsets.only(left: 16, bottom: 8),
-        background: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Profile Photo & Name Row
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const CircleAvatar(
-                    radius: 34,
-                    backgroundImage: NetworkImage("https://i.pravatar.cc/160?img=8"),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        background: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Profile Header Row
+                Container(
+                  padding: EdgeInsets.only(left: 40),
+
+                  child: Column(
                     children: [
-                      Text(
-                        displayName,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black,
-                          fontSize: 20,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        username,
-                        style: const TextStyle(
-                            fontSize: 14, color: Colors.black54),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: isSmallScreen ? 30 : 36,
+                            backgroundImage: const NetworkImage("https://i.pravatar.cc/160?img=8"),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  displayName,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.black,
+                                    fontSize: isSmallScreen ? 20 : 22,
+                                    height: 1.2,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  username,
+                                  style: TextStyle(
+                                    fontSize: isSmallScreen ? 13 : 14,
+                                    color: Colors.black54,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isMyProfile)
+                            Container(
+                              padding: EdgeInsets.only(top:28),
+                              child: SizedBox(
+                                width: isSmallScreen ? 70 : 80,
+                                child: OutlinedButton(
+                                  onPressed: () {},
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                    side: const BorderSide(color: Colors.black12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: Container(
+
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(FontAwesomeIcons.pencil, size: isSmallScreen ? 12 : 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          "Edit",
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: isSmallScreen ? 12 : 14
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
-                  const Spacer(),
-                  // Edit button for own profile
-                  if (isMyProfile)
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        // Action: Navigate to profile edit screen
-                      },
-                      icon: const Icon(FontAwesomeIcons.pencil, size: 16),
-                      label: const Text("Edit", style: TextStyle(fontWeight: FontWeight.w800)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.black12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                ),
+                const SizedBox(height: 16),
 
-              // Stats Row
-              Row(
-                children: [
-                  _StatTile(label: "Followers", value: followers),
-                  const SizedBox(width: 10),
-                  _StatTile(label: "Following", value: following),
-                  const SizedBox(width: 10),
-                  _StatTile(label: "Subs", value: subscribers),
-                ],
-              ),
-              const SizedBox(height: 16),
+                // Stats Row
+                SizedBox(
+                  height: 80,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _StatTile(label: "Followers", value: followers),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _StatTile(label: "Following", value: following),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _StatTile(label: "Subs", value: subscribers),
+                      ),
+                    ],
+                  ),
+                ),
 
-              // Action Buttons (Dynamic based on isMyProfile)
-              Row(
-                children: isMyProfile
-                    ? [
-                  // Manage Subs Button (My Profile)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        // Action: Navigate to subscription management
-                      },
-                      icon: const Icon(FontAwesomeIcons.userGroup, size: 16),
-                      label: const Text(
-                        "Manage Subs",
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: const BorderSide(color: Colors.black12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Share Profile Button (My Profile)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        // Action: Trigger share sheet
-                      },
-                      icon: const Icon(FontAwesomeIcons.shareFromSquare, size: 16),
-                      label: const Text(
-                        "Share",
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: const BorderSide(color: Colors.black12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ]
-                    : [
-                  // Follow Button (Other's Profile) - REQUIRED
-                  Expanded(
-                    child: _ActionButton(
-                      label: "Follow",
-                      icon: FontAwesomeIcons.userPlus,
-                      color: kPrimary,
-                      textColor: Colors.white,
-                      onPressed: () {
-                        // Action: Follow user
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Message Button (Other's Profile) - REQUIRED
-                  Expanded(
-                    child: _ActionButton(
-                      label: "Message",
-                      icon: FontAwesomeIcons.solidCommentDots,
-                      onPressed: () {
-                        // Action: Start chat
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Gift Button (Other's Profile) - REQUIRED
-                  _ActionButton(
-                    label: "Gift",
-                    icon: FontAwesomeIcons.solidGem,
-                    onPressed: () {
-                      // Action: Open gift/coin dialog
-                    },
-                  ),
-                ],
-              ),
-
-              // Added spacing below buttons and above tabs
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
-
-      // Persistent Tab Bar
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(48),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: TabBar(
-            controller: tabController,
-            isScrollable: true,
-            indicatorColor: kPrimary,
-            labelColor: Colors.black,
-            unselectedLabelColor: Colors.black54,
-            labelStyle: const TextStyle(
-                fontWeight: FontWeight.w900, fontSize: 16),
-            unselectedLabelStyle: const TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 16),
-            tabs: tabLabels.map((label) => Tab(text: label)).toList(),
+                // Action Buttons
+                const SizedBox(height: 8),
+                if (isMyProfile)
+                  _buildMyProfileActions()
+                else
+                  _buildOtherProfileActions(),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  // ... rest of the methods remain the same
+  Widget _buildMyProfileActions() {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {},
+            icon: const Icon(FontAwesomeIcons.userGroup, size: 14),
+            label: const Text(
+              "Manage Subs",
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              side: const BorderSide(color: Colors.black12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {},
+            icon: const Icon(FontAwesomeIcons.shareFromSquare, size: 14),
+            label: const Text(
+              "Share",
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              side: const BorderSide(color: Colors.black12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOtherProfileActions() {
+    return Row(
+      children: [
+        Expanded(
+          child: _ActionButton(
+            label: "Follow",
+            icon: FontAwesomeIcons.userPlus,
+            color: kPrimary,
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ActionButton(
+            label: "Message",
+            icon: FontAwesomeIcons.solidCommentDots,
+            onPressed: () {},
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 80,
+          child: _ActionButton(
+            label: "Gift",
+            icon: FontAwesomeIcons.solidGem,
+            onPressed: () {},
+          ),
+        ),
+      ],
+    );
+  }
 }
+  Widget _buildMyProfileActions() {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {},
+            icon: const Icon(FontAwesomeIcons.userGroup, size: 14),
+            label: const Text(
+              "Manage Subs",
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              side: const BorderSide(color: Colors.black12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {},
+            icon: const Icon(FontAwesomeIcons.shareFromSquare, size: 14),
+            label: const Text(
+              "Share",
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              side: const BorderSide(color: Colors.black12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
 
 class _ActionButton extends StatelessWidget {
   const _ActionButton({
@@ -393,13 +482,17 @@ class _ActionButton extends StatelessWidget {
         foregroundColor: textColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       ),
       onPressed: onPressed,
       icon: Icon(icon, size: 14),
       label: Text(
         label,
-        style: TextStyle(fontWeight: FontWeight.w800, color: textColor),
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: textColor,
+          fontSize: 14,
+        ),
       ),
     );
   }
@@ -407,7 +500,6 @@ class _ActionButton extends StatelessWidget {
 
 /* ---------------- TAB CONTENT ---------------- */
 
-// 1. Live Tab (NEWLY ADDED)
 class _LiveTab extends StatelessWidget {
   const _LiveTab();
 
@@ -434,17 +526,18 @@ class _LiveTab extends StatelessWidget {
   }
 }
 
-// 2. Clips Tab (Existing)
 class _ClipsTab extends StatelessWidget {
   const _ClipsTab();
 
   @override
   Widget build(BuildContext context) {
-    // Placeholder grid for short clips
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = screenWidth < 400 ? 2 : 3;
+
     return GridView.builder(
       padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
         childAspectRatio: 0.65,
@@ -457,7 +550,7 @@ class _ClipsTab extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               Image.network(
-                "https://i.pravatar.cc/120?img=${index + 10}", // Different placeholder images
+                "https://i.pravatar.cc/120?img=${index + 10}",
                 fit: BoxFit.cover,
                 color: Colors.black.withOpacity(0.2),
                 colorBlendMode: BlendMode.darken,
@@ -485,33 +578,41 @@ class _ClipsTab extends StatelessWidget {
   }
 }
 
-// 3. Wallet Tab (Existing - Only for self)
 class _WalletTab extends StatelessWidget {
   const _WalletTab();
 
-  // Helper for wallet tiles
-  Widget _walletTile(
-      {required String title,
-        required String value,
-        required IconData icon,
-        Color iconColor = Colors.black87,
-        VoidCallback? onTap}) {
+  Widget _walletTile({
+    required String title,
+    required String value,
+    required IconData icon,
+    Color iconColor = Colors.black87,
+    VoidCallback? onTap,
+  }) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: const Color(0xFFF0F0F0),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
         onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         leading: Icon(icon, color: iconColor, size: 24),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800)
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(value,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-            if (onTap != null) const Icon(FontAwesomeIcons.chevronRight, size: 14, color: Colors.black54),
+            Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            ),
+            if (onTap != null)
+              const SizedBox(width: 8),
+            if (onTap != null)
+              const Icon(FontAwesomeIcons.chevronRight, size: 14, color: Colors.black54),
           ],
         ),
       ),
@@ -520,14 +621,17 @@ class _WalletTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             "Current Balance",
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, fontSize: 18),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                fontSize: 18
+            ),
           ),
           const SizedBox(height: 12),
           _walletTile(
@@ -540,7 +644,10 @@ class _WalletTab extends StatelessWidget {
 
           Text(
             "Actions",
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, fontSize: 18),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                fontSize: 18
+            ),
           ),
           const SizedBox(height: 12),
           _walletTile(
@@ -549,13 +656,11 @@ class _WalletTab extends StatelessWidget {
             icon: FontAwesomeIcons.creditCard,
             onTap: () {},
           ),
-          const SizedBox(height: 12),
           _walletTile(
             title: "Earnings",
             value: "\$1,200",
             icon: FontAwesomeIcons.sackDollar,
           ),
-          const SizedBox(height: 12),
           _walletTile(
             title: "Withdraw",
             value: "Cash Out",
@@ -568,10 +673,8 @@ class _WalletTab extends StatelessWidget {
   }
 }
 
-// 4. About Tab (Existing)
 class _AboutTab extends StatelessWidget {
   const _AboutTab({
-    required this.isMyProfile,
     required this.bio,
     required this.location,
     required this.joined,
@@ -579,9 +682,9 @@ class _AboutTab extends StatelessWidget {
     required this.email,
     required this.xHandle,
     required this.instagram,
+    required this.isMyProfile,
   });
 
-  final bool isMyProfile;
   final String bio;
   final String location;
   final DateTime joined;
@@ -589,25 +692,30 @@ class _AboutTab extends StatelessWidget {
   final String email;
   final String xHandle;
   final String instagram;
+  final bool isMyProfile;
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+      padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Bio
+          // Bio Section
           _SectionCard(
             title: "Bio",
             child: Text(
               bio,
-              style: const TextStyle(fontWeight: FontWeight.w600, height: 1.35),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+                fontSize: 15,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          // Basic Info
+          // Info Section
           _SectionCard(
             title: "Info",
             child: Column(
@@ -617,11 +725,13 @@ class _AboutTab extends StatelessWidget {
                   label: "Location",
                   value: location,
                 ),
+                const SizedBox(height: 12),
                 _InfoTile(
                   icon: FontAwesomeIcons.calendar,
                   label: "Joined",
                   value: _fmtDate(joined),
                 ),
+                const SizedBox(height: 12),
                 const _InfoTile(
                   icon: FontAwesomeIcons.certificate,
                   label: "Verified",
@@ -630,9 +740,9 @@ class _AboutTab extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          // Links / Contact
+          // Links Section
           _SectionCard(
             title: "Links",
             child: Column(
@@ -642,16 +752,19 @@ class _AboutTab extends StatelessWidget {
                   label: "Website",
                   value: website,
                 ),
+                const SizedBox(height: 12),
                 _InfoTile(
                   icon: FontAwesomeIcons.solidEnvelope,
                   label: "Email",
                   value: email,
                 ),
+                const SizedBox(height: 12),
                 _InfoTile(
                   icon: FontAwesomeIcons.xTwitter,
                   label: "X",
                   value: xHandle,
                 ),
+                const SizedBox(height: 12),
                 _InfoTile(
                   icon: FontAwesomeIcons.instagram,
                   label: "Instagram",
@@ -660,9 +773,9 @@ class _AboutTab extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          // Preferences / Settings CTA (Only visible on own profile)
+          // Preferences Section (Only for own profile)
           if (isMyProfile)
             _SectionCard(
               title: "Preferences",
@@ -674,14 +787,14 @@ class _AboutTab extends StatelessWidget {
                     subtitle: "Followers-only chat, hide online status",
                     onTap: () {},
                   ),
-                  const Divider(height: 1),
+                  const SizedBox(height: 12),
                   _SettingRow(
                     icon: FontAwesomeIcons.bell,
                     title: "Notifications",
                     subtitle: "Mentions, new subs, gifts",
                     onTap: () {},
                   ),
-                  const Divider(height: 1),
+                  const SizedBox(height: 12),
                   _SettingRow(
                     icon: FontAwesomeIcons.palette,
                     title: "Theme",
@@ -691,13 +804,15 @@ class _AboutTab extends StatelessWidget {
                 ],
               ),
             ),
+
+          const SizedBox(height: 20), // Bottom padding
         ],
       ),
     );
   }
 }
 
-/* ---------------- Components (Reused/Updated) ---------------- */
+/* ---------------- COMPONENTS ---------------- */
 
 class _SectionCard extends StatelessWidget {
   const _SectionCard({required this.title, required this.child});
@@ -707,21 +822,32 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
-        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ],
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+              color: Colors.black87,
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           child,
         ],
       ),
@@ -741,34 +867,36 @@ class _InfoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.black87, size: 18),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Colors.black87,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: Colors.black87, size: 18),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                  fontSize: 14,
+                ),
               ),
-            ),
-          ),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Colors.black54,
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black54,
+                  fontSize: 14,
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -789,8 +917,9 @@ class _SettingRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
             Icon(icon, color: Colors.black87, size: 18),
@@ -802,22 +931,25 @@ class _SettingRow extends StatelessWidget {
                   Text(
                     title,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: Colors.black87,
+                      fontSize: 14,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                       color: Colors.black54,
+                      fontSize: 13,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(FontAwesomeIcons.chevronRight, color: Colors.black45, size: 16),
+            const Icon(FontAwesomeIcons.chevronRight,
+                color: Colors.black45, size: 14),
           ],
         ),
       ),
@@ -832,55 +964,51 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
-          border: Border.all(color: Colors.black12),
-        ),
-        child: Column(
-          children: [
-            Text(
-              _shortNumber(value),
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            _shortNumber(value),
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+              color: Colors.black87,
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.black54,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black54,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/* ---------------- Helpers ---------------- */
+/* ---------------- HELPER FUNCTIONS ---------------- */
 
 String _fmtDate(DateTime d) {
-  // e.g., "Jun 12, 2024"
-  final months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
+  final months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return "${months[d.month - 1]} ${d.day}, ${d.year}";
 }
 

@@ -7,6 +7,8 @@ import 'package:meet9ja/profile.dart';
 import 'package:meet9ja/splash.dart';
 import 'package:meet9ja/startlive.dart';
 import 'package:meet9ja/user_channel.dart';
+import 'package:zego_uikit/zego_uikit.dart';
+import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_streaming.dart';
 
 import 'firebase_options.dart';
 
@@ -15,7 +17,11 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+
+  ZegoUIKit().initLog().then((value) {
+    runApp(const MyApp());
+  });
+
 }
 
 class MyApp extends StatelessWidget {
@@ -34,7 +40,9 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Inter',
       ),
-      home: MessagesScreen(),
+      home: ZegoUIKitPrebuiltLiveStreamingMiniPopScope(
+        child: StartLivePage(),
+      ),
     );
   }
 }
