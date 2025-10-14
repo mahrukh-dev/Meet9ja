@@ -1,4 +1,6 @@
 // lib/user_channel.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -33,6 +35,25 @@ class _UserChannelScreenState extends State<UserChannelScreen>
   final String email = "hello@abdullah.dev";
   final String xHandle = "@abdullah";
   final String instagram = "@abdullah.ig";
+
+  // Dummy schedules data
+  final List<Map<String, dynamic>> _schedules = [
+    {
+      'title': 'Weekend Gaming Stream',
+      'dateTime': DateTime.now().add(const Duration(days: 2, hours: 3)),
+      'description': 'Playing the new RPG release with viewers'
+    },
+    {
+      'title': 'Q&A Session',
+      'dateTime': DateTime.now().add(const Duration(days: 5, hours: 2)),
+      'description': 'Answering community questions'
+    },
+    {
+      'title': 'IRL Coding Stream',
+      'dateTime': DateTime.now().add(const Duration(days: 7, hours: 4)),
+      'description': 'Building a new feature live'
+    },
+  ];
 
   List<String> get _tabLabels {
     final baseTabs = ["Home", "Clips", "About", "Schedules"];
@@ -112,17 +133,21 @@ class _UserChannelScreenState extends State<UserChannelScreen>
   }
 
   List<Widget> _getTabContent(bool isSmallScreen) {
-    return [
-      // Live Tab
+    final tabs = [
+      // Home Tab
       const _LiveTab(),
 
       // Clips Tab
       const _ClipsTab(),
+    ];
 
-      // Wallet Tab (only for my profile)
-      if (widget.isMyProfile) const _WalletTab(),
+    // Add Wallet tab only for my profile
+    if (widget.isMyProfile) {
+      tabs.add(const _WalletTab());
+    }
 
-      // About Tab
+    // Add About and Schedules tabs
+    tabs.addAll([
       _AboutTab(
         bio: bio,
         location: location,
@@ -133,7 +158,34 @@ class _UserChannelScreenState extends State<UserChannelScreen>
         instagram: instagram,
         isMyProfile: widget.isMyProfile,
       ),
-    ];
+      _SchedulesTab(
+        schedules: _schedules,
+        isMyProfile: widget.isMyProfile,
+        onAddSchedule: widget.isMyProfile ? _addNewSchedule : null,
+      ),
+    ]);
+
+    return tabs;
+  }
+
+  void _addNewSchedule() {
+    // This would typically open a dialog or new screen to add a schedule
+    // For now, we'll just add a dummy schedule
+    setState(() {
+      _schedules.add({
+        'title': 'New Stream Event',
+        'dateTime': DateTime.now().add(const Duration(days: 10, hours: 2)),
+        'description': 'Planning something special!'
+      });
+    });
+
+    // Show a snackbar confirmation
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('New schedule added!'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 }
 
@@ -225,8 +277,7 @@ class _SliverHeader extends StatelessWidget {
               children: [
                 // Profile Header Row
                 Container(
-                  padding: EdgeInsets.only(left: 40),
-
+                  padding: const EdgeInsets.only(left: 40),
                   child: Column(
                     children: [
                       Row(
@@ -267,7 +318,7 @@ class _SliverHeader extends StatelessWidget {
                           ),
                           if (isMyProfile)
                             Container(
-                              padding: EdgeInsets.only(top:28),
+                              padding: const EdgeInsets.only(top:28),
                               child: SizedBox(
                                 width: isSmallScreen ? 70 : 80,
                                 child: OutlinedButton(
@@ -280,7 +331,6 @@ class _SliverHeader extends StatelessWidget {
                                     ),
                                   ),
                                   child: Container(
-
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -340,7 +390,6 @@ class _SliverHeader extends StatelessWidget {
     );
   }
 
-  // ... rest of the methods remain the same
   Widget _buildMyProfileActions() {
     return Row(
       children: [
@@ -416,48 +465,6 @@ class _SliverHeader extends StatelessWidget {
     );
   }
 }
-  Widget _buildMyProfileActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(FontAwesomeIcons.userGroup, size: 14),
-            label: const Text(
-              "Manage Subs",
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              side: const BorderSide(color: Colors.black12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(FontAwesomeIcons.shareFromSquare, size: 14),
-            label: const Text(
-              "Share",
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              side: const BorderSide(color: Colors.black12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
 
 class _ActionButton extends StatelessWidget {
   const _ActionButton({
@@ -812,6 +819,285 @@ class _AboutTab extends StatelessWidget {
   }
 }
 
+/* ---------------- SCHEDULES TAB ---------------- */
+
+class _SchedulesTab extends StatelessWidget {
+  final List<Map<String, dynamic>> schedules;
+  final bool isMyProfile;
+  final VoidCallback? onAddSchedule;
+
+  const _SchedulesTab({
+    required this.schedules,
+    required this.isMyProfile,
+    this.onAddSchedule,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      floatingActionButton: isMyProfile
+          ? FloatingActionButton(
+        onPressed: onAddSchedule,
+        backgroundColor: kPrimary,
+        child: const Icon(FontAwesomeIcons.plus, color: Colors.white),
+      )
+          : null,
+      body: schedules.isEmpty
+          ? _buildEmptyState()
+          : _buildSchedulesList(),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            FontAwesomeIcons.calendar,
+            size: 60,
+            color: Colors.black.withOpacity(0.3),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isMyProfile ? "No schedules yet" : "No upcoming schedules",
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isMyProfile
+                ? "Tap the + button to add your first schedule!"
+                : "Check back later for upcoming streams.",
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black45,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSchedulesList() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: schedules.length,
+      itemBuilder: (context, index) {
+        final schedule = schedules[index];
+        return _ScheduleCard(
+          title: schedule['title'],
+          dateTime: schedule['dateTime'],
+          description: schedule['description'],
+          isMyProfile: isMyProfile,
+        );
+      },
+    );
+  }
+}
+
+class _ScheduleCard extends StatefulWidget {
+  final String title;
+  final DateTime dateTime;
+  final String description;
+  final bool isMyProfile;
+
+  const _ScheduleCard({
+    required this.title,
+    required this.dateTime,
+    required this.description,
+    required this.isMyProfile,
+  });
+
+  @override
+  State<_ScheduleCard> createState() => _ScheduleCardState();
+}
+
+class _ScheduleCardState extends State<_ScheduleCard> {
+  late Timer _timer;
+  Duration _timeLeft = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _calculateTimeLeft();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _calculateTimeLeft();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  void _calculateTimeLeft() {
+    final now = DateTime.now();
+    _timeLeft = widget.dateTime.isAfter(now)
+        ? widget.dateTime.difference(now)
+        : Duration.zero;
+  }
+
+  String _formatCountdown() {
+    if (_timeLeft.inDays > 0) {
+      return "${_timeLeft.inDays}d ${_timeLeft.inHours.remainder(24)}h ${_timeLeft.inMinutes.remainder(60)}m";
+    } else if (_timeLeft.inHours > 0) {
+      return "${_timeLeft.inHours}h ${_timeLeft.inMinutes.remainder(60)}m ${_timeLeft.inSeconds.remainder(60)}s";
+    } else if (_timeLeft.inMinutes > 0) {
+      return "${_timeLeft.inMinutes}m ${_timeLeft.inSeconds.remainder(60)}s";
+    } else {
+      return "Starting soon!";
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (widget.isMyProfile)
+                  IconButton(
+                    icon: const Icon(FontAwesomeIcons.ellipsisVertical, size: 16),
+                    onPressed: () {
+                      // Show options menu for editing/deleting
+                      _showScheduleOptions();
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.description,
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.black54,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  FontAwesomeIcons.clock,
+                  size: 14,
+                  color: Colors.black54,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _fmtDateTime(widget.dateTime),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: kPrimary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: kPrimary.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    FontAwesomeIcons.hourglassHalf,
+                    size: 12,
+                    color: kPrimary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _formatCountdown(),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: kPrimary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showScheduleOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(FontAwesomeIcons.pencil),
+                title: const Text('Edit Schedule'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Implement edit functionality
+                },
+              ),
+              ListTile(
+                leading: const Icon(FontAwesomeIcons.trash, color: Colors.red),
+                title: const Text('Delete Schedule', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Implement delete functionality
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 /* ---------------- COMPONENTS ---------------- */
 
 class _SectionCard extends StatelessWidget {
@@ -1010,6 +1296,13 @@ class _StatTile extends StatelessWidget {
 String _fmtDate(DateTime d) {
   final months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return "${months[d.month - 1]} ${d.day}, ${d.year}";
+}
+
+String _fmtDateTime(DateTime d) {
+  final months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final period = d.hour < 12 ? 'AM' : 'PM';
+  return "${months[d.month - 1]} ${d.day}, ${d.year} at $hour:${d.minute.toString().padLeft(2, '0')} $period";
 }
 
 String _shortNumber(int n) {
