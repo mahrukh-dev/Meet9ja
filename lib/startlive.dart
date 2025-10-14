@@ -2,7 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'livestream.dart';
+import 'livestream.dart'; // Assuming 'livestream.dart' exists for LiveStreamPage
 
 class StartLivePage extends StatefulWidget {
   const StartLivePage({super.key});
@@ -74,58 +74,60 @@ class _StartLivePageState extends State<StartLivePage>
 
   @override
   Widget build(BuildContext context) {
+    // The dark background color used in the images
+    const Color darkBackground = Color(0xFF333333);
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: darkBackground,
       appBar: AppBar(
-        backgroundColor: Colors.grey,
+        backgroundColor: darkBackground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         titleSpacing: 0,
-        leading: Icon(FontAwesomeIcons.arrowLeft),
+        leading: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.white),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🌸 Glassmorphic Tabs
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white24, width: 1.2),
+            // 🌸 Custom Tabs (Following, Live, Clips) - NOW WITH UNDERLINE INDICATOR
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: darkBackground,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.transparent),
+              ),
+              child: TabBar(
+                controller: _tab,
+                // 👇 MODIFIED: Use UnderlineTabIndicator for a line
+                indicator: const UnderlineTabIndicator(
+                  borderSide: BorderSide(
+                    width: 3.0,
+                    color: Colors.white, // White line
                   ),
-                  child: TabBar(
-                    controller: _tab,
-                    indicator: BoxDecoration(
-                      color: Colors.white.withOpacity(0.85),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    labelColor: Colors.black87,
-                    unselectedLabelColor: Colors.white,
-                    labelStyle: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                    ),
-                    unselectedLabelStyle: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    overlayColor: WidgetStateProperty.all(Colors.transparent),
-                    dividerColor: Colors.transparent, // Remove default divider
-                    splashFactory: NoSplash.splashFactory, // Remove splash effect
-                    padding: const EdgeInsets.all(6), // Add padding inside the container
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 8), // Space between label and tab edges
-                    tabs: const [
-                      Tab(text: "Following"),
-                      Tab(text: "Live"),
-                      Tab(text: "Clips"),
-                    ],
-                  ),
+                  insets: EdgeInsets.symmetric(horizontal: 20.0), // Control line length/position
                 ),
+                // 👇 MODIFIED: Both selected and unselected text colors are white
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white,
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18, // Increased font size slightly to match the image
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18, // Increased font size slightly to match the image
+                ),
+                indicatorSize: TabBarIndicatorSize.label, // Indicator only spans the text label
+                overlayColor: WidgetStateProperty.all(Colors.transparent),
+                dividerColor: Colors.transparent,
+                splashFactory: NoSplash.splashFactory,
+                padding: const EdgeInsets.all(6),
+                labelPadding: const EdgeInsets.symmetric(horizontal: 10),
+                tabs: const [
+                  Tab(text: "Following"),
+                  Tab(text: "Live"),
+                  Tab(text: "Clips"),
+                ],
               ),
             ),
           ],
@@ -134,20 +136,20 @@ class _StartLivePageState extends State<StartLivePage>
 
       // Body content
       body: Container(
-        color: Colors.grey,
+        color: darkBackground,
         child: TabBarView(
-
           controller: _tab,
-
           children: [
             _ReelsFeed(items: _followingReels),
             Column(
               children: [
                 const SizedBox(height: 8),
+                // Live Filters Bar maintains the white-selected box style
                 _LiveFiltersBar(
                   filters: _liveFilters,
                   selected: _liveFilterIndex,
                   onTap: (i) => setState(() => _liveFilterIndex = i),
+                  backgroundColor: darkBackground,
                 ),
                 const SizedBox(height: 8),
                 Expanded(
@@ -189,21 +191,21 @@ class _StartLivePageState extends State<StartLivePage>
         height: 58,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [ // Changed from const
+          children: [
             const _BottomItem(
                 icon: FontAwesomeIcons.house, label: "Home", selected: true),
             const _BottomItem(icon: FontAwesomeIcons.compass, label: "Browse"),
-            _BottomCreateButton( // 👈 Updated here with navigation logic
+            _BottomCreateButton(
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => LiveStreamPage(
-                      liveId: 'specific_live_id', // Provide specific live ID to join
+                      liveId: 'specific_live_id',
                       userId: 'audience_123',
                       userName: 'Viewer',
                       isHost: true,
-                    ), // Navigate to the new screen
+                    ),
                   ),
                 );
               },
@@ -227,20 +229,30 @@ class _StartLivePageState extends State<StartLivePage>
 }
 
 /* ----------------------- LIVE FILTER BAR ----------------------- */
+// This section remains the same as you requested the white-box style for the filters
 class _LiveFiltersBar extends StatelessWidget {
   const _LiveFiltersBar({
     required this.filters,
     required this.selected,
     required this.onTap,
+    required this.backgroundColor,
   });
 
   final List<String> filters;
   final int selected;
   final ValueChanged<int> onTap;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    // Define the colors based on the requested style
+    const Color selectedBgColor = Colors.white;
+    const Color unselectedBgColor = Color(0xFF333333); // Dark background
+    const Color selectedTextColor = Colors.black87;
+    const Color unselectedTextColor = Colors.white;
+
+    return Container(
+      color: backgroundColor,
       height: 42,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -253,13 +265,12 @@ class _LiveFiltersBar extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: sel
-                    ? StartLivePage.kPrimary.withOpacity(.10)
-                    : Colors.white,
+                // Use white for selected, dark for unselected
+                color: sel ? selectedBgColor : unselectedBgColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: sel ? StartLivePage.kPrimary : Colors.black12,
-                  width: sel ? 2 : 1,
+                  color: sel ? selectedBgColor : unselectedBgColor,
+                  width: 1,
                 ),
               ),
               child: Center(
@@ -267,7 +278,8 @@ class _LiveFiltersBar extends StatelessWidget {
                   filters[i],
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    color: sel ? StartLivePage.kPrimary : Colors.black87,
+                    // Use black for selected text, white for unselected text
+                    color: sel ? selectedTextColor : unselectedTextColor,
                   ),
                 ),
               ),

@@ -41,7 +41,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Inter',
       ),
       home: ZegoUIKitPrebuiltLiveStreamingMiniPopScope(
-        child: UserChannelScreen(),
+        child: StartLivePage(),
       ),
     );
   }
