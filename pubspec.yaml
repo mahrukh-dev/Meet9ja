@@ -71,5 +71,5 @@ flutter:
     - assets/images/bg2.jpg
     - assets/images/bg3.jpg
     - assets/images/bg4.jpg
-    - packages/zego_uikit_prebuilt_live_streaming/assets/
-    - packages/zego_uikit_prebuilt_live_streaming/assets/icons/
+#    - packages/zego_uikit_prebuilt_live_streaming/assets/
+#    - packages/zego_uikit_prebuilt_live_streaming/assets/icons/

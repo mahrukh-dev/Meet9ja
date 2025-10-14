@@ -237,7 +237,7 @@ class _SliverHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: isSmallScreen ? 240.0 : 260.0, // Reduced from 260/280
+      expandedHeight: isSmallScreen ? 22.0 : 220.0, // Reduced from 260/280
       pinned: true,
       backgroundColor: Colors.white,
       foregroundColor: Colors.black,
@@ -274,7 +274,7 @@ class _SliverHeader extends StatelessWidget {
               16,
               16,
               16,
-              12,
+              0,
             ), // Reduced bottom padding
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
