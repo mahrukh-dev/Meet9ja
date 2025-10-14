@@ -35,9 +35,9 @@ class _UserChannelScreenState extends State<UserChannelScreen>
   final String instagram = "@abdullah.ig";
 
   List<String> get _tabLabels {
-    final baseTabs = ["Live", "Clips", "About"];
+    final baseTabs = ["Home", "Clips", "About", "Schedules"];
     if (widget.isMyProfile) {
-      return ["Live", "Clips", "Wallet", "About"];
+      return ["Home", "Clips", "Wallet", "About", "Schedules"];
     }
     return baseTabs;
   }
