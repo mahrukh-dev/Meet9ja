@@ -41,17 +41,17 @@ class _UserChannelScreenState extends State<UserChannelScreen>
     {
       'title': 'Weekend Gaming Stream',
       'dateTime': DateTime.now().add(const Duration(days: 2, hours: 3)),
-      'description': 'Playing the new RPG release with viewers'
+      'description': 'Playing the new RPG release with viewers',
     },
     {
       'title': 'Q&A Session',
       'dateTime': DateTime.now().add(const Duration(days: 5, hours: 2)),
-      'description': 'Answering community questions'
+      'description': 'Answering community questions',
     },
     {
       'title': 'IRL Coding Stream',
       'dateTime': DateTime.now().add(const Duration(days: 7, hours: 4)),
-      'description': 'Building a new feature live'
+      'description': 'Building a new feature live',
     },
   ];
 
@@ -115,9 +115,7 @@ class _UserChannelScreenState extends State<UserChannelScreen>
                       fontWeight: FontWeight.w700,
                       fontSize: isSmallScreen ? 14 : 16,
                     ),
-                    tabs: _tabLabels.map((label) =>
-                        Tab(text: label)
-                    ).toList(),
+                    tabs: _tabLabels.map((label) => Tab(text: label)).toList(),
                   ),
                 ),
               ),
@@ -175,7 +173,7 @@ class _UserChannelScreenState extends State<UserChannelScreen>
       _schedules.add({
         'title': 'New Stream Event',
         'dateTime': DateTime.now().add(const Duration(days: 10, hours: 2)),
-        'description': 'Planning something special!'
+        'description': 'Planning something special!',
       });
     });
 
@@ -196,11 +194,12 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: Colors.white,
-      child: _tabBar,
-    );
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(color: Colors.white, child: _tabBar);
   }
 
   @override
@@ -238,7 +237,7 @@ class _SliverHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: isSmallScreen ? 260.0 : 280.0,
+      expandedHeight: isSmallScreen ? 240.0 : 260.0, // Reduced from 260/280
       pinned: true,
       backgroundColor: Colors.white,
       foregroundColor: Colors.black,
@@ -271,11 +270,15 @@ class _SliverHeader extends StatelessWidget {
         background: SafeArea(
           bottom: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              12,
+            ), // Reduced bottom padding
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Profile Header Row
                 Container(
                   padding: const EdgeInsets.only(left: 40),
                   child: Column(
@@ -284,8 +287,10 @@ class _SliverHeader extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           CircleAvatar(
-                            radius: isSmallScreen ? 30 : 36,
-                            backgroundImage: const NetworkImage("https://i.pravatar.cc/160?img=8"),
+                            radius: isSmallScreen ? 28 : 34, // Slightly reduced
+                            backgroundImage: const NetworkImage(
+                              "https://i.pravatar.cc/160?img=8",
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -297,7 +302,9 @@ class _SliverHeader extends StatelessWidget {
                                   style: TextStyle(
                                     fontWeight: FontWeight.w900,
                                     color: Colors.black,
-                                    fontSize: isSmallScreen ? 20 : 22,
+                                    fontSize: isSmallScreen
+                                        ? 18
+                                        : 20, // Slightly reduced
                                     height: 1.2,
                                   ),
                                   maxLines: 1,
@@ -307,7 +314,9 @@ class _SliverHeader extends StatelessWidget {
                                 Text(
                                   username,
                                   style: TextStyle(
-                                    fontSize: isSmallScreen ? 13 : 14,
+                                    fontSize: isSmallScreen
+                                        ? 12
+                                        : 13, // Slightly reduced
                                     color: Colors.black54,
                                   ),
                                   maxLines: 1,
@@ -318,14 +327,23 @@ class _SliverHeader extends StatelessWidget {
                           ),
                           if (isMyProfile)
                             Container(
-                              padding: const EdgeInsets.only(top:28),
+                              padding: const EdgeInsets.only(
+                                top: 24,
+                              ), // Reduced from 28
                               child: SizedBox(
-                                width: isSmallScreen ? 70 : 80,
+                                width: isSmallScreen
+                                    ? 65
+                                    : 75, // Slightly reduced
                                 child: OutlinedButton(
                                   onPressed: () {},
                                   style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                    side: const BorderSide(color: Colors.black12),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 6,
+                                    ), // Reduced padding
+                                    side: const BorderSide(
+                                      color: Colors.black12,
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
@@ -334,13 +352,18 @@ class _SliverHeader extends StatelessWidget {
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(FontAwesomeIcons.pencil, size: isSmallScreen ? 12 : 14),
+                                        Icon(
+                                          FontAwesomeIcons.pencil,
+                                          size: isSmallScreen ? 11 : 13,
+                                        ), // Slightly reduced
                                         const SizedBox(width: 4),
                                         Text(
                                           "Edit",
                                           style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: isSmallScreen ? 12 : 14
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: isSmallScreen
+                                                ? 11
+                                                : 13, // Slightly reduced
                                           ),
                                         ),
                                       ],
@@ -354,21 +377,20 @@ class _SliverHeader extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-
-                // Stats Row
+                const SizedBox(height: 12), // Reduced from 16
+                // Stats Row with reduced height
                 SizedBox(
-                  height: 80,
+                  height: 60, // Reduced from 80
                   child: Row(
                     children: [
                       Expanded(
                         child: _StatTile(label: "Followers", value: followers),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6), // Reduced from 8
                       Expanded(
                         child: _StatTile(label: "Following", value: following),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6), // Reduced from 8
                       Expanded(
                         child: _StatTile(label: "Subs", value: subscribers),
                       ),
@@ -376,8 +398,8 @@ class _SliverHeader extends StatelessWidget {
                   ),
                 ),
 
-                // Action Buttons
-                const SizedBox(height: 8),
+                // Action Buttons - reduced spacing
+                const SizedBox(height: 6), // Reduced from 8
                 if (isMyProfile)
                   _buildMyProfileActions()
                 else
@@ -396,13 +418,21 @@ class _SliverHeader extends StatelessWidget {
         Expanded(
           child: OutlinedButton.icon(
             onPressed: () {},
-            icon: const Icon(FontAwesomeIcons.userGroup, size: 14),
+            icon: const Icon(
+              FontAwesomeIcons.userGroup,
+              size: 13,
+            ), // Slightly reduced
             label: const Text(
               "Manage Subs",
-              style: TextStyle(fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ), // Slightly reduced
             ),
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                vertical: 10,
+              ), // Reduced from 12
               side: const BorderSide(color: Colors.black12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -410,17 +440,25 @@ class _SliverHeader extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6), // Reduced from 8
         Expanded(
           child: OutlinedButton.icon(
             onPressed: () {},
-            icon: const Icon(FontAwesomeIcons.shareFromSquare, size: 14),
+            icon: const Icon(
+              FontAwesomeIcons.shareFromSquare,
+              size: 13,
+            ), // Slightly reduced
             label: const Text(
               "Share",
-              style: TextStyle(fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ), // Slightly reduced
             ),
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                vertical: 10,
+              ), // Reduced from 12
               side: const BorderSide(color: Colors.black12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -444,7 +482,7 @@ class _SliverHeader extends StatelessWidget {
             onPressed: () {},
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6), // Reduced from 8
         Expanded(
           child: _ActionButton(
             label: "Message",
@@ -452,9 +490,9 @@ class _SliverHeader extends StatelessWidget {
             onPressed: () {},
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6), // Reduced from 8
         SizedBox(
-          width: 80,
+          width: 75, // Reduced from 80
           child: _ActionButton(
             label: "Gift",
             icon: FontAwesomeIcons.solidGem,
@@ -489,16 +527,19 @@ class _ActionButton extends StatelessWidget {
         foregroundColor: textColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 6,
+          vertical: 10,
+        ), // Reduced padding
       ),
       onPressed: onPressed,
-      icon: Icon(icon, size: 14),
+      icon: Icon(icon, size: 13), // Slightly reduced
       label: Text(
         label,
         style: TextStyle(
           fontWeight: FontWeight.w800,
           color: textColor,
-          fontSize: 14,
+          fontSize: 13, // Slightly reduced
         ),
       ),
     );
@@ -520,7 +561,11 @@ class _LiveTab extends StatelessWidget {
           SizedBox(height: 16),
           Text(
             "User is currently not live.",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black54),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
           ),
           SizedBox(height: 8),
           Text(
@@ -563,7 +608,11 @@ class _ClipsTab extends StatelessWidget {
                 colorBlendMode: BlendMode.darken,
               ),
               const Center(
-                child: Icon(FontAwesomeIcons.play, color: Colors.white, size: 24),
+                child: Icon(
+                  FontAwesomeIcons.play,
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
               Positioned(
                 bottom: 4,
@@ -603,12 +652,12 @@ class _WalletTab extends StatelessWidget {
       ),
       child: ListTile(
         onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leading: Icon(icon, color: iconColor, size: 24),
-        title: Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w800)
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
+        leading: Icon(icon, color: iconColor, size: 24),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -616,10 +665,13 @@ class _WalletTab extends StatelessWidget {
               value,
               style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
             ),
+            if (onTap != null) const SizedBox(width: 8),
             if (onTap != null)
-              const SizedBox(width: 8),
-            if (onTap != null)
-              const Icon(FontAwesomeIcons.chevronRight, size: 14, color: Colors.black54),
+              const Icon(
+                FontAwesomeIcons.chevronRight,
+                size: 14,
+                color: Colors.black54,
+              ),
           ],
         ),
       ),
@@ -636,8 +688,8 @@ class _WalletTab extends StatelessWidget {
           Text(
             "Current Balance",
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-                fontSize: 18
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
             ),
           ),
           const SizedBox(height: 12),
@@ -652,8 +704,8 @@ class _WalletTab extends StatelessWidget {
           Text(
             "Actions",
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-                fontSize: 18
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
             ),
           ),
           const SizedBox(height: 12),
@@ -838,14 +890,12 @@ class _SchedulesTab extends StatelessWidget {
       backgroundColor: Colors.white,
       floatingActionButton: isMyProfile
           ? FloatingActionButton(
-        onPressed: onAddSchedule,
-        backgroundColor: kPrimary,
-        child: const Icon(FontAwesomeIcons.plus, color: Colors.white),
-      )
+              onPressed: onAddSchedule,
+              backgroundColor: kPrimary,
+              child: const Icon(FontAwesomeIcons.plus, color: Colors.white),
+            )
           : null,
-      body: schedules.isEmpty
-          ? _buildEmptyState()
-          : _buildSchedulesList(),
+      body: schedules.isEmpty ? _buildEmptyState() : _buildSchedulesList(),
     );
   }
 
@@ -873,10 +923,7 @@ class _SchedulesTab extends StatelessWidget {
             isMyProfile
                 ? "Tap the + button to add your first schedule!"
                 : "Check back later for upcoming streams.",
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.black45,
-            ),
+            style: const TextStyle(fontSize: 14, color: Colors.black45),
             textAlign: TextAlign.center,
           ),
         ],
@@ -996,7 +1043,10 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                 ),
                 if (widget.isMyProfile)
                   IconButton(
-                    icon: const Icon(FontAwesomeIcons.ellipsisVertical, size: 16),
+                    icon: const Icon(
+                      FontAwesomeIcons.ellipsisVertical,
+                      size: 16,
+                    ),
                     onPressed: () {
                       // Show options menu for editing/deleting
                       _showScheduleOptions();
@@ -1016,11 +1066,7 @@ class _ScheduleCardState extends State<_ScheduleCard> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Icon(
-                  FontAwesomeIcons.clock,
-                  size: 14,
-                  color: Colors.black54,
-                ),
+                Icon(FontAwesomeIcons.clock, size: 14, color: Colors.black54),
                 const SizedBox(width: 6),
                 Text(
                   _fmtDateTime(widget.dateTime),
@@ -1084,7 +1130,10 @@ class _ScheduleCardState extends State<_ScheduleCard> {
               ),
               ListTile(
                 leading: const Icon(FontAwesomeIcons.trash, color: Colors.red),
-                title: const Text('Delete Schedule', style: TextStyle(color: Colors.red)),
+                title: const Text(
+                  'Delete Schedule',
+                  style: TextStyle(color: Colors.red),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   // Implement delete functionality
@@ -1118,7 +1167,7 @@ class _SectionCard extends StatelessWidget {
             color: Colors.black.withOpacity(0.08),
             blurRadius: 8,
             offset: const Offset(0, 2),
-          )
+          ),
         ],
         border: Border.all(color: Colors.grey.shade200),
       ),
@@ -1234,8 +1283,11 @@ class _SettingRow extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(FontAwesomeIcons.chevronRight,
-                color: Colors.black45, size: 14),
+            const Icon(
+              FontAwesomeIcons.chevronRight,
+              color: Colors.black45,
+              size: 14,
+            ),
           ],
         ),
       ),
@@ -1251,7 +1303,7 @@ class _StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -1260,7 +1312,7 @@ class _StatTile extends StatelessWidget {
             color: Colors.black.withOpacity(0.08),
             blurRadius: 8,
             offset: const Offset(0, 2),
-          )
+          ),
         ],
         border: Border.all(color: Colors.grey.shade200),
       ),
@@ -1294,12 +1346,38 @@ class _StatTile extends StatelessWidget {
 /* ---------------- HELPER FUNCTIONS ---------------- */
 
 String _fmtDate(DateTime d) {
-  final months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  final months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   return "${months[d.month - 1]} ${d.day}, ${d.year}";
 }
 
 String _fmtDateTime(DateTime d) {
-  final months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  final months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
   final period = d.hour < 12 ? 'AM' : 'PM';
   return "${months[d.month - 1]} ${d.day}, ${d.year} at $hour:${d.minute.toString().padLeft(2, '0')} $period";
