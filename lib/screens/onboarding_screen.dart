@@ -2,6 +2,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import '../constants/app_colors.dart';
 import 'auth_screen.dart';
 
 class OnboardingPage extends StatefulWidget {
@@ -77,7 +78,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           const Spacer(),
                           TextButton(
                             style: TextButton.styleFrom(
-                              foregroundColor: _AppColors.primary,
+                              foregroundColor: AppColors.primary,
                               textStyle: const TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 16,
@@ -132,7 +133,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                                   child: Icon(
                                     data.icon,
                                     size: 96,
-                                    color: _AppColors.primary,
+                                    color: AppColors.primary,
                                   ),
                                 ),
                                 const SizedBox(height: 28),
@@ -195,10 +196,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           width: double.infinity,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _AppColors.primary,
+                              backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
                               elevation: 8,
-                              shadowColor: _AppColors.primary.withOpacity(0.35),
+                              shadowColor: AppColors.primary.withOpacity(0.35),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
@@ -249,8 +250,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
       width: isActive ? 26 : 10,
       decoration: BoxDecoration(
         color: isActive
-            ? _AppColors.primary
-            : _AppColors.primary.withOpacity(0.25),
+            ? AppColors.primary
+            : AppColors.primary.withOpacity(0.25),
         borderRadius: BorderRadius.circular(12),
       ),
     );
@@ -311,11 +312,6 @@ class _FadeSlideState extends State<_FadeSlide>
       child: FadeTransition(opacity: _opacity, child: widget.child),
     );
   }
-}
-
-// brand colors
-class _AppColors {
-  static const primary = Color(0xFFE43AA8);
 }
 
 // data class

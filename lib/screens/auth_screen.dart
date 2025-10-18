@@ -3,12 +3,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
+import '../constants/app_colors.dart';
 import 'sign_up_screen.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
-
-  static const Color kPrimary = Color(0xFFE43AA8);
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -220,7 +219,7 @@ class _AuthPageState extends State<AuthPage>
                                 ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.white,
-                                  foregroundColor: AuthPage.kPrimary,
+                                  foregroundColor: AppColors.primary,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14),
                                   ),

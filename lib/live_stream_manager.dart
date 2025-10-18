@@ -6,7 +6,6 @@ class LiveStreamManager {
   factory LiveStreamManager() => _instance;
   LiveStreamManager._internal();
 
-  // ZegoCloud credentials - Replace with your actual credentials
   final int appID = 1234567890; // Replace with your actual ZegoCloud App ID
   final String appSign = 'your_app_sign_here'; // Replace with your actual ZegoCloud App Sign
 

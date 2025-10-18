@@ -1,12 +1,11 @@
-// lib/messages.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/profile.dart';
-
 import 'screens/discover_screen.dart';
+import 'constants/app_colors.dart';
 import 'conversation.dart';
-import 'screens/home_screen.dart'; // <<< Font Awesome Import
+import 'screens/home_screen.dart';
 
 
 class MessagesScreen extends StatefulWidget {
@@ -98,7 +97,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 borderSide: BorderSide.none,
               ),
               suffixIcon: IconButton(
-                icon: Icon(FontAwesomeIcons.multiply, color: HomeScreen.kPrimary),
+                icon: Icon(FontAwesomeIcons.multiply, color: AppColors.primary),
                 onPressed: () {
                   _searchController.clear();
                   // Optionally filter results here
@@ -166,7 +165,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         // Search icon is already FA
                         icon: const FaIcon(
                           FontAwesomeIcons.magnifyingGlass,
-                          color: HomeScreen.kPrimary,
+                          color: AppColors.primary,
                           size: 20,
                         ),
                         onPressed: () {
@@ -268,8 +267,8 @@ class _StoryCircle extends StatelessWidget {
             shape: BoxShape.circle,
             gradient: LinearGradient(
               colors: isYou
-                  ? [HomeScreen.kPrimary.withOpacity(0.35), Colors.white]
-                  : [HomeScreen.kPrimary, const Color(0xFFFFC107)],
+                  ? [AppColors.primary.withOpacity(0.35), Colors.white]
+                  : [AppColors.primary, const Color(0xFFFFC107)],
             ),
           ),
           child: CircleAvatar(
@@ -319,7 +318,7 @@ class _ChatTile extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: HomeScreen.kPrimary,
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -454,7 +453,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         : Alignment.centerRight;
                     final bg = m.other
                         ? Colors.white
-                        : HomeScreen.kPrimary.withOpacity(0.12);
+                        : AppColors.primary.withOpacity(0.12);
                     final fg = m.other ? Colors.black87 : Colors.black87;
                     return Align(
                       alignment: align,
@@ -521,7 +520,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     const SizedBox(width: 8),
                     Material(
-                      color: HomeScreen.kPrimary,
+                      color: AppColors.primary,
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
@@ -621,7 +620,7 @@ class _BottomNav extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
                 decoration: BoxDecoration(
                   color: selected
-                      ? HomeScreen.kPrimary.withOpacity(0.08)
+                      ? AppColors.primary.withOpacity(0.08)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -632,7 +631,7 @@ class _BottomNav extends StatelessWidget {
                     FaIcon(
                       icons[i],
                       size: selected ? 26 : 24,
-                      color: selected ? HomeScreen.kPrimary : Colors.black54,
+                      color: selected ? AppColors.primary : Colors.black54,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -646,7 +645,7 @@ class _BottomNav extends StatelessWidget {
                             ? FontWeight.w800
                             : FontWeight.w600,
                         color: selected
-                            ? HomeScreen.kPrimary
+                            ? AppColors.primary
                             : Colors.black54,
                       ),
                     ),

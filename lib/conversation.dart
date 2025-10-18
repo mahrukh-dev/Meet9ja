@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'constants/app_colors.dart';
 import 'screens/home_screen.dart';
 
 
@@ -109,7 +110,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               ListTile(
-                leading: const Icon(CupertinoIcons.camera_fill, color: HomeScreen.kPrimary),
+                leading: const Icon(CupertinoIcons.camera_fill, color: AppColors.primary),
                 title: const Text('Take Photo'),
                 onTap: () {
                   Navigator.pop(context);
@@ -117,7 +118,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(CupertinoIcons.photo_fill, color: HomeScreen.kPrimary),
+                leading: const Icon(CupertinoIcons.photo_fill, color: AppColors.primary),
                 title: const Text('Photo Library'),
                 onTap: () {
                   Navigator.pop(context);
@@ -153,9 +154,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   // --- Message Bubble Content Builder ---
 
   Widget _buildMessageContent(Map<String, dynamic> m, bool other) {
-    final primaryColor = HomeScreen.kPrimary;
-    // Determine the color for the icon/text inside the VN bubble
-    final contentColor = other ? primaryColor : Colors.black87;
+    final contentColor = other ? AppColors.primary : Colors.black87;
 
     switch (m['type']) {
       case 'image':
@@ -238,8 +237,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = HomeScreen.kPrimary;
-
     return Scaffold(
       body: Container(
         color: Colors.white,
@@ -292,7 +289,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     final bool other = m['other'] as bool;
                     final align = other ? Alignment.centerLeft : Alignment.centerRight;
 
-                    final bg = other ? Colors.white : primaryColor.withOpacity(0.12);
+                    final bg = other ? Colors.white : AppColors.primary.withOpacity(0.12);
 
                     final isMedia = m['type'] != 'text';
                     final padding = isMedia
@@ -339,7 +336,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                         padding: const EdgeInsets.all(8.0),
                         child: Icon(
                           CupertinoIcons.add_circled_solid,
-                          color: primaryColor,
+                          color: AppColors.primary,
                           size: 28,
                         ),
                       ),
@@ -386,7 +383,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                           ? null // Disable tap if recording or if text field is empty
                           : () => _send(text: _ctrl.text),
                       child: Material(
-                        color: primaryColor,
+                        color: AppColors.primary,
                         shape: const CircleBorder(),
                         child: Padding(
                           padding: const EdgeInsets.all(12),

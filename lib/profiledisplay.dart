@@ -1,15 +1,13 @@
-// lib/profiledisplay.dart
 import 'package:flutter/material.dart';
 
 class ProfileDisplay extends StatelessWidget {
   const ProfileDisplay({
     super.key,
-    // Required basics
     required this.name,
     required this.age,
     required this.job,
     required this.edu,
-    required this.image, // primary/hero image
+    required this.image,
     required this.isAsset,
     required this.verified,
     required this.newHere,

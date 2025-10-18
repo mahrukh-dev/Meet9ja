@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Font Awesome
 
 // navigate targets
-import 'screens/discover_screen.dart'; // DiscoverScreen (feed style)
+import 'constants/app_colors.dart';
+import 'discover.dart'; // DiscoverScreen (feed style)
+import 'screens/discover_screen.dart' hide DiscoverScreen; // DiscoverScreen (feed style)
 import 'screens/home_screen.dart'; // DiscoverPage   (swipe cards)
 import 'user_channel.dart'; // ⬅️ NEW: My Profile (followers/following/subscribers + clips)
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
-  static const Color kPrimary = Color(0xFFE43AA8);
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -224,7 +225,7 @@ class _PayPlanTab extends StatelessWidget {
         // Premium banner (pink) + My Profile button (right side)
         Container(
           decoration: BoxDecoration(
-            color: ProfileScreen.kPrimary, // pink background
+            color: AppColors.primary,
             borderRadius: BorderRadius.circular(16),
             boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
           ),
@@ -275,7 +276,7 @@ class _PayPlanTab extends StatelessWidget {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
-                  foregroundColor: ProfileScreen.kPrimary,
+                  foregroundColor: AppColors.primary,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -348,7 +349,7 @@ class _FeatureCard extends StatelessWidget {
             ),
             child: const Icon(
               FontAwesomeIcons.star, // ⭐ Replaced Icons.star
-              color: ProfileScreen.kPrimary,
+              color: AppColors.primary,
               size: 18,
             ),
           ),
@@ -817,7 +818,7 @@ class _BottomNav extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
                 decoration: BoxDecoration(
                   color: selected
-                      ? ProfileScreen.kPrimary.withOpacity(0.08)
+                      ? AppColors.primary.withOpacity(0.08)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -827,7 +828,7 @@ class _BottomNav extends StatelessWidget {
                     Icon(
                       selected ? icons[i] : unselectedIcons[i],
                       size: selected ? 24 : 22, // Adjusted size for FA icons
-                      color: selected ? ProfileScreen.kPrimary : Colors.black54,
+                      color: selected ? AppColors.primary : Colors.black54,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -841,7 +842,7 @@ class _BottomNav extends StatelessWidget {
                             ? FontWeight.w800
                             : FontWeight.w600,
                         color: selected
-                            ? ProfileScreen.kPrimary
+                            ? AppColors.primary
                             : Colors.black54,
                       ),
                     ),
