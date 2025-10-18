@@ -3,15 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 // Import Font Awesome
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../constants/app_colors.dart';
 import 'home_screen.dart';
 
 class HomeScreenFilters extends StatefulWidget {
   const HomeScreenFilters({super.key});
-
-  static const kPrimary = Color(0xFFE43AA8);
-  static const kGradA = Color(0xFFFDF2F8);
-  static const kGradB = Color(0xFFF8EAFE);
-  static const kGradC = Color(0xFFFFF7FB);
 
   @override
   State<HomeScreenFilters> createState() => _HomeScreenFiltersState();
@@ -68,7 +64,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [HomeScreenFilters.kGradA, HomeScreenFilters.kGradB, HomeScreenFilters.kGradC],
+            colors: [AppColors.kGradA, AppColors.kGradB, AppColors.kGradC],
           ),
         ),
         child: CustomPaint(
@@ -166,7 +162,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                       Expanded(
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: HomeScreenFilters.kPrimary,
+                            backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -238,7 +234,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                   min: 18,
                   max: 60,
                   divisions: 42,
-                  activeColor: HomeScreenFilters.kPrimary,
+                  activeColor: AppColors.primary,
                   onChanged: (v) => setState(() => age = v),
                 ),
                 const SizedBox(height: 4),
@@ -340,7 +336,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                   min: 140,
                   max: 200,
                   divisions: 60,
-                  activeColor: HomeScreenFilters.kPrimary,
+                  activeColor: AppColors.primary,
                   onChanged: (v) => setState(() => heightCm = v),
                 ),
                 _SwitchLine(
@@ -363,7 +359,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                     value: it.checked,
                     onChanged: (v) => setState(() => it.checked = v ?? false),
                     title: Text(it.label),
-                    activeColor: HomeScreenFilters.kPrimary,
+                    activeColor: AppColors.primary,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 6),
                     controlAffinity: ListTileControlAffinity.trailing,
                   ),
@@ -415,7 +411,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                       ? const Icon(
                     FontAwesomeIcons.check,
                     size: 16,
-                    color: HomeScreenFilters.kPrimary,
+                    color: AppColors.primary,
                   )
                       : null,
                   onTap: () {
@@ -471,7 +467,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                       ? const Icon(
                     FontAwesomeIcons.check,
                     size: 16,
-                    color: HomeScreenFilters.kPrimary,
+                    color: AppColors.primary,
                   )
                       : null,
                   onTap: () {
@@ -548,7 +544,7 @@ class _Segmented extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? HomeScreenFilters.kPrimary : Colors.transparent,
+            color: selected ? AppColors.primary : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Center(
@@ -664,7 +660,7 @@ class _SwitchLine extends StatelessWidget {
         ),
         Switch.adaptive(
           value: value,
-          activeColor: HomeScreenFilters.kPrimary,
+          activeColor: AppColors.primary,
           onChanged: onChanged,
         ),
       ],
@@ -694,7 +690,7 @@ class _InterestChip extends StatelessWidget {
       ),
       selected: selected,
       onSelected: (_) => onTap(),
-      selectedColor: HomeScreenFilters.kPrimary,
+      selectedColor: AppColors.primary,
       backgroundColor: Colors.white,
       side: BorderSide(color: Colors.black12.withOpacity(0.5)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),

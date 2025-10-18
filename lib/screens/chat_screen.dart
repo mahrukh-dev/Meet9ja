@@ -1,23 +1,24 @@
-// lib/chat_screen.dart
+// lib/conversation.dart
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'home_screen.dart';
+import 'constants/app_colors.dart';
+import 'screens/home_screen.dart';
 
 
 // DEFINE A MOCK ENUM TO REPLACE ImageSource, since the package isn't imported
 enum MockImageSource { camera, gallery }
 
 
-class ChatScreen extends StatefulWidget {
+class ConversationScreen extends StatefulWidget {
   final String name;
   final String avatar;
 
   /// messages: List of maps: { 'other': bool, 'text': String, 'type': 'text'/'image'/'vn' }
   final List<Map<String, dynamic>> messages;
 
-  const ChatScreen({
+  const ConversationScreen({
     super.key,
     required this.name,
     required this.avatar,
@@ -25,10 +26,10 @@ class ChatScreen extends StatefulWidget {
   });
 
   @override
-  State<ChatScreen> createState() => _ChatState();
+  State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
-class _ChatState extends State<ChatScreen> {
+class _ConversationScreenState extends State<ConversationScreen> {
   late List<Map<String, dynamic>> msgs;
   final TextEditingController _ctrl = TextEditingController();
 
@@ -109,7 +110,7 @@ class _ChatState extends State<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               ListTile(
-                leading: const Icon(CupertinoIcons.camera_fill, color: HomeScreen.kPrimary),
+                leading: const Icon(CupertinoIcons.camera_fill, color: AppColors.primary),
                 title: const Text('Take Photo'),
                 onTap: () {
                   Navigator.pop(context);
@@ -117,7 +118,7 @@ class _ChatState extends State<ChatScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(CupertinoIcons.photo_fill, color: HomeScreen.kPrimary),
+                leading: const Icon(CupertinoIcons.photo_fill, color: AppColors.primary),
                 title: const Text('Photo Library'),
                 onTap: () {
                   Navigator.pop(context);
@@ -153,9 +154,7 @@ class _ChatState extends State<ChatScreen> {
   // --- Message Bubble Content Builder ---
 
   Widget _buildMessageContent(Map<String, dynamic> m, bool other) {
-    final primaryColor = HomeScreen.kPrimary;
-    // Determine the color for the icon/text inside the VN bubble
-    final contentColor = other ? primaryColor : Colors.black87;
+    final contentColor = other ? AppColors.primary : Colors.black87;
 
     switch (m['type']) {
       case 'image':
@@ -238,8 +237,6 @@ class _ChatState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = HomeScreen.kPrimary;
-
     return Scaffold(
       body: Container(
         color: Colors.white,
@@ -292,7 +289,7 @@ class _ChatState extends State<ChatScreen> {
                     final bool other = m['other'] as bool;
                     final align = other ? Alignment.centerLeft : Alignment.centerRight;
 
-                    final bg = other ? Colors.white : primaryColor.withOpacity(0.12);
+                    final bg = other ? Colors.white : AppColors.primary.withOpacity(0.12);
 
                     final isMedia = m['type'] != 'text';
                     final padding = isMedia
@@ -339,7 +336,7 @@ class _ChatState extends State<ChatScreen> {
                         padding: const EdgeInsets.all(8.0),
                         child: Icon(
                           CupertinoIcons.add_circled_solid,
-                          color: primaryColor,
+                          color: AppColors.primary,
                           size: 28,
                         ),
                       ),
@@ -386,7 +383,7 @@ class _ChatState extends State<ChatScreen> {
                           ? null // Disable tap if recording or if text field is empty
                           : () => _send(text: _ctrl.text),
                       child: Material(
-                        color: primaryColor,
+                        color: AppColors.primary,
                         shape: const CircleBorder(),
                         child: Padding(
                           padding: const EdgeInsets.all(12),

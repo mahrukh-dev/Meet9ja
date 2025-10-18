@@ -1,21 +1,17 @@
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'constants/app_colors.dart';
 import 'screens/home_screen.dart';
 
 class SelfieOnboardingPage extends StatefulWidget {
   const SelfieOnboardingPage({super.key});
-
-  // Brand magenta
-  static const Color kPrimary = Color(0xFFE43AA8);
-
   @override
   State<SelfieOnboardingPage> createState() => _SelfieOnboardingPageState();
 }
 
 class _SelfieOnboardingPageState extends State<SelfieOnboardingPage>
     with TickerProviderStateMixin {
-  // Animations (background controller removed)
   late final AnimationController _floatCtrl; // gentle float for icon
   late final AnimationController _pulseCtrl; // pulsing rings behind icon
   late final AnimationController _introCtrl; // initial fade/slide in
@@ -141,7 +137,7 @@ class _SelfieOnboardingPageState extends State<SelfieOnboardingPage>
                               Icon(
                                 CupertinoIcons.camera,
                                 size: 148,
-                                color: SelfieOnboardingPage.kPrimary,
+                                color: AppColors.primary,
                               ),
                             ],
                           ),
@@ -175,13 +171,13 @@ class _SelfieOnboardingPageState extends State<SelfieOnboardingPage>
                       height: 56,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: SelfieOnboardingPage.kPrimary,
+                          backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(28),
                           ),
                           elevation: 8,
-                          shadowColor: SelfieOnboardingPage.kPrimary
+                          shadowColor: AppColors.primary
                               .withOpacity(0.45),
                         ),
                         onPressed: () async {
@@ -257,7 +253,7 @@ class _PulseRings extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
-            color: SelfieOnboardingPage.kPrimary.withOpacity(opacity),
+            color: AppColors.primary.withOpacity(opacity),
             width: 2,
           ),
         ),
@@ -278,12 +274,12 @@ class _Dot extends StatelessWidget {
       width: active ? 12 : 8,
       height: active ? 12 : 8,
       decoration: BoxDecoration(
-        color: active ? SelfieOnboardingPage.kPrimary : Colors.black26,
+        color: active ? AppColors.primary : Colors.black26,
         shape: BoxShape.circle,
         boxShadow: active
             ? [
                 BoxShadow(
-                  color: SelfieOnboardingPage.kPrimary.withOpacity(0.45),
+                  color: AppColors.primary.withOpacity(0.45),
                   blurRadius: 10,
                   spreadRadius: 1.5,
                 ),

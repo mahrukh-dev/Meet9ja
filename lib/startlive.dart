@@ -2,13 +2,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'constants/app_colors.dart';
 import 'livestream.dart'; // Assuming 'livestream.dart' exists for LiveStreamPage
 
 class StartLivePage extends StatefulWidget {
   const StartLivePage({super.key});
-
-  static const Color kPrimary = Color(0xFFE43AA8);
-
   @override
   State<StartLivePage> createState() => _StartLivePageState();
 }
@@ -597,14 +595,14 @@ class _BottomItem extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(icon,
-            color: selected ? StartLivePage.kPrimary : Colors.black87, size: 20),
+            color: selected ? AppColors.primary : Colors.black87, size: 20),
         const SizedBox(height: 4),
         Text(
           label,
           style: TextStyle(
             fontWeight: FontWeight.w800,
             fontSize: 11,
-            color: selected ? StartLivePage.kPrimary : Colors.black87,
+            color: selected ? AppColors.primary : Colors.black87,
           ),
         ),
       ],
@@ -625,11 +623,11 @@ class _BottomCreateButton extends StatelessWidget {
         width: 52,
         height: 36,
         decoration: BoxDecoration(
-          color: StartLivePage.kPrimary,
+          color: AppColors.primary,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: StartLivePage.kPrimary.withOpacity(.35),
+              color: AppColors.primary.withOpacity(.35),
               blurRadius: 16,
               spreadRadius: 1,
             ),

@@ -2,11 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'constants/app_colors.dart';
+
 class SubscriptionPage extends StatelessWidget {
   const SubscriptionPage({super.key});
-
-  static const Color kPrimary = Color(0xFFE43AA8);
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -29,7 +28,7 @@ class SubscriptionPage extends StatelessWidget {
             children: [
               const Icon(
                 FontAwesomeIcons.crown,
-                color: kPrimary,
+                color: AppColors.primary,
                 size: 80,
               ),
               const SizedBox(height: 16),
@@ -86,12 +85,12 @@ class SubscriptionPage extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: const Text('🎉 Premium Activated!'),
-                      backgroundColor: kPrimary,
+                      backgroundColor: AppColors.primary,
                     ),
                   );
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: kPrimary,
+                  backgroundColor: AppColors.primary,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -146,12 +145,12 @@ class _FeatureTile extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: SubscriptionPage.kPrimary.withOpacity(0.1),
+              color: AppColors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               icon,
-              color: SubscriptionPage.kPrimary,
+              color: AppColors.primary,
               size: 20,
             ),
           ),

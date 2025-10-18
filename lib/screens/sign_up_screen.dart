@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/selfie_onboarding.dart';
 
+import '../constants/app_colors.dart';
 import '../db_functions/firebase_service.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -15,7 +16,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final PageController _page = PageController();
   int _step = 0;
 
-  // Form state with default values for testing
   final TextEditingController _nameCtrl = TextEditingController(text: "John");
   final TextEditingController _emailCtrl = TextEditingController(text: "test@example.com");
   final TextEditingController _passwordCtrl = TextEditingController(text: "123456");
@@ -23,7 +23,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
 
-  static const Color kPrimary = Color(0xFFE43AA8);
   static const double kSide = 20.0;
 
   @override
@@ -166,7 +165,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     child: _ProgressLine(
                       progress: (_step + 1) / 4.0,
                       trackColor: Colors.black12,
-                      barColor: kPrimary,
+                      barColor: AppColors.primary,
                     ),
                   ),
 
@@ -205,7 +204,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 bottom: 24,
                 child: FloatingActionButton(
                   onPressed: _next,
-                  backgroundColor: kPrimary,
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   elevation: 2,
                   shape: const CircleBorder(),
@@ -493,7 +492,7 @@ class _PinkField extends StatelessWidget {
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white70),
         filled: true,
-        fillColor: _SignUpScreenState.kPrimary,
+        fillColor:AppColors.primary,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
@@ -514,14 +513,14 @@ class _PhotoTile extends StatelessWidget {
 
   factory _PhotoTile.add({VoidCallback? onTap}) {
     return _PhotoTile._(
-      const Icon(CupertinoIcons.add, size: 42, color: _SignUpScreenState.kPrimary),
+      const Icon(CupertinoIcons.add, size: 42, color:AppColors.primary),
       onTap: onTap,
     );
   }
 
   factory _PhotoTile.sample() {
     return const _PhotoTile._(
-      Icon(CupertinoIcons.photo, size: 38, color: _SignUpScreenState.kPrimary),
+      Icon(CupertinoIcons.photo, size: 38, color:AppColors.primary),
     );
   }
 
@@ -556,7 +555,7 @@ class _SelectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pink = _SignUpScreenState.kPrimary;
+    final pink = AppColors.primary;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
@@ -618,7 +617,7 @@ class _RadioCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pink = _SignUpScreenState.kPrimary;
+    final pink = AppColors.primary;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,

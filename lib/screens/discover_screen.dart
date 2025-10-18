@@ -3,13 +3,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 // Note: Ensure 'home_screen_filters.dart' and 'home_screen.dart' exist or remove these imports.
+import '../constants/app_colors.dart';
 import 'home_screen_filters.dart';
 import 'home_screen.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
-  static const Color kPrimary = Color(0xFFE43AA8);
-
   @override
   State<DiscoverScreen> createState() => _DiscoverScreenState();
 }
@@ -160,7 +159,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     IconButton(
                       icon: const Icon(
                         FontAwesomeIcons.sliders, // Filter icon (sliders)
-                        color: DiscoverScreen.kPrimary,
+                        color: AppColors.primary,
                       ),
                       onPressed: () {
                         Navigator.push(
@@ -242,13 +241,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                               : FontAwesomeIcons.bellSlash, // notifications_none_rounded
                           size: 18,
                           color: _travelAlertsOn
-                              ? DiscoverScreen.kPrimary
+                              ? AppColors.primary
                               : Colors.black45,
                         ),
                         const SizedBox(width: 6),
                         Switch.adaptive(
                           value: _travelAlertsOn,
-                          activeColor: DiscoverScreen.kPrimary,
+                          activeColor: AppColors.primary,
                           onChanged: (v) {
                             setState(() => _travelAlertsOn = v);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -462,7 +461,7 @@ class _PopularProfilesStrip extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border:
-                  Border.all(color: DiscoverScreen.kPrimary, width: 3),
+                  Border.all(color: AppColors.primary, width: 3),
                   image: DecorationImage(
                     image: NetworkImage(p.image),
                     fit: BoxFit.cover,
@@ -786,7 +785,7 @@ class _BigCard extends StatelessWidget {
                     onPressed: onLike,
                     icon: Icon(
                       liked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart, // Heart icons
-                      color: liked ? DiscoverScreen.kPrimary : Colors.white,
+                      color: liked ? AppColors.primary : Colors.white,
                     ),
                   ),
                 ],
@@ -907,7 +906,7 @@ class _SmallCardsGrid extends StatelessWidget {
                 bottom: 8,
                 child: _circleBtn(
                   icon: likedNow ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart, // Heart icons
-                  color: likedNow ? DiscoverScreen.kPrimary : Colors.white,
+                  color: likedNow ? AppColors.primary : Colors.white,
                   onTap: () => onLikeToggle(p.id),
                 ),
               ),
@@ -1014,7 +1013,7 @@ class _BottomNav extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 decoration: BoxDecoration(
                   color: selected
-                      ? HomeScreen.kPrimary.withOpacity(0.08)
+                      ? AppColors.primary.withOpacity(0.08)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -1025,7 +1024,7 @@ class _BottomNav extends StatelessWidget {
                       icons[i],
                       size: selected ? 24 : 22, // Adjusted size for FA icons
                       color: selected
-                          ? HomeScreen.kPrimary
+                          ? AppColors.primary
                           : Colors.black54,
                     ),
                     const SizedBox(height: 4),
@@ -1038,7 +1037,7 @@ class _BottomNav extends StatelessWidget {
                             ? FontWeight.w800
                             : FontWeight.w600,
                         color: selected
-                            ? HomeScreen.kPrimary
+                            ? AppColors.primary
                             : Colors.black54,
                       ),
                     ),

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:meet9ja/constants/app_colors.dart';
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/sign_up_screen.dart';
 
@@ -17,7 +18,6 @@ class _SigninscreenState extends State<Signinscreen> {
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
 
-  static const Color kPrimary = Color(0xFFE43AA8);
   static const double kSide = 20.0;
   bool _isLoading = false;
 
@@ -128,7 +128,7 @@ class _SigninscreenState extends State<Signinscreen> {
                           },
                           child: Text(
                             "Don't have an account? Register Here",
-                            style: TextStyle(color: kPrimary),
+                            style: TextStyle(color: AppColors.primary),
                           ),
                         ),
                       ),
@@ -144,8 +144,6 @@ class _SigninscreenState extends State<Signinscreen> {
     );
   }
 }
-
-
 
 class _H1 extends StatelessWidget { /* ... same as in ProfileSetupPage ... */
   final String text;
@@ -221,7 +219,7 @@ class _PinkField extends StatelessWidget { /* ... same as in ProfileSetupPage ..
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white70),
         filled: true,
-        fillColor: _SigninscreenState.kPrimary,
+        fillColor: AppColors.primary,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
@@ -246,7 +244,7 @@ class _PrimaryButton extends StatelessWidget {
     return ElevatedButton(
       onPressed: onTap,
       style: ElevatedButton.styleFrom(
-        backgroundColor: _SigninscreenState.kPrimary,
+        backgroundColor: AppColors.primary,
         minimumSize: const Size(double.infinity, 50),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),

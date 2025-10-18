@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-const Color kPrimary = Color(0xA1C31A85);
+import 'constants/app_colors.dart';
 
 class UserChannelScreen extends StatefulWidget {
   final bool isMyProfile;
@@ -96,10 +95,7 @@ class _UserChannelScreenState extends State<UserChannelScreen>
   }
 
   Future<void> _launchEmail() async {
-    final Uri emailLaunchUri = Uri(
-      scheme: 'mailto',
-      path: email,
-    );
+    final Uri emailLaunchUri = Uri(scheme: 'mailto', path: email);
     if (await canLaunchUrl(emailLaunchUri)) {
       await launchUrl(emailLaunchUri);
     } else {
@@ -145,7 +141,7 @@ class _UserChannelScreenState extends State<UserChannelScreen>
                   TabBar(
                     controller: _tabController,
                     isScrollable: true,
-                    indicatorColor: kPrimary,
+                    indicatorColor: AppColors.primary,
                     labelColor: Colors.black,
                     unselectedLabelColor: Colors.black54,
                     labelStyle: TextStyle(
@@ -237,10 +233,10 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context,
-      double shrinkOffset,
-      bool overlapsContent,
-      ) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(color: Colors.white, child: _tabBar);
   }
 
@@ -459,10 +455,7 @@ class _SliverHeader extends StatelessWidget {
             icon: const Icon(FontAwesomeIcons.userGroup, size: 13),
             label: const Text(
               "Manage Subs",
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 13,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
             ),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -480,10 +473,7 @@ class _SliverHeader extends StatelessWidget {
             icon: const Icon(FontAwesomeIcons.shareFromSquare, size: 13),
             label: const Text(
               "Share",
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 13,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
             ),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -505,7 +495,7 @@ class _SliverHeader extends StatelessWidget {
           child: _ActionButton(
             label: "Follow",
             icon: FontAwesomeIcons.userPlus,
-            color: kPrimary,
+            color: AppColors.primary,
             textColor: Colors.white,
             onPressed: () {},
           ),
@@ -610,11 +600,7 @@ class _SocialMediaIcon extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: color.withOpacity(0.3), width: 1.5),
         ),
-        child: Icon(
-          icon,
-          size: 16,
-          color: color,
-        ),
+        child: Icon(icon, size: 16, color: color),
       ),
     );
   }
@@ -765,7 +751,10 @@ class _WalletTab extends StatelessWidget {
       ),
       child: ListTile(
         onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         leading: Icon(icon, color: iconColor, size: 24),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
         trailing: Row(
@@ -807,7 +796,7 @@ class _WalletTab extends StatelessWidget {
             title: "My Coin Balance",
             value: "2,450 💎",
             icon: FontAwesomeIcons.solidGem,
-            iconColor: kPrimary,
+            iconColor: AppColors.primary,
           ),
           const SizedBox(height: 24),
 
@@ -1012,10 +1001,10 @@ class _SchedulesTab extends StatelessWidget {
       backgroundColor: Colors.white,
       floatingActionButton: isMyProfile
           ? FloatingActionButton(
-        onPressed: onAddSchedule,
-        backgroundColor: kPrimary,
-        child: const Icon(FontAwesomeIcons.plus, color: Colors.white),
-      )
+              onPressed: onAddSchedule,
+              backgroundColor: AppColors.primary,
+              child: const Icon(FontAwesomeIcons.plus, color: Colors.white),
+            )
           : null,
       body: schedules.isEmpty ? _buildEmptyState() : _buildSchedulesList(),
     );
@@ -1203,9 +1192,9 @@ class _ScheduleCardState extends State<_ScheduleCard> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: kPrimary.withOpacity(0.1),
+                color: AppColors.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: kPrimary.withOpacity(0.3)),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1213,14 +1202,14 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                   Icon(
                     FontAwesomeIcons.hourglassHalf,
                     size: 12,
-                    color: kPrimary,
+                    color: AppColors.primary,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     _formatCountdown(),
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      color: kPrimary,
+                      color: AppColors.primary,
                       fontSize: 12,
                     ),
                   ),
@@ -1396,7 +1385,7 @@ class _ClickableInfoTile extends StatelessWidget {
                     value,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: kPrimary,
+                      color: AppColors.primary,
                       fontSize: 14,
                     ),
                   ),
@@ -1519,16 +1508,36 @@ class _StatTile extends StatelessWidget {
 
 String _fmtDate(DateTime d) {
   final months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
   ];
   return "${months[d.month - 1]} ${d.day}, ${d.year}";
 }
 
 String _fmtDateTime(DateTime d) {
   final months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
   ];
   final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
   final period = d.hour < 12 ? 'AM' : 'PM';
