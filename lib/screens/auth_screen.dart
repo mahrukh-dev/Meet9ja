@@ -2,19 +2,19 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:meet9ja/signInScreen.dart';
-import 'profile_setup.dart';
+import 'package:meet9ja/screens/signin_screen.dart';
+import 'sign_up_screen.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class AuthPage extends StatefulWidget {
+  const AuthPage({super.key});
 
   static const Color kPrimary = Color(0xFFE43AA8);
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<AuthPage> createState() => _AuthPageState();
 }
 
-class _LoginPageState extends State<LoginPage>
+class _AuthPageState extends State<AuthPage>
     with SingleTickerProviderStateMixin {
   final List<String> _bgImages = const [
     'assets/images/bg1.jpg',
@@ -220,7 +220,7 @@ class _LoginPageState extends State<LoginPage>
                                 ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.white,
-                                  foregroundColor: LoginPage.kPrimary,
+                                  foregroundColor: AuthPage.kPrimary,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14),
                                   ),
@@ -266,7 +266,7 @@ class _LoginPageState extends State<LoginPage>
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => const ProfileSetupPage(),
+                                      builder: (_) => const SignUpScreen(),
                                     ),
                                   );
                                 },

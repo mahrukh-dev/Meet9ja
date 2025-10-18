@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'discover_page.dart';
+import 'screens/home_screen.dart';
 
 
 // DEFINE A MOCK ENUM TO REPLACE ImageSource, since the package isn't imported
@@ -109,7 +109,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               ListTile(
-                leading: const Icon(CupertinoIcons.camera_fill, color: DiscoverPage.kPrimary),
+                leading: const Icon(CupertinoIcons.camera_fill, color: HomeScreen.kPrimary),
                 title: const Text('Take Photo'),
                 onTap: () {
                   Navigator.pop(context);
@@ -117,7 +117,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(CupertinoIcons.photo_fill, color: DiscoverPage.kPrimary),
+                leading: const Icon(CupertinoIcons.photo_fill, color: HomeScreen.kPrimary),
                 title: const Text('Photo Library'),
                 onTap: () {
                   Navigator.pop(context);
@@ -153,7 +153,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   // --- Message Bubble Content Builder ---
 
   Widget _buildMessageContent(Map<String, dynamic> m, bool other) {
-    final primaryColor = DiscoverPage.kPrimary;
+    final primaryColor = HomeScreen.kPrimary;
     // Determine the color for the icon/text inside the VN bubble
     final contentColor = other ? primaryColor : Colors.black87;
 
@@ -238,7 +238,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = DiscoverPage.kPrimary;
+    final primaryColor = HomeScreen.kPrimary;
 
     return Scaffold(
       body: Container(

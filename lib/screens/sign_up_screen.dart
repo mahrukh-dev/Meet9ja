@@ -2,16 +2,16 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/selfie_onboarding.dart';
 
-import 'db_functions/firebase_service.dart';
+import '../db_functions/firebase_service.dart';
 
-class ProfileSetupPage extends StatefulWidget {
-  const ProfileSetupPage({super.key});
+class SignUpScreen extends StatefulWidget {
+  const SignUpScreen({super.key});
 
   @override
-  State<ProfileSetupPage> createState() => _ProfileSetupPageState();
+  State<SignUpScreen> createState() => _SignUpScreenState();
 }
 
-class _ProfileSetupPageState extends State<ProfileSetupPage> {
+class _SignUpScreenState extends State<SignUpScreen> {
   final PageController _page = PageController();
   int _step = 0;
 
@@ -493,7 +493,7 @@ class _PinkField extends StatelessWidget {
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white70),
         filled: true,
-        fillColor: _ProfileSetupPageState.kPrimary,
+        fillColor: _SignUpScreenState.kPrimary,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
@@ -514,14 +514,14 @@ class _PhotoTile extends StatelessWidget {
 
   factory _PhotoTile.add({VoidCallback? onTap}) {
     return _PhotoTile._(
-      const Icon(CupertinoIcons.add, size: 42, color: _ProfileSetupPageState.kPrimary),
+      const Icon(CupertinoIcons.add, size: 42, color: _SignUpScreenState.kPrimary),
       onTap: onTap,
     );
   }
 
   factory _PhotoTile.sample() {
     return const _PhotoTile._(
-      Icon(CupertinoIcons.photo, size: 38, color: _ProfileSetupPageState.kPrimary),
+      Icon(CupertinoIcons.photo, size: 38, color: _SignUpScreenState.kPrimary),
     );
   }
 
@@ -556,7 +556,7 @@ class _SelectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pink = _ProfileSetupPageState.kPrimary;
+    final pink = _SignUpScreenState.kPrimary;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
@@ -618,7 +618,7 @@ class _RadioCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pink = _ProfileSetupPageState.kPrimary;
+    final pink = _SignUpScreenState.kPrimary;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,

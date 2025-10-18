@@ -1,16 +1,16 @@
-/// lib/meet_people.dart
+/// lib/onboarding_screen.dart
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'login.dart';
+import 'auth_screen.dart';
 
-class MeetPeoplePage extends StatefulWidget {
-  const MeetPeoplePage({super.key});
+class OnboardingPage extends StatefulWidget {
+  const  OnboardingPage({super.key});
   @override
-  State<MeetPeoplePage> createState() => _MeetPeoplePageState();
+  State<OnboardingPage> createState() => _OnboardingPageState();
 }
 
-class _MeetPeoplePageState extends State<MeetPeoplePage> {
+class _OnboardingPageState extends State<OnboardingPage> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
   double _page = 0;
@@ -86,7 +86,7 @@ class _MeetPeoplePageState extends State<MeetPeoplePage> {
                             onPressed: () {
                               Navigator.of(context).pushReplacement(
                                 MaterialPageRoute(
-                                  builder: (_) => const LoginPage(),
+                                  builder: (_) => const AuthPage(),
                                 ),
                               );
                             },
@@ -217,7 +217,7 @@ class _MeetPeoplePageState extends State<MeetPeoplePage> {
                               } else {
                                 Navigator.of(context).pushReplacement(
                                   MaterialPageRoute(
-                                    builder: (_) => const LoginPage(),
+                                    builder: (_) => const AuthPage(),
                                   ),
                                 );
                               }

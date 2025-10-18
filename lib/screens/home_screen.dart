@@ -1,24 +1,24 @@
-// lib/discover_page.dart
+// lib/home_screen.dart
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/startlive.dart';
-import 'filter.dart';
-import 'discover.dart';
-import 'profile.dart';
-import 'messages.dart';
-import 'profiledisplay.dart'; // ⬅️ updated import
+import '../filter.dart';
+import '../discover.dart';
+import '../profile.dart';
+import '../messages.dart';
+import '../profiledisplay.dart'; // ⬅️ updated import
 
-class DiscoverPage extends StatefulWidget {
-  const DiscoverPage({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
   static const Color kPrimary = Color(0xFFE43AA8);
 
   @override
-  State<DiscoverPage> createState() => _DiscoverPageState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _DiscoverPageState extends State<DiscoverPage> {
+class _HomeScreenState extends State<HomeScreen> {
   late final PageController _pageCtrl;
   int _index = 0;
 
@@ -163,7 +163,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
                     IconButton(
                       icon: const Icon(
                         CupertinoIcons.line_horizontal_3_decrease,
-                        color: DiscoverPage.kPrimary,
+                        color: HomeScreen.kPrimary,
                       ),
                       onPressed: () {
                         Navigator.push(
@@ -191,7 +191,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
                         margin: const EdgeInsets.symmetric(horizontal: 3),
                         decoration: BoxDecoration(
                           color: active
-                              ? DiscoverPage.kPrimary
+                              ? HomeScreen.kPrimary
                               : Colors.black12,
                           borderRadius: BorderRadius.circular(4),
                         ),
@@ -275,7 +275,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
                 child: ElevatedButton.icon(
                   icon: const Icon(CupertinoIcons.circle_filled),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: DiscoverPage.kPrimary,
+                    backgroundColor: HomeScreen.kPrimary,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -600,7 +600,7 @@ class _ProfileCard extends StatelessWidget {
                               ),
                             );
                           },
-                          bg: DiscoverPage.kPrimary,
+                          bg: HomeScreen.kPrimary,
                           fg: Colors.white,
                         ),
                       ],
@@ -688,7 +688,7 @@ class _Meet9jaLogo extends StatelessWidget {
         color: Colors.black87,
         shadows: [
           Shadow(
-            color: DiscoverPage.kPrimary.withOpacity(0.12),
+            color: HomeScreen.kPrimary.withOpacity(0.12),
             blurRadius: 6,
             offset: const Offset(0, 1),
           ),
@@ -710,8 +710,8 @@ class _LivePill extends StatelessWidget {
       child: Ink(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(999),
-          color: DiscoverPage.kPrimary.withOpacity(0.10),
-          border: Border.all(color: DiscoverPage.kPrimary, width: 1.2),
+          color: HomeScreen.kPrimary.withOpacity(0.10),
+          border: Border.all(color: HomeScreen.kPrimary, width: 1.2),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Row(
@@ -729,13 +729,13 @@ class _LivePill extends StatelessWidget {
             const Icon(
               CupertinoIcons.tv,
               size: 18,
-              color: DiscoverPage.kPrimary,
+              color: HomeScreen.kPrimary,
             ),
             const SizedBox(width: 4),
             const Text(
               "LIVE",
               style: TextStyle(
-                color: DiscoverPage.kPrimary,
+                color: HomeScreen.kPrimary,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.6,
               ),
@@ -754,7 +754,7 @@ class _LiveHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: const [
-        Icon(CupertinoIcons.tv, color: DiscoverPage.kPrimary),
+        Icon(CupertinoIcons.tv, color: HomeScreen.kPrimary),
         SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -955,7 +955,7 @@ class _BottomNav extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
                 decoration: BoxDecoration(
                   color: selected
-                      ? DiscoverPage.kPrimary.withOpacity(0.08)
+                      ? HomeScreen.kPrimary.withOpacity(0.08)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -965,7 +965,7 @@ class _BottomNav extends StatelessWidget {
                     Icon(
                       icons[i],
                       size: selected ? 30 : 28,
-                      color: selected ? DiscoverPage.kPrimary : Colors.black54,
+                      color: selected ? HomeScreen.kPrimary : Colors.black54,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -979,7 +979,7 @@ class _BottomNav extends StatelessWidget {
                             ? FontWeight.w800
                             : FontWeight.w600,
                         color: selected
-                            ? DiscoverPage.kPrimary
+                            ? HomeScreen.kPrimary
                             : Colors.black54,
                       ),
                     ),

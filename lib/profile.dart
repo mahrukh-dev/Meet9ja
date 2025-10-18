@@ -5,7 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Fo
 
 // navigate targets
 import 'discover.dart'; // DiscoverScreen (feed style)
-import 'discover_page.dart'; // DiscoverPage   (swipe cards)
+import 'screens/home_screen.dart'; // DiscoverPage   (swipe cards)
 import 'user_channel.dart'; // ⬅️ NEW: My Profile (followers/following/subscribers + clips)
 
 class ProfileScreen extends StatefulWidget {
@@ -808,7 +808,7 @@ class _BottomNav extends StatelessWidget {
                 } else if (i == 2 && current != 2) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const DiscoverPage()),
+                    MaterialPageRoute(builder: (_) => const HomeScreen()),
                   );
                 }
               },

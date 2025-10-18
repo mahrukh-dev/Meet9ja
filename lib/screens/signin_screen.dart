@@ -1,9 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:meet9ja/discover_page.dart';
-import 'package:meet9ja/profile_setup.dart';
+import 'package:meet9ja/screens/home_screen.dart';
+import 'package:meet9ja/screens/sign_up_screen.dart';
 
-import 'db_functions/firebase_service.dart';
+import '../db_functions/firebase_service.dart';
 
 
 class Signinscreen extends StatefulWidget {
@@ -44,7 +44,7 @@ class _SigninscreenState extends State<Signinscreen> {
 
       // 🎯 SUCCESS: Navigate to the main application page
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DiscoverPage()),
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
 
     } catch (e) {
@@ -123,7 +123,7 @@ class _SigninscreenState extends State<Signinscreen> {
                         child: TextButton(
                           onPressed: () {
                             Navigator.of(context).pushReplacement(
-                              MaterialPageRoute(builder: (_) => const ProfileSetupPage()),
+                              MaterialPageRoute(builder: (_) => const SignUpScreen()),
                             );
                           },
                           child: Text(
@@ -146,10 +146,6 @@ class _SigninscreenState extends State<Signinscreen> {
 }
 
 
-// ===== Reusing UI components (Assume these are moved to a shared file or copied) =====
-
-// NOTE: For a real app, you should extract these into a separate shared_ui.dart file!
-// For this example, we'll redefine them or assume they are accessible.
 
 class _H1 extends StatelessWidget { /* ... same as in ProfileSetupPage ... */
   final String text;

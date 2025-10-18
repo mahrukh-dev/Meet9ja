@@ -1,9 +1,9 @@
-// lib/splash.dart
+// lib/splash_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'meet_people.dart'; // <-- make sure this exists
+import 'onboarding_screen.dart'; // <-- make sure this exists
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -21,7 +21,7 @@ class _SplashScreenState extends State<SplashScreen> {
     Future.delayed(const Duration(seconds: 5), () {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MeetPeoplePage()),
+        MaterialPageRoute(builder: (_) => const OnboardingPage()),
       );
     });
   }
@@ -85,19 +85,6 @@ class _HeartLogo extends StatelessWidget {
       width: size,
       height: size,
       child: Image.asset("assets/images/Heart.png", fit: BoxFit.contain),
-    );
-  }
-}
-
-/// Optional preview
-class SplashApp extends StatelessWidget {
-  const SplashApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: SplashScreen(),
     );
   }
 }

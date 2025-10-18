@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 // Import Font Awesome
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'discover_page.dart';
+import 'screens/home_screen.dart';
 
 class FilterPage extends StatefulWidget {
   const FilterPage({super.key});
@@ -91,7 +91,7 @@ class _FilterPageState extends State<FilterPage> {
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const DiscoverPage(),
+                                builder: (_) => const HomeScreen(),
                               ),
                             );
                           }

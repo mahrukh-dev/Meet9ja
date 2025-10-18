@@ -6,7 +6,7 @@ import 'package:meet9ja/profile.dart';
 
 import 'Discover.dart';
 import 'conversation.dart';
-import 'discover_page.dart'; // <<< Font Awesome Import
+import 'screens/home_screen.dart'; // <<< Font Awesome Import
 
 
 class MessagesScreen extends StatefulWidget {
@@ -98,7 +98,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 borderSide: BorderSide.none,
               ),
               suffixIcon: IconButton(
-                icon: Icon(FontAwesomeIcons.multiply, color: DiscoverPage.kPrimary),
+                icon: Icon(FontAwesomeIcons.multiply, color: HomeScreen.kPrimary),
                 onPressed: () {
                   _searchController.clear();
                   // Optionally filter results here
@@ -166,7 +166,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         // Search icon is already FA
                         icon: const FaIcon(
                           FontAwesomeIcons.magnifyingGlass,
-                          color: DiscoverPage.kPrimary,
+                          color: HomeScreen.kPrimary,
                           size: 20,
                         ),
                         onPressed: () {
@@ -268,8 +268,8 @@ class _StoryCircle extends StatelessWidget {
             shape: BoxShape.circle,
             gradient: LinearGradient(
               colors: isYou
-                  ? [DiscoverPage.kPrimary.withOpacity(0.35), Colors.white]
-                  : [DiscoverPage.kPrimary, const Color(0xFFFFC107)],
+                  ? [HomeScreen.kPrimary.withOpacity(0.35), Colors.white]
+                  : [HomeScreen.kPrimary, const Color(0xFFFFC107)],
             ),
           ),
           child: CircleAvatar(
@@ -319,7 +319,7 @@ class _ChatTile extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: DiscoverPage.kPrimary,
+                  color: HomeScreen.kPrimary,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -454,7 +454,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         : Alignment.centerRight;
                     final bg = m.other
                         ? Colors.white
-                        : DiscoverPage.kPrimary.withOpacity(0.12);
+                        : HomeScreen.kPrimary.withOpacity(0.12);
                     final fg = m.other ? Colors.black87 : Colors.black87;
                     return Align(
                       alignment: align,
@@ -521,7 +521,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     const SizedBox(width: 8),
                     Material(
-                      color: DiscoverPage.kPrimary,
+                      color: HomeScreen.kPrimary,
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
@@ -609,7 +609,7 @@ class _BottomNav extends StatelessWidget {
                 if (i == 2 && current != 2) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const DiscoverPage()),
+                    MaterialPageRoute(builder: (_) => const HomeScreen()),
                   );
                   return;
                 }
@@ -621,7 +621,7 @@ class _BottomNav extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
                 decoration: BoxDecoration(
                   color: selected
-                      ? DiscoverPage.kPrimary.withOpacity(0.08)
+                      ? HomeScreen.kPrimary.withOpacity(0.08)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -632,7 +632,7 @@ class _BottomNav extends StatelessWidget {
                     FaIcon(
                       icons[i],
                       size: selected ? 26 : 24,
-                      color: selected ? DiscoverPage.kPrimary : Colors.black54,
+                      color: selected ? HomeScreen.kPrimary : Colors.black54,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -646,7 +646,7 @@ class _BottomNav extends StatelessWidget {
                             ? FontWeight.w800
                             : FontWeight.w600,
                         color: selected
-                            ? DiscoverPage.kPrimary
+                            ? HomeScreen.kPrimary
                             : Colors.black54,
                       ),
                     ),

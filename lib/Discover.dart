@@ -2,9 +2,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-// Note: Ensure 'filter.dart' and 'discover_page.dart' exist or remove these imports.
+// Note: Ensure 'filter.dart' and 'home_screen.dart' exist or remove these imports.
 import 'filter.dart';
-import 'discover_page.dart';
+import 'screens/home_screen.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -1004,7 +1004,7 @@ class _BottomNav extends StatelessWidget {
                 if (i == 2 && current != 2) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const DiscoverPage()),
+                    MaterialPageRoute(builder: (_) => const HomeScreen()),
                   );
                 }
                 // baqi tabs abhi noop; zarurat ho to routes add kar lena
@@ -1014,7 +1014,7 @@ class _BottomNav extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 decoration: BoxDecoration(
                   color: selected
-                      ? DiscoverScreen.kPrimary.withOpacity(0.08)
+                      ? HomeScreen.kPrimary.withOpacity(0.08)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -1025,7 +1025,7 @@ class _BottomNav extends StatelessWidget {
                       icons[i],
                       size: selected ? 24 : 22, // Adjusted size for FA icons
                       color: selected
-                          ? DiscoverScreen.kPrimary
+                          ? HomeScreen.kPrimary
                           : Colors.black54,
                     ),
                     const SizedBox(height: 4),
@@ -1038,7 +1038,7 @@ class _BottomNav extends StatelessWidget {
                             ? FontWeight.w800
                             : FontWeight.w600,
                         color: selected
-                            ? DiscoverScreen.kPrimary
+                            ? HomeScreen.kPrimary
                             : Colors.black54,
                       ),
                     ),

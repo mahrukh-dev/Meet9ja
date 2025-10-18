@@ -1,10 +1,10 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/Discover.dart';
-import 'package:meet9ja/discover_page.dart';
+import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/messages.dart';
 import 'package:meet9ja/profile.dart';
-import 'package:meet9ja/splash.dart';
+import 'package:meet9ja/screens/splash_screen.dart';
 import 'package:meet9ja/startlive.dart';
 import 'package:meet9ja/user_channel.dart';
 import 'package:zego_uikit/zego_uikit.dart';
@@ -34,14 +34,14 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFE43AA8),
-          primary: const Color(0xFFE43AA8),
+          seedColor: const Color(0xA1C31A85),
+          primary: const Color(0xB5C31A85),
         ),
         useMaterial3: true,
         fontFamily: 'Inter',
       ),
       home: ZegoUIKitPrebuiltLiveStreamingMiniPopScope(
-        child: StartLivePage(),
+        child: SplashScreen(),
       ),
     );
   }

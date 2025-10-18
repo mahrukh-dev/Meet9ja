@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'discover_page.dart';
+import 'screens/home_screen.dart';
 
 class SelfieOnboardingPage extends StatefulWidget {
   const SelfieOnboardingPage({super.key});
@@ -104,7 +104,7 @@ class _SelfieOnboardingPageState extends State<SelfieOnboardingPage>
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const DiscoverPage(),
+                              builder: (_) => const HomeScreen(),
                             ),
                           );
                         },
