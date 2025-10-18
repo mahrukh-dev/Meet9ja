@@ -1,23 +1,23 @@
-// lib/conversation.dart
+// lib/chat_screen.dart
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'screens/home_screen.dart';
+import 'home_screen.dart';
 
 
 // DEFINE A MOCK ENUM TO REPLACE ImageSource, since the package isn't imported
 enum MockImageSource { camera, gallery }
 
 
-class ConversationScreen extends StatefulWidget {
+class ChatScreen extends StatefulWidget {
   final String name;
   final String avatar;
 
   /// messages: List of maps: { 'other': bool, 'text': String, 'type': 'text'/'image'/'vn' }
   final List<Map<String, dynamic>> messages;
 
-  const ConversationScreen({
+  const ChatScreen({
     super.key,
     required this.name,
     required this.avatar,
@@ -25,10 +25,10 @@ class ConversationScreen extends StatefulWidget {
   });
 
   @override
-  State<ConversationScreen> createState() => _ConversationScreenState();
+  State<ChatScreen> createState() => _ChatState();
 }
 
-class _ConversationScreenState extends State<ConversationScreen> {
+class _ChatState extends State<ChatScreen> {
   late List<Map<String, dynamic>> msgs;
   final TextEditingController _ctrl = TextEditingController();
 
