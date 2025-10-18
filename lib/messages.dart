@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/profile.dart';
 
-import 'Discover.dart';
+import 'screens/discover_screen.dart';
 import 'conversation.dart';
 import 'screens/home_screen.dart'; // <<< Font Awesome Import
 

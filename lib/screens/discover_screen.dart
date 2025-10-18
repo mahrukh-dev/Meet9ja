@@ -3,8 +3,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 // Note: Ensure 'home_screen_filters.dart' and 'home_screen.dart' exist or remove these imports.
-import 'screens/home_screen_filters.dart';
-import 'screens/home_screen.dart';
+import 'home_screen_filters.dart';
+import 'home_screen.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});

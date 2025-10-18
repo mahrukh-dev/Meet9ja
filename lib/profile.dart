@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Font Awesome
 
 // navigate targets
-import 'discover.dart'; // DiscoverScreen (feed style)
+import 'screens/discover_screen.dart'; // DiscoverScreen (feed style)
 import 'screens/home_screen.dart'; // DiscoverPage   (swipe cards)
 import 'user_channel.dart'; // ⬅️ NEW: My Profile (followers/following/subscribers + clips)
 

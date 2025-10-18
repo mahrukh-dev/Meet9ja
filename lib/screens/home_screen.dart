@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/startlive.dart';
 import 'home_screen_filters.dart';
-import '../discover.dart';
+import 'discover_screen.dart';
 import '../profile.dart';
 import '../messages.dart';
 import '../profiledisplay.dart'; // ⬅️ updated import

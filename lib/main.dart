@@ -1,6 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:meet9ja/Discover.dart';
+import 'package:meet9ja/screens/discover_screen.dart';
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/messages.dart';
 import 'package:meet9ja/profile.dart';
@@ -41,7 +41,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Inter',
       ),
       home: ZegoUIKitPrebuiltLiveStreamingMiniPopScope(
-        child: SplashScreen(),
+        child: DiscoverScreen(),
       ),
     );
   }
