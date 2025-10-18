@@ -1,12 +1,12 @@
-// lib/filter.dart
+// lib/home_screen_filters.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 // Import Font Awesome
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'screens/home_screen.dart';
+import 'home_screen.dart';
 
-class FilterPage extends StatefulWidget {
-  const FilterPage({super.key});
+class HomeScreenFilters extends StatefulWidget {
+  const HomeScreenFilters({super.key});
 
   static const kPrimary = Color(0xFFE43AA8);
   static const kGradA = Color(0xFFFDF2F8);
@@ -14,10 +14,10 @@ class FilterPage extends StatefulWidget {
   static const kGradC = Color(0xFFFFF7FB);
 
   @override
-  State<FilterPage> createState() => _FilterPageState();
+  State<HomeScreenFilters> createState() => _HomeScreenFiltersState();
 }
 
-class _FilterPageState extends State<FilterPage> {
+class _HomeScreenFiltersState extends State<HomeScreenFilters> {
   // --- Basic Filters
   String whoToDate = "Women";
   RangeValues age = const RangeValues(18, 28);
@@ -68,7 +68,7 @@ class _FilterPageState extends State<FilterPage> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [FilterPage.kGradA, FilterPage.kGradB, FilterPage.kGradC],
+            colors: [HomeScreenFilters.kGradA, HomeScreenFilters.kGradB, HomeScreenFilters.kGradC],
           ),
         ),
         child: CustomPaint(
@@ -166,7 +166,7 @@ class _FilterPageState extends State<FilterPage> {
                       Expanded(
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: FilterPage.kPrimary,
+                            backgroundColor: HomeScreenFilters.kPrimary,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -238,7 +238,7 @@ class _FilterPageState extends State<FilterPage> {
                   min: 18,
                   max: 60,
                   divisions: 42,
-                  activeColor: FilterPage.kPrimary,
+                  activeColor: HomeScreenFilters.kPrimary,
                   onChanged: (v) => setState(() => age = v),
                 ),
                 const SizedBox(height: 4),
@@ -340,7 +340,7 @@ class _FilterPageState extends State<FilterPage> {
                   min: 140,
                   max: 200,
                   divisions: 60,
-                  activeColor: FilterPage.kPrimary,
+                  activeColor: HomeScreenFilters.kPrimary,
                   onChanged: (v) => setState(() => heightCm = v),
                 ),
                 _SwitchLine(
@@ -363,7 +363,7 @@ class _FilterPageState extends State<FilterPage> {
                     value: it.checked,
                     onChanged: (v) => setState(() => it.checked = v ?? false),
                     title: Text(it.label),
-                    activeColor: FilterPage.kPrimary,
+                    activeColor: HomeScreenFilters.kPrimary,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 6),
                     controlAffinity: ListTileControlAffinity.trailing,
                   ),
@@ -415,7 +415,7 @@ class _FilterPageState extends State<FilterPage> {
                       ? const Icon(
                     FontAwesomeIcons.check,
                     size: 16,
-                    color: FilterPage.kPrimary,
+                    color: HomeScreenFilters.kPrimary,
                   )
                       : null,
                   onTap: () {
@@ -471,7 +471,7 @@ class _FilterPageState extends State<FilterPage> {
                       ? const Icon(
                     FontAwesomeIcons.check,
                     size: 16,
-                    color: FilterPage.kPrimary,
+                    color: HomeScreenFilters.kPrimary,
                   )
                       : null,
                   onTap: () {
@@ -548,7 +548,7 @@ class _Segmented extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? FilterPage.kPrimary : Colors.transparent,
+            color: selected ? HomeScreenFilters.kPrimary : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Center(
@@ -664,7 +664,7 @@ class _SwitchLine extends StatelessWidget {
         ),
         Switch.adaptive(
           value: value,
-          activeColor: FilterPage.kPrimary,
+          activeColor: HomeScreenFilters.kPrimary,
           onChanged: onChanged,
         ),
       ],
@@ -694,7 +694,7 @@ class _InterestChip extends StatelessWidget {
       ),
       selected: selected,
       onSelected: (_) => onTap(),
-      selectedColor: FilterPage.kPrimary,
+      selectedColor: HomeScreenFilters.kPrimary,
       backgroundColor: Colors.white,
       side: BorderSide(color: Colors.black12.withOpacity(0.5)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),

@@ -4,7 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/startlive.dart';
-import '../filter.dart';
+import 'home_screen_filters.dart';
 import '../discover.dart';
 import '../profile.dart';
 import '../messages.dart';
@@ -168,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPressed: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const FilterPage()),
+                          MaterialPageRoute(builder: (_) => const HomeScreenFilters()),
                         );
                       },
                     ),
