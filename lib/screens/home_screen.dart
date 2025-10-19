@@ -8,7 +8,7 @@ import '../constants/app_colors.dart';
 import 'home_screen_filters.dart';
 import 'discover_screen.dart';
 import '../profile.dart';
-import '../messages.dart';
+import 'messages_screen.dart';
 import '../profiledisplay.dart'; // ⬅️ updated import
 
 class HomeScreen extends StatefulWidget {

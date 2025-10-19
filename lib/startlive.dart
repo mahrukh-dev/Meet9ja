@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'constants/app_colors.dart';
-import 'livestream.dart'; // Assuming 'livestream.dart' exists for LiveStreamPage
+import 'screens/livestream_screen.dart'; // Assuming 'livestream_screen.dart' exists for LiveStreamPage
 
 class StartLivePage extends StatefulWidget {
   const StartLivePage({super.key});
@@ -198,7 +198,7 @@ class _StartLivePageState extends State<StartLivePage>
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => LiveStreamPage(
+                    builder: (context) => LiveStreamScreen(
                       liveId: 'specific_live_id',
                       userId: 'audience_123',
                       userName: 'Viewer',

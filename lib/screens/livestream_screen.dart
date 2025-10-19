@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_streaming.dart';
 
-class LiveStreamPage extends StatelessWidget {
+class LiveStreamScreen extends StatelessWidget {
   final String liveId;
   final String userId;
   final bool isHost;
   final String userName;
 
-  const LiveStreamPage({
+  const LiveStreamScreen({
     super.key,
     required this.liveId,
     required this.userId,

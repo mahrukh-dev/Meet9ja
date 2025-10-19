@@ -1,8 +1,10 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:meet9ja/screens/livestream_screen.dart';
+import 'package:meet9ja/screens/chat_screen.dart';
 import 'package:meet9ja/screens/discover_screen.dart';
 import 'package:meet9ja/screens/home_screen.dart';
-import 'package:meet9ja/messages.dart';
+import 'package:meet9ja/screens/messages_screen.dart' hide ChatScreen;
 import 'package:meet9ja/profile.dart';
 import 'package:meet9ja/screens/splash_screen.dart';
 import 'package:meet9ja/startlive.dart';
@@ -41,7 +43,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Inter',
       ),
       home: ZegoUIKitPrebuiltLiveStreamingMiniPopScope(
-        child: DiscoverScreen(),
+        child: LiveStreamScreen(liveId: '123', userId: '456', isHost: false, userName: '123'),
       ),
     );
   }
