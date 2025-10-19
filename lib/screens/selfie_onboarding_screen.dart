@@ -1,16 +1,16 @@
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'constants/app_colors.dart';
-import 'screens/home_screen.dart';
+import '../constants/app_colors.dart';
+import 'home_screen.dart';
 
-class SelfieOnboardingPage extends StatefulWidget {
-  const SelfieOnboardingPage({super.key});
+class SelfieOnboardingScreen extends StatefulWidget {
+  const SelfieOnboardingScreen({super.key});
   @override
-  State<SelfieOnboardingPage> createState() => _SelfieOnboardingPageState();
+  State<SelfieOnboardingScreen> createState() => _SelfieOnboardingScreenState();
 }
 
-class _SelfieOnboardingPageState extends State<SelfieOnboardingPage>
+class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
     with TickerProviderStateMixin {
   late final AnimationController _floatCtrl; // gentle float for icon
   late final AnimationController _pulseCtrl; // pulsing rings behind icon

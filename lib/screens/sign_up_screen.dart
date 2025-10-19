@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:meet9ja/selfie_onboarding.dart';
+import 'package:meet9ja/screens/selfie_onboarding_screen.dart';
 
 import '../constants/app_colors.dart';
 import '../db_functions/firebase_service.dart';
@@ -85,7 +85,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const SelfieOnboardingPage()),
+          MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
         );
       } catch (e) {
         _showErrorDialog(e.toString());
