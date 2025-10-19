@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/screens/selfie_onboarding_screen.dart';
@@ -20,9 +22,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _emailCtrl = TextEditingController(text: "test@example.com");
   final TextEditingController _passwordCtrl = TextEditingController(text: "123456");
   final TextEditingController _ageCtrl = TextEditingController(text: "25");
-  final TextEditingController _usernameCtrl = TextEditingController(text: "username");
+  final TextEditingController _usernameCtrl = TextEditingController(text: "john_doe");
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
+
+  // Username validation state
+  bool _isCheckingUsername = false;
+  bool _isUsernameAvailable = false;
+  String _usernameError = '';
+  Timer? _usernameDebounceTimer;
 
   static const double kSide = 20.0;
 
@@ -33,7 +41,67 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _ageCtrl.dispose();
+    _usernameCtrl.dispose();
+    _usernameDebounceTimer?.cancel();
     super.dispose();
+  }
+
+  // Real-time username availability check
+  void _checkUsernameAvailability(String username) {
+    // Cancel previous timer
+    _usernameDebounceTimer?.cancel();
+
+    // Reset state for short usernames
+    if (username.length < 3) {
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = false;
+        _usernameError = username.isEmpty ? '' : 'Username must be at least 3 characters';
+      });
+      return;
+    }
+
+    // Validate username format
+    if (!_isValidUsername(username)) {
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = false;
+        _usernameError = 'Username can only contain letters, numbers, and underscores';
+      });
+      return;
+    }
+
+    setState(() {
+      _isCheckingUsername = true;
+      _usernameError = '';
+    });
+
+    // Debounce the API call
+    _usernameDebounceTimer = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final isAvailable = await FirebaseService.isUsernameAvailable(username);
+
+        if (mounted) {
+          setState(() {
+            _isCheckingUsername = false;
+            _isUsernameAvailable = isAvailable;
+            _usernameError = isAvailable ? '' : 'Username is already taken';
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isCheckingUsername = false;
+            _usernameError = 'Error checking username availability';
+          });
+        }
+      }
+    });
+  }
+
+  bool _isValidUsername(String username) {
+    final usernameRegex = RegExp(r'^[a-zA-Z0-9_]+$');
+    return usernameRegex.hasMatch(username);
   }
 
   void _next() async {
@@ -49,8 +117,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
       if (_nameCtrl.text.isEmpty ||
           _emailCtrl.text.isEmpty ||
           _passwordCtrl.text.isEmpty ||
-          _ageCtrl.text.isEmpty) {
+          _ageCtrl.text.isEmpty ||
+          _usernameCtrl.text.isEmpty) {
         _showErrorDialog('Please fill in all fields');
+        return;
+      }
+
+      // Validate username
+      if (!_isValidUsername(_usernameCtrl.text.trim())) {
+        _showErrorDialog('Username can only contain letters, numbers, and underscores');
+        return;
+      }
+
+      if (_usernameCtrl.text.length < 3) {
+        _showErrorDialog('Username must be at least 3 characters long');
+        return;
+      }
+
+      // Check username availability one more time before registration
+      if (!_isUsernameAvailable) {
+        _showErrorDialog('Please choose an available username');
         return;
       }
 
@@ -73,26 +159,52 @@ class _SignUpScreenState extends State<SignUpScreen> {
         return;
       }
 
+      // Show loading dialog
+      _showLoadingDialog();
+
       // Complete registration
       try {
         await FirebaseService.completeRegistration(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
           name: _nameCtrl.text.trim(),
-          age: age, // Use the validated age
+          age: age,
           username: _usernameCtrl.text.trim(),
           selectedMode: _getSelectedMode(),
           travelPreference: _getTravelPreference(),
         );
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
-        );
+        // Navigate to next screen
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
+          );
+        }
       } catch (e) {
-        _showErrorDialog(e.toString());
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          _showErrorDialog(e.toString());
+        }
       }
     }
+  }
+
+  void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: AppColors.primary),
+            SizedBox(width: 16),
+            Text('Creating your account...'),
+          ],
+        ),
+      ),
+    );
   }
 
   // Helper methods
@@ -152,7 +264,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        color: Colors.white, // ✅ Background set to solid white
+        color: Colors.white,
         child: SafeArea(
           child: Stack(
             children: [
@@ -161,7 +273,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 children: [
                   const SizedBox(height: 8),
 
-                  // progress line
+                  // Progress line
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: kSide),
                     child: _ProgressLine(
@@ -251,11 +363,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 10),
+
+            // Username with validation
             const _SectionLabel("Username"),
             const SizedBox(height: 5),
-            _PinkField(
+            _UsernameField(
               controller: _usernameCtrl,
-              hint: "Username",
+              hint: "Choose a username",
+              onChanged: _checkUsernameAvailability,
+              isChecking: _isCheckingUsername,
+              isAvailable: _isUsernameAvailable,
+              errorText: _usernameError,
             ),
             const SizedBox(height: 10),
 
@@ -284,7 +402,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // ---------- Step 2: Photos ----------
+  // ... Rest of your existing methods (_buildPhotosStep, _buildModeStep, _buildTravelWithStep) remain the same
   Widget _buildPhotosStep() {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: kSide),
@@ -319,7 +437,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // ---------- Step 3: Mode ----------
   Widget _buildModeStep() {
     final items = const [
       ("Date", "Make moves to find that spark"),
@@ -356,7 +473,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // ---------- Step 4: Travel With ----------
   Widget _buildTravelWithStep() {
     final items = const ["Women", "Men", "Couples", "Anyone"];
     return Padding(
@@ -387,8 +503,92 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 }
 
-// ===== Shared UI bits =====
+// ===== NEW: Username Field with Validation =====
+class _UsernameField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final bool isChecking;
+  final bool isAvailable;
+  final String errorText;
 
+  const _UsernameField({
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
+    required this.isChecking,
+    required this.isAvailable,
+    required this.errorText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: controller,
+          cursorColor: Colors.white,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: Colors.white70),
+            filled: true,
+            fillColor: AppColors.primary,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: isChecking
+                ? const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            )
+                : controller.text.length >= 3
+                ? Icon(
+              isAvailable ? Icons.check_circle : Icons.cancel,
+              color: isAvailable ? Colors.white : Colors.white,
+            )
+                : null,
+          ),
+          onChanged: onChanged,
+        ),
+        if (errorText.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            errorText,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+            ),
+          ),
+        ] else if (controller.text.length >= 3 && isAvailable) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Username is available!',
+            style: TextStyle(
+              color: Colors.green[600],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ... Rest of your existing UI classes (_ProgressLine, _H1, _BodyText, _SectionLabel, _PinkField, etc.) remain the same
 class _ProgressLine extends StatelessWidget {
   final double progress;
   final Color trackColor;
@@ -475,7 +675,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ✅ Pink styled text field for Name
 class _PinkField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -501,7 +700,7 @@ class _PinkField extends StatelessWidget {
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white70),
         filled: true,
-        fillColor:AppColors.primary,
+        fillColor: AppColors.primary,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
@@ -522,14 +721,14 @@ class _PhotoTile extends StatelessWidget {
 
   factory _PhotoTile.add({VoidCallback? onTap}) {
     return _PhotoTile._(
-      const Icon(CupertinoIcons.add, size: 42, color:AppColors.primary),
+      const Icon(CupertinoIcons.add, size: 42, color: AppColors.primary),
       onTap: onTap,
     );
   }
 
   factory _PhotoTile.sample() {
     return const _PhotoTile._(
-      Icon(CupertinoIcons.photo, size: 38, color:AppColors.primary),
+      Icon(CupertinoIcons.photo, size: 38, color: AppColors.primary),
     );
   }
 
