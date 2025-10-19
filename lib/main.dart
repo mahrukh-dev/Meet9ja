@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:meet9ja/screens/discover_screen.dart';
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/messages.dart';
-import 'package:meet9ja/profile.dart';
+import 'package:meet9ja/screens/update_profile_screen.dart';
 import 'package:meet9ja/screens/splash_screen.dart';
 import 'package:meet9ja/startlive.dart';
 import 'package:meet9ja/user_channel.dart';
@@ -41,7 +41,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Inter',
       ),
       home: ZegoUIKitPrebuiltLiveStreamingMiniPopScope(
-        child: DiscoverScreen(),
+        child: ProfileScreen(),
       ),
     );
   }

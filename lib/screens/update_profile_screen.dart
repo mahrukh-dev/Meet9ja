@@ -1,23 +1,19 @@
-// lib/profile.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Font Awesome
+import '../constants/app_colors.dart';
+import 'home_screen.dart'; // DiscoverPage   (swipe cards)
+import '../user_channel.dart'; // ⬅️
+import 'discover_screen.dart';
 
-// navigate targets
-import 'constants/app_colors.dart';
-import 'discover.dart'; // DiscoverScreen (feed style)
-import 'screens/discover_screen.dart' hide DiscoverScreen; // DiscoverScreen (feed style)
-import 'screens/home_screen.dart'; // DiscoverPage   (swipe cards)
-import 'user_channel.dart'; // ⬅️ NEW: My Profile (followers/following/subscribers + clips)
-
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+class UpdateProfileScreen extends StatefulWidget {
+  const UpdateProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<UpdateProfileScreen> createState() => _UpdateProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
   int _tab = 0; // 0: Pay plan, 1: Dating advice, 2: Photo insights
 
   @override
@@ -804,12 +800,12 @@ class _BottomNav extends StatelessWidget {
                 if (i == 1 && current != 1) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const DiscoverScreen()),
+                    MaterialPageRoute(builder: (_) => DiscoverScreen()),
                   );
                 } else if (i == 2 && current != 2) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const HomeScreen()),
+                    MaterialPageRoute(builder: (_) => HomeScreen()),
                   );
                 }
               },

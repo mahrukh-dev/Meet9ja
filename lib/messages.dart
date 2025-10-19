@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:meet9ja/profile.dart';
+import 'package:meet9ja/screens/update_profile_screen.dart';
 import 'screens/discover_screen.dart';
 import 'constants/app_colors.dart';
 import 'conversation.dart';

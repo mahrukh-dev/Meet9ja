@@ -1,8 +1,6 @@
-// lib/discover.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-// Note: Ensure 'home_screen_filters.dart' and 'home_screen.dart' exist or remove these imports.
 import '../constants/app_colors.dart';
 import 'home_screen_filters.dart';
 import 'home_screen.dart';
