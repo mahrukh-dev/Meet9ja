@@ -1,6 +1,11 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../constants/app_colors.dart';
 import 'home_screen.dart';
 
@@ -12,15 +17,18 @@ class SelfieOnboardingScreen extends StatefulWidget {
 
 class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
     with TickerProviderStateMixin {
-  late final AnimationController _floatCtrl; // gentle float for icon
-  late final AnimationController _pulseCtrl; // pulsing rings behind icon
-  late final AnimationController _introCtrl; // initial fade/slide in
-  late final AnimationController _tapCtrl; // CTA micro-bounce
+  late final AnimationController _floatCtrl;
+  late final AnimationController _pulseCtrl;
+  late final AnimationController _introCtrl;
+  late final AnimationController _tapCtrl;
 
   late final Animation<double> _floatAnim;
   late final Animation<double> _introFade;
   late final Animation<Offset> _introSlide;
   late final Animation<double> _tapScale;
+
+  final ImagePicker _picker = ImagePicker();
+  bool _isUploading = false;
 
   @override
   void initState() {
@@ -76,17 +84,67 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
     super.dispose();
   }
 
+  Future<String?> _uploadImageToFirebase(File imageFile) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+
+      final fileName = 'user_profiles/${user.uid}/profile.jpg';
+      final ref = FirebaseStorage.instance.ref().child(fileName);
+
+      UploadTask uploadTask = ref.putFile(imageFile);
+      TaskSnapshot snapshot = await uploadTask.whenComplete(() => null);
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+        {'photo_url': downloadUrl},
+      );
+
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('Error uploading image: $e');
+      return null;
+    }
+  }
+
+  Future<void> _takeSelfie() async {
+    await _tapCtrl.forward();
+    await _tapCtrl.reverse();
+
+    final pickedFile = await _picker.pickImage(source: ImageSource.camera);
+    if (pickedFile == null) return;
+
+    setState(() => _isUploading = true);
+
+    final file = File(pickedFile.path);
+    final url = await _uploadImageToFirebase(file);
+
+    setState(() => _isUploading = false);
+
+    if (url != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selfie uploaded successfully!')),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to upload image')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // ✅ solid white background
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // Foreground content
           SafeArea(
             child: Column(
               children: [
-                // top bar
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -117,39 +175,35 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
-                // Animated icon (no box) with pulsing rings
                 Expanded(
                   child: Center(
                     child: FadeTransition(
                       opacity: _introFade,
                       child: SlideTransition(
                         position: _introSlide,
-                        child: Transform.translate(
-                          offset: Offset(0, _floatAnim.value),
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              _PulseRings(controller: _pulseCtrl),
-                              // camera icon
-                              Icon(
-                                CupertinoIcons.camera,
-                                size: 148,
-                                color: AppColors.primary,
-                              ),
-                            ],
+                        child: AnimatedBuilder(
+                          animation: _floatCtrl,
+                          builder: (context, _) => Transform.translate(
+                            offset: Offset(0, _floatAnim.value),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                _PulseRings(controller: _pulseCtrl),
+                                Icon(
+                                  CupertinoIcons.camera,
+                                  size: 148,
+                                  color: AppColors.primary,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 6),
-
-                // page dots
                 const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -158,10 +212,7 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
                     _Dot(active: false),
                   ],
                 ),
-
                 const SizedBox(height: 22),
-
-                // CTA
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
                   child: ScaleTransition(
@@ -177,30 +228,31 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
                             borderRadius: BorderRadius.circular(28),
                           ),
                           elevation: 8,
-                          shadowColor: AppColors.primary
-                              .withOpacity(0.45),
+                          shadowColor: AppColors.primary.withOpacity(0.45),
                         ),
-                        onPressed: () async {
-                          await _tapCtrl.forward();
-                          await _tapCtrl.reverse();
-
-                          // TODO: Open camera/selfie flow here
-                        },
-                        child: const Text(
-                          "Take a selfie",
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
+                        onPressed: _isUploading ? null : _takeSelfie,
+                        child: _isUploading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                "Take a selfie",
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
                       ),
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 14),
-
                 const Padding(
                   padding: EdgeInsets.only(bottom: 22.0),
                   child: Text(
@@ -221,8 +273,6 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
     );
   }
 }
-
-// ---------- UI bits (no glass card) ----------
 
 class _PulseRings extends StatelessWidget {
   const _PulseRings({required this.controller});
@@ -262,7 +312,6 @@ class _PulseRings extends StatelessWidget {
   }
 }
 
-// --- dots ---
 class _Dot extends StatelessWidget {
   final bool active;
   const _Dot({required this.active});
