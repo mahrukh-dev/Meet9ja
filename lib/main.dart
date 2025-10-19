@@ -1,14 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:meet9ja/screens/livestream_screen.dart';
-import 'package:meet9ja/screens/chat_screen.dart';
-import 'package:meet9ja/screens/discover_screen.dart';
-import 'package:meet9ja/screens/home_screen.dart';
-import 'package:meet9ja/screens/messages_screen.dart' hide ChatScreen;
-import 'package:meet9ja/profile.dart';
+
 import 'package:meet9ja/screens/splash_screen.dart';
-import 'package:meet9ja/screens/explore_live_screen.dart';
-import 'package:meet9ja/user_channel.dart';
+
 import 'package:zego_uikit/zego_uikit.dart';
 import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_streaming.dart';
 

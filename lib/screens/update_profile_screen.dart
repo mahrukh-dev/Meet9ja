@@ -7,14 +7,6 @@ import 'home_screen.dart'; // DiscoverPage   (swipe cards)
 import 'profile_screen.dart'; // ⬅️
 import 'discover_screen.dart';
 
-// navigate targets
-import 'constants/app_colors.dart';// DiscoverScreen (feed style)
-import 'screens/discover_screen.dart';
-import 'screens/home_screen.dart'; // DiscoverPage   (swipe cards)
-import 'user_channel.dart'; // ⬅️ NEW: My Profile (followers/following/subscribers + clips)
-
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
 class UpdateProfileScreen extends StatefulWidget {
   const UpdateProfileScreen({super.key});
 
@@ -79,7 +71,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const UserChannelScreen(isMyProfile: true),
+                              builder: (_) => const ProfileScreen(isMyProfile: true),
                             ),
                           );
                         },
