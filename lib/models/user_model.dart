@@ -19,6 +19,12 @@ class UserModel {
   final Map<String, dynamic> firstPhotos;
   final String? bio;
   final String? location;
+  final String? website;
+  final String? instagram;
+  final String? twitter;
+  final String? facebook;
+  final String? tiktok;
+  final String? youtube;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String status;
@@ -42,6 +48,12 @@ class UserModel {
     required this.firstPhotos,
     this.bio,
     this.location,
+    this.website,
+    this.instagram,
+    this.twitter,
+    this.facebook,
+    this.tiktok,
+    this.youtube,
     required this.createdAt,
     required this.updatedAt,
     required this.status,
@@ -67,9 +79,47 @@ class UserModel {
       firstPhotos: Map<String, dynamic>.from(data['first_photos'] ?? {}),
       bio: data['bio'],
       location: data['location'],
+      website: data['website'],
+      instagram: data['instagram'],
+      twitter: data['twitter'],
+      facebook: data['facebook'],
+      tiktok: data['tiktok'],
+      youtube: data['youtube'],
       createdAt: (data['created_at'] as Timestamp).toDate(),
       updatedAt: (data['updated_at'] as Timestamp).toDate(),
       status: data['status'] ?? 'active',
     );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'UID': uid,
+      'email': email,
+      'name': name,
+      'age': age,
+      'username': username,
+      'photo_url': photoUrl,
+      'mode': mode,
+      'preferences': preferences,
+      'type': type,
+      'live_preferences': livePreferences,
+      'following': following,
+      'followers': followers,
+      'live_status': liveStatus,
+      'wallet': wallet,
+      'interests': interests,
+      'first_photos': firstPhotos,
+      'bio': bio,
+      'location': location,
+      'website': website,
+      'instagram': instagram,
+      'twitter': twitter,
+      'facebook': facebook,
+      'tiktok': tiktok,
+      'youtube': youtube,
+      'created_at': createdAt,
+      'updated_at': updatedAt,
+      'status': status,
+    };
   }
 }

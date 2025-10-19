@@ -1,13 +1,17 @@
-// lib/profile_screen.dart
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_colors.dart';
+import '../db_functions/user_service.dart';
+import '../models/user_model.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
-  const ProfileScreen({super.key, this.isMyProfile = true});
+  final String? userId;
+  const ProfileScreen({super.key, this.isMyProfile = true, this.userId});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -16,53 +20,13 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late StreamSubscription<UserModel?>? _profileSubscription;
 
-  // ---- Dummy user data ----
-  final String username = "@abdullah_k";
-  final String displayName = "Abdullah Khan";
-  final String location = "Lahore, PK";
-  final DateTime joined = DateTime(2024, 6, 12);
-  final String bio =
-      "Streamer • Developer • chai enthusiast ☕️\n"
-      "Mostly IRL + gaming. Weekends = community Q&A.";
-
-  final int followers = 1280;
-  final int following = 342;
-  final int subscribers = 96;
-
-  final String website = "https://abdullah.dev";
-  final String email = "hello@abdullah.dev";
-  final String xHandle = "@abdullah";
-  final String instagram = "@abdullah.ig";
-  final String facebook = "abdullah.khan";
-  final String tiktok = "@abdullah_tiktok";
-  final String youtube = "AbdullahStreams";
-
-  // Social media URLs
-  final String instagramUrl = "https://instagram.com/abdullah.ig";
-  final String twitterUrl = "https://twitter.com/abdullah";
-  final String facebookUrl = "https://facebook.com/abdullah.khan";
-  final String tiktokUrl = "https://tiktok.com/@abdullah_tiktok";
-  final String youtubeUrl = "https://youtube.com/c/AbdullahStreams";
-
-  // Dummy schedules data
-  final List<Map<String, dynamic>> _schedules = [
-    {
-      'title': 'Weekend Gaming Stream',
-      'dateTime': DateTime.now().add(const Duration(days: 2, hours: 3)),
-      'description': 'Playing the new RPG release with viewers',
-    },
-    {
-      'title': 'Q&A Session',
-      'dateTime': DateTime.now().add(const Duration(days: 5, hours: 2)),
-      'description': 'Answering community questions',
-    },
-    {
-      'title': 'IRL Coding Stream',
-      'dateTime': DateTime.now().add(const Duration(days: 7, hours: 4)),
-      'description': 'Building a new feature live',
-    },
-  ];
+  UserModel? _userProfile;
+  bool _isLoading = true;
+  String? _error;
+  Map<String, int> _userStats = {'followers': 0, 'following': 0, 'subscribers': 0};
+  bool _isFollowing = false;
 
   List<String> get _tabLabels {
     final baseTabs = ["Home", "Clips", "About", "Schedules"];
@@ -76,39 +40,152 @@ class _ProfileScreenState extends State<ProfileScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabLabels.length, vsync: this);
+    _loadUserData();
   }
 
   @override
   void dispose() {
+    _profileSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
-  // URL Launcher methods
+  void _loadUserData() async {
+    final String userId = widget.userId ?? UserService.currentUserId ?? '';
+
+    if (userId.isEmpty) {
+      setState(() {
+        _error = 'No user ID available';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      // Load user stats
+      final stats = await UserService.getUserStats(userId);
+      setState(() {
+        _userStats = stats;
+      });
+
+      // Load follow status if viewing other profile
+      if (!widget.isMyProfile && UserService.currentUserId != null) {
+        final following = await UserService.isFollowing(userId);
+        setState(() {
+          _isFollowing = following;
+        });
+      }
+
+      // Subscribe to profile updates
+      _profileSubscription = UserService.getUserProfileStream(userId).listen(
+            (profile) {
+          setState(() {
+            _userProfile = profile;
+            _isLoading = false;
+            _error = null;
+          });
+        },
+        onError: (error) {
+          setState(() {
+            _error = 'Error loading profile: $error';
+            _isLoading = false;
+          });
+        },
+      );
+
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load user data: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    if (_userProfile == null || widget.isMyProfile) return;
+
+    try {
+      if (_isFollowing) {
+        await UserService.unfollowUser(_userProfile!.uid);
+      } else {
+        await UserService.followUser(_userProfile!.uid);
+      }
+
+      // Update local state
+      setState(() {
+        _isFollowing = !_isFollowing;
+        _userStats['followers'] = _userStats['followers']! + (_isFollowing ? 1 : -1);
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to ${_isFollowing ? 'unfollow' : 'follow'}: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _navigateToEditProfile() async {
+    if (_userProfile == null) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfileScreen(userProfile: _userProfile!),
+      ),
+    );
+
+    // Refresh profile data if changes were made
+    if (result == true && mounted) {
+      _loadUserData(); // Reload the user data
+    }
+  }
+
+  // Social media URLs
+  String get _instagramUrl => "https://instagram.com/${_userProfile?.instagram ?? _userProfile?.username}";
+  String get _twitterUrl => "https://twitter.com/${_userProfile?.twitter ?? _userProfile?.username}";
+  String get _facebookUrl => "https://facebook.com/${_userProfile?.facebook ?? _userProfile?.username}";
+  String get _tiktokUrl => "https://tiktok.com/@${_userProfile?.tiktok ?? _userProfile?.username}";
+  String get _youtubeUrl => "https://youtube.com/c/${_userProfile?.youtube ?? _userProfile?.username}";
+
   Future<void> _launchURL(String url) async {
     final Uri uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
-    } else {
-      throw 'Could not launch $url';
     }
   }
 
   Future<void> _launchEmail() async {
+    final email = _userProfile?.email;
+    if (email == null || email.isEmpty) return;
+
     final Uri emailLaunchUri = Uri(scheme: 'mailto', path: email);
     if (await canLaunchUrl(emailLaunchUri)) {
       await launchUrl(emailLaunchUri);
-    } else {
-      throw 'Could not launch email';
     }
   }
 
   Future<void> _launchWebsite() async {
+    final website = _userProfile?.website;
+    if (website == null || website.isEmpty) return;
     await _launchURL(website);
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return _buildLoadingScreen();
+    }
+
+    if (_error != null) {
+      return _buildErrorScreen();
+    }
+
+    if (_userProfile == null) {
+      return _buildErrorScreen(message: 'User profile not found');
+    }
+
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
 
@@ -121,20 +198,19 @@ class _ProfileScreenState extends State<ProfileScreen>
             return [
               _SliverHeader(
                 isMyProfile: widget.isMyProfile,
-                displayName: displayName,
-                username: username,
-                followers: followers,
-                following: following,
-                subscribers: subscribers,
+                userProfile: _userProfile!,
+                userStats: _userStats,
+                isFollowing: _isFollowing,
                 isSmallScreen: isSmallScreen,
-                onInstagramTap: () => _launchURL(instagramUrl),
-                onTwitterTap: () => _launchURL(twitterUrl),
-                onFacebookTap: () => _launchURL(facebookUrl),
-                onTikTokTap: () => _launchURL(tiktokUrl),
-                onYouTubeTap: () => _launchURL(youtubeUrl),
+                onFollowTap: _toggleFollow,
+                onEditTap: _navigateToEditProfile,
+                onInstagramTap: () => _launchURL(_instagramUrl),
+                onTwitterTap: () => _launchURL(_twitterUrl),
+                onFacebookTap: () => _launchURL(_facebookUrl),
+                onTikTokTap: () => _launchURL(_tiktokUrl),
+                onYouTubeTap: () => _launchURL(_youtubeUrl),
               ),
 
-              // Tab Bar
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _TabBarDelegate(
@@ -167,101 +243,123 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  Widget _buildLoadingScreen() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 16),
+            Text(
+              'Loading profile...',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorScreen({String? message}) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              FontAwesomeIcons.exclamationTriangle,
+              size: 60,
+              color: Colors.orange,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Error Loading Profile',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              child: Text(
+                message ?? _error ?? 'Unknown error occurred',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.black45),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _loadUserData,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Try Again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Widget> _getTabContent(bool isSmallScreen) {
     final tabs = [
-      // Home Tab
-      const _LiveTab(),
-
-      // Clips Tab
-      const _ClipsTab(),
+      _HomeTab(userId: _userProfile!.uid),
+      _ClipsTab(userId: _userProfile!.uid),
     ];
 
-    // Add Wallet tab only for my profile
     if (widget.isMyProfile) {
-      tabs.add(const _WalletTab());
+      tabs.add(_WalletTab(userProfile: _userProfile!));
     }
 
-    // Add About and Schedules tabs
     tabs.addAll([
       _AboutTab(
-        bio: bio,
-        location: location,
-        joined: joined,
-        website: website,
-        email: email,
-        xHandle: xHandle,
-        instagram: instagram,
+        userProfile: _userProfile!,
         isMyProfile: widget.isMyProfile,
-        onWebsiteTap: _launchWebsite,
         onEmailTap: _launchEmail,
-        onInstagramTap: () => _launchURL(instagramUrl),
-        onTwitterTap: () => _launchURL(twitterUrl),
+        onWebsiteTap: _launchWebsite,
+        onInstagramTap: () => _launchURL(_instagramUrl),
+        onTwitterTap: () => _launchURL(_twitterUrl),
+        onFacebookTap: () => _launchURL(_facebookUrl),
+        onTikTokTap: () => _launchURL(_tiktokUrl),
+        onYouTubeTap: () => _launchURL(_youtubeUrl),
       ),
       _SchedulesTab(
-        schedules: _schedules,
         isMyProfile: widget.isMyProfile,
-        onAddSchedule: widget.isMyProfile ? _addNewSchedule : null,
       ),
     ]);
 
     return tabs;
   }
-
-  void _addNewSchedule() {
-    setState(() {
-      _schedules.add({
-        'title': 'New Stream Event',
-        'dateTime': DateTime.now().add(const Duration(days: 10, hours: 2)),
-        'description': 'Planning something special!',
-      });
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('New schedule added!'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
 }
 
-// Tab Bar Delegate for proper sizing
-class _TabBarDelegate extends SliverPersistentHeaderDelegate {
-  _TabBarDelegate(this._tabBar);
-
-  final TabBar _tabBar;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Container(color: Colors.white, child: _tabBar);
-  }
-
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-
-  @override
-  bool shouldRebuild(_TabBarDelegate oldDelegate) {
-    return false;
-  }
-}
-
-/* ---------------- FIXED SLIVER HEADER ---------------- */
+// Updated _SliverHeader to include edit functionality
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
-    required this.displayName,
-    required this.username,
-    required this.followers,
-    required this.following,
-    required this.subscribers,
+    required this.userProfile,
+    required this.userStats,
+    required this.isFollowing,
     required this.isSmallScreen,
+    required this.onFollowTap,
+    required this.onEditTap,
     required this.onInstagramTap,
     required this.onTwitterTap,
     required this.onFacebookTap,
@@ -270,12 +368,12 @@ class _SliverHeader extends StatelessWidget {
   });
 
   final bool isMyProfile;
-  final String displayName;
-  final String username;
-  final int followers;
-  final int following;
-  final int subscribers;
+  final UserModel userProfile;
+  final Map<String, int> userStats;
+  final bool isFollowing;
   final bool isSmallScreen;
+  final VoidCallback onFollowTap;
+  final VoidCallback onEditTap;
   final VoidCallback onInstagramTap;
   final VoidCallback onTwitterTap;
   final VoidCallback onFacebookTap;
@@ -284,6 +382,9 @@ class _SliverHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final profilePhotoUrl = UserService.getProfilePhotoUrl(userProfile);
+    final displayUsername = UserService.getDisplayUsername(userProfile);
+
     return SliverAppBar(
       expandedHeight: isSmallScreen ? 270.0 : 290.0,
       pinned: true,
@@ -294,9 +395,7 @@ class _SliverHeader extends StatelessWidget {
 
       leading: IconButton(
         icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.black),
-        onPressed: () {
-          Navigator.of(context).pop();
-        },
+        onPressed: () => Navigator.of(context).pop(),
       ),
 
       actions: [
@@ -330,9 +429,9 @@ class _SliverHeader extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: isSmallScreen ? 28 : 34,
-                            backgroundImage: const NetworkImage(
-                              "https://i.pravatar.cc/160?img=8",
-                            ),
+                            backgroundImage: profilePhotoUrl != null
+                                ? NetworkImage(profilePhotoUrl)
+                                : const NetworkImage("https://i.pravatar.cc/160?img=8") as ImageProvider,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -340,7 +439,7 @@ class _SliverHeader extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  displayName,
+                                  userProfile.name,
                                   style: TextStyle(
                                     fontWeight: FontWeight.w900,
                                     color: Colors.black,
@@ -352,7 +451,7 @@ class _SliverHeader extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  username,
+                                  displayUsername,
                                   style: TextStyle(
                                     fontSize: isSmallScreen ? 12 : 13,
                                     color: Colors.black54,
@@ -369,7 +468,7 @@ class _SliverHeader extends StatelessWidget {
                               child: SizedBox(
                                 width: isSmallScreen ? 65 : 75,
                                 child: OutlinedButton(
-                                  onPressed: () {},
+                                  onPressed: onEditTap,
                                   style: OutlinedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 6,
@@ -415,15 +514,15 @@ class _SliverHeader extends StatelessWidget {
                   child: Row(
                     children: [
                       Expanded(
-                        child: _StatTile(label: "Followers", value: followers),
+                        child: _StatTile(label: "Followers", value: userStats['followers'] ?? 0),
                       ),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: _StatTile(label: "Following", value: following),
+                        child: _StatTile(label: "Following", value: userStats['following'] ?? 0),
                       ),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: _StatTile(label: "Subs", value: subscribers),
+                        child: _StatTile(label: "Subs", value: userStats['subscribers'] ?? 0),
                       ),
                     ],
                   ),
@@ -436,14 +535,23 @@ class _SliverHeader extends StatelessWidget {
                 else
                   _buildOtherProfileActions(),
 
-                // Social Media Handles
-                _buildSocialMediaHandles(),
+                // Social Media Handles - Only show if user has social media
+                if (_hasSocialMedia())
+                  _buildSocialMediaHandles(),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  bool _hasSocialMedia() {
+    return userProfile.instagram != null ||
+        userProfile.twitter != null ||
+        userProfile.facebook != null ||
+        userProfile.tiktok != null ||
+        userProfile.youtube != null;
   }
 
   Widget _buildMyProfileActions() {
@@ -493,11 +601,11 @@ class _SliverHeader extends StatelessWidget {
       children: [
         Expanded(
           child: _ActionButton(
-            label: "Follow",
-            icon: FontAwesomeIcons.userPlus,
-            color: AppColors.primary,
-            textColor: Colors.white,
-            onPressed: () {},
+            label: isFollowing ? "Following" : "Follow",
+            icon: isFollowing ? FontAwesomeIcons.userCheck : FontAwesomeIcons.userPlus,
+            color: isFollowing ? Colors.grey : AppColors.primary,
+            textColor: isFollowing ? Colors.black87 : Colors.white,
+            onPressed: onFollowTap,
           ),
         ),
         const SizedBox(width: 6),
@@ -539,35 +647,40 @@ class _SliverHeader extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              _SocialMediaIcon(
-                icon: FontAwesomeIcons.instagram,
-                color: const Color(0xFFE4405F),
-                onTap: onInstagramTap,
-              ),
-              const SizedBox(width: 12),
-              _SocialMediaIcon(
-                icon: FontAwesomeIcons.xTwitter,
-                color: Colors.black,
-                onTap: onTwitterTap,
-              ),
-              const SizedBox(width: 12),
-              _SocialMediaIcon(
-                icon: FontAwesomeIcons.facebook,
-                color: const Color(0xFF1877F2),
-                onTap: onFacebookTap,
-              ),
-              const SizedBox(width: 12),
-              _SocialMediaIcon(
-                icon: FontAwesomeIcons.tiktok,
-                color: Colors.black,
-                onTap: onTikTokTap,
-              ),
-              const SizedBox(width: 12),
-              _SocialMediaIcon(
-                icon: FontAwesomeIcons.youtube,
-                color: const Color(0xFFFF0000),
-                onTap: onYouTubeTap,
-              ),
+              if (userProfile.instagram != null)
+                _SocialMediaIcon(
+                  icon: FontAwesomeIcons.instagram,
+                  color: const Color(0xFFE4405F),
+                  onTap: onInstagramTap,
+                ),
+              if (userProfile.twitter != null) const SizedBox(width: 12),
+              if (userProfile.twitter != null)
+                _SocialMediaIcon(
+                  icon: FontAwesomeIcons.xTwitter,
+                  color: Colors.black,
+                  onTap: onTwitterTap,
+                ),
+              if (userProfile.facebook != null) const SizedBox(width: 12),
+              if (userProfile.facebook != null)
+                _SocialMediaIcon(
+                  icon: FontAwesomeIcons.facebook,
+                  color: const Color(0xFF1877F2),
+                  onTap: onFacebookTap,
+                ),
+              if (userProfile.tiktok != null) const SizedBox(width: 12),
+              if (userProfile.tiktok != null)
+                _SocialMediaIcon(
+                  icon: FontAwesomeIcons.tiktok,
+                  color: Colors.black,
+                  onTap: onTikTokTap,
+                ),
+              if (userProfile.youtube != null) const SizedBox(width: 12),
+              if (userProfile.youtube != null)
+                _SocialMediaIcon(
+                  icon: FontAwesomeIcons.youtube,
+                  color: const Color(0xFFFF0000),
+                  onTap: onYouTubeTap,
+                ),
             ],
           ),
         ],
@@ -576,34 +689,193 @@ class _SliverHeader extends StatelessWidget {
   }
 }
 
-class _SocialMediaIcon extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
+// Tab Content Widgets
+class _HomeTab extends StatelessWidget {
+  final String userId;
+  const _HomeTab({required this.userId});
 
-  const _SocialMediaIcon({
-    required this.icon,
-    required this.color,
-    required this.onTap,
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: UserService.getUserFeed(userId),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final posts = snapshot.data?.docs ?? [];
+
+        if (posts.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(FontAwesomeIcons.video, size: 60, color: Colors.black26),
+                SizedBox(height: 16),
+                Text(
+                  "No posts yet.",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: posts.length,
+          itemBuilder: (context, index) {
+            final post = posts[index].data() as Map<String, dynamic>;
+            return ListTile(
+              title: Text(post['caption'] ?? ''),
+              // Add more post content
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ClipsTab extends StatelessWidget {
+  final String userId;
+  const _ClipsTab({required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(FontAwesomeIcons.video, size: 60, color: Colors.black26),
+          SizedBox(height: 16),
+          Text(
+            "No clips yet.",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WalletTab extends StatelessWidget {
+  final UserModel userProfile;
+  const _WalletTab({required this.userProfile});
+
+  @override
+  Widget build(BuildContext context) {
+    return _WalletTabContent(userProfile: userProfile);
+  }
+}
+
+class _AboutTab extends StatelessWidget {
+  final UserModel userProfile;
+  final bool isMyProfile;
+  final VoidCallback onEmailTap;
+  final VoidCallback onWebsiteTap;
+  final VoidCallback onInstagramTap;
+  final VoidCallback onTwitterTap;
+  final VoidCallback onFacebookTap;
+  final VoidCallback onTikTokTap;
+  final VoidCallback onYouTubeTap;
+
+  const _AboutTab({
+    required this.userProfile,
+    required this.isMyProfile,
+    required this.onEmailTap,
+    required this.onWebsiteTap,
+    required this.onInstagramTap,
+    required this.onTwitterTap,
+    required this.onFacebookTap,
+    required this.onTikTokTap,
+    required this.onYouTubeTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          shape: BoxShape.circle,
-          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
-        ),
-        child: Icon(icon, size: 16, color: color),
+    return _AboutTabContent(
+      userProfile: userProfile,
+      isMyProfile: isMyProfile,
+      onEmailTap: onEmailTap,
+      onWebsiteTap: onWebsiteTap,
+      onInstagramTap: onInstagramTap,
+      onTwitterTap: onTwitterTap,
+      onFacebookTap: onFacebookTap,
+      onTikTokTap: onTikTokTap,
+      onYouTubeTap: onYouTubeTap,
+    );
+  }
+}
+
+class _SchedulesTab extends StatelessWidget {
+  final bool isMyProfile;
+  const _SchedulesTab({required this.isMyProfile});
+
+  @override
+  Widget build(BuildContext context) {
+    return _SchedulesTabContent(isMyProfile: isMyProfile);
+  }
+}
+
+// UI Components
+class _StatTile extends StatelessWidget {
+  final String label;
+  final int value;
+
+  const _StatTile({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            _shortNumber(value),
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 16,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black54,
+              fontWeight: FontWeight.w400,
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+String _shortNumber(int n) {
+  if (n >= 1000000) return "${(n / 1000000).toStringAsFixed(1)}M";
+  if (n >= 1000) return "${(n / 1000).toStringAsFixed(1)}K";
+  return n.toString();
 }
 
 class _ActionButton extends StatelessWidget {
@@ -645,96 +917,62 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-/* ---------------- TAB CONTENT ---------------- */
+class _SocialMediaIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
 
-class _LiveTab extends StatelessWidget {
-  const _LiveTab();
+  const _SocialMediaIcon({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(FontAwesomeIcons.video, size: 60, color: Colors.black26),
-          SizedBox(height: 16),
-          Text(
-            "User is currently not live.",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.black54,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            "Check back later for their stream!",
-            style: TextStyle(fontSize: 14, color: Colors.black45),
-          ),
-        ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          shape: BoxShape.circle,
+          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+        ),
+        child: Icon(icon, size: 16, color: color),
       ),
     );
   }
 }
 
-class _ClipsTab extends StatelessWidget {
-  const _ClipsTab();
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  _TabBarDelegate(this._tabBar);
+
+  final TabBar _tabBar;
 
   @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final crossAxisCount = screenWidth < 400 ? 2 : 3;
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(color: Colors.white, child: _tabBar);
+  }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(8),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 0.65,
-      ),
-      itemCount: 12,
-      itemBuilder: (context, index) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.network(
-                "https://i.pravatar.cc/120?img=${index + 10}",
-                fit: BoxFit.cover,
-                color: Colors.black.withOpacity(0.2),
-                colorBlendMode: BlendMode.darken,
-              ),
-              const Center(
-                child: Icon(
-                  FontAwesomeIcons.play,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
-              Positioned(
-                bottom: 4,
-                left: 6,
-                child: Text(
-                  "Clip ${index + 1}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+
+  @override
+  bool shouldRebuild(_TabBarDelegate oldDelegate) {
+    return false;
   }
 }
 
-class _WalletTab extends StatelessWidget {
-  const _WalletTab();
+// Wallet Tab Content
+class _WalletTabContent extends StatelessWidget {
+  final UserModel userProfile;
+  const _WalletTabContent({required this.userProfile});
 
   Widget _walletTile({
     required String title,
@@ -779,6 +1017,9 @@ class _WalletTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final coinBalance = UserService.getCoinBalance(userProfile);
+    final totalEarnings = UserService.getTotalEarnings(userProfile);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -794,7 +1035,7 @@ class _WalletTab extends StatelessWidget {
           const SizedBox(height: 12),
           _walletTile(
             title: "My Coin Balance",
-            value: "2,450 💎",
+            value: "$coinBalance 💎",
             icon: FontAwesomeIcons.solidGem,
             iconColor: AppColors.primary,
           ),
@@ -816,7 +1057,7 @@ class _WalletTab extends StatelessWidget {
           ),
           _walletTile(
             title: "Earnings",
-            value: "\$1,200",
+            value: "\$$totalEarnings",
             icon: FontAwesomeIcons.sackDollar,
           ),
           _walletTile(
@@ -831,37 +1072,35 @@ class _WalletTab extends StatelessWidget {
   }
 }
 
-class _AboutTab extends StatelessWidget {
-  const _AboutTab({
-    required this.bio,
-    required this.location,
-    required this.joined,
-    required this.website,
-    required this.email,
-    required this.xHandle,
-    required this.instagram,
-    required this.isMyProfile,
-    required this.onWebsiteTap,
-    required this.onEmailTap,
-    required this.onInstagramTap,
-    required this.onTwitterTap,
-  });
-
-  final String bio;
-  final String location;
-  final DateTime joined;
-  final String website;
-  final String email;
-  final String xHandle;
-  final String instagram;
+// About Tab Content
+class _AboutTabContent extends StatelessWidget {
+  final UserModel userProfile;
   final bool isMyProfile;
-  final VoidCallback onWebsiteTap;
   final VoidCallback onEmailTap;
+  final VoidCallback onWebsiteTap;
   final VoidCallback onInstagramTap;
   final VoidCallback onTwitterTap;
+  final VoidCallback onFacebookTap;
+  final VoidCallback onTikTokTap;
+  final VoidCallback onYouTubeTap;
+
+  const _AboutTabContent({
+    required this.userProfile,
+    required this.isMyProfile,
+    required this.onEmailTap,
+    required this.onWebsiteTap,
+    required this.onInstagramTap,
+    required this.onTwitterTap,
+    required this.onFacebookTap,
+    required this.onTikTokTap,
+    required this.onYouTubeTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final joinDate = UserService.getFormattedJoinDate(userProfile);
+    final primaryMode = UserService.getPrimaryMode(userProfile);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -871,7 +1110,9 @@ class _AboutTab extends StatelessWidget {
           _SectionCard(
             title: "Bio",
             child: Text(
-              bio,
+              userProfile.bio?.isNotEmpty == true
+                  ? userProfile.bio!
+                  : 'No bio yet. ${isMyProfile ? 'Add a bio to tell people about yourself!' : ''}',
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 height: 1.4,
@@ -889,19 +1130,29 @@ class _AboutTab extends StatelessWidget {
                 _InfoTile(
                   icon: FontAwesomeIcons.locationDot,
                   label: "Location",
-                  value: location,
+                  value: userProfile.location?.isNotEmpty == true
+                      ? userProfile.location!
+                      : 'Not set',
                 ),
                 const SizedBox(height: 12),
                 _InfoTile(
                   icon: FontAwesomeIcons.calendar,
                   label: "Joined",
-                  value: _fmtDate(joined),
+                  value: joinDate,
                 ),
                 const SizedBox(height: 12),
-                const _InfoTile(
-                  icon: FontAwesomeIcons.certificate,
-                  label: "Verified",
-                  value: "No",
+                _InfoTile(
+                  icon: FontAwesomeIcons.user,
+                  label: "Primary Mode",
+                  value: primaryMode,
+                ),
+                const SizedBox(height: 12),
+                _InfoTile(
+                  icon: FontAwesomeIcons.venusMars,
+                  label: "Preferences",
+                  value: userProfile.preferences.isNotEmpty
+                      ? userProfile.preferences
+                      : 'Not set',
                 ),
               ],
             ),
@@ -909,68 +1160,83 @@ class _AboutTab extends StatelessWidget {
           const SizedBox(height: 16),
 
           // Links Section
-          _SectionCard(
-            title: "Links",
-            child: Column(
-              children: [
-                _ClickableInfoTile(
-                  icon: FontAwesomeIcons.globe,
-                  label: "Website",
-                  value: website.replaceAll('https://', ''),
-                  onTap: onWebsiteTap,
-                ),
-                const SizedBox(height: 12),
-                _ClickableInfoTile(
-                  icon: FontAwesomeIcons.solidEnvelope,
-                  label: "Email",
-                  value: email,
-                  onTap: onEmailTap,
-                ),
-                const SizedBox(height: 12),
-                _ClickableInfoTile(
-                  icon: FontAwesomeIcons.xTwitter,
-                  label: "X",
-                  value: xHandle,
-                  onTap: onTwitterTap,
-                ),
-                const SizedBox(height: 12),
-                _ClickableInfoTile(
-                  icon: FontAwesomeIcons.instagram,
-                  label: "Instagram",
-                  value: instagram,
-                  onTap: onInstagramTap,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Preferences Section (Only for own profile)
-          if (isMyProfile)
+          if (userProfile.email.isNotEmpty ||
+              userProfile.website?.isNotEmpty == true ||
+              userProfile.instagram?.isNotEmpty == true ||
+              userProfile.twitter?.isNotEmpty == true ||
+              userProfile.facebook?.isNotEmpty == true ||
+              userProfile.tiktok?.isNotEmpty == true ||
+              userProfile.youtube?.isNotEmpty == true)
             _SectionCard(
-              title: "Preferences",
+              title: "Links",
               child: Column(
                 children: [
-                  _SettingRow(
-                    icon: FontAwesomeIcons.lock,
-                    title: "Privacy",
-                    subtitle: "Followers-only chat, hide online status",
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: 12),
-                  _SettingRow(
-                    icon: FontAwesomeIcons.bell,
-                    title: "Notifications",
-                    subtitle: "Mentions, new subs, gifts",
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: 12),
-                  _SettingRow(
-                    icon: FontAwesomeIcons.palette,
-                    title: "Theme",
-                    subtitle: "Light / Dark / System",
-                    onTap: () {},
-                  ),
+                  if (userProfile.email.isNotEmpty)
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.solidEnvelope,
+                      label: "Email",
+                      value: userProfile.email,
+                      onTap: onEmailTap,
+                    ),
+                  if (userProfile.website?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty) const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.globe,
+                      label: "Website",
+                      value: userProfile.website!,
+                      onTap: onWebsiteTap,
+                    ),
+                  ],
+                  if (userProfile.instagram?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty || userProfile.website?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.instagram,
+                      label: "Instagram",
+                      value: userProfile.instagram!,
+                      onTap: onInstagramTap,
+                    ),
+                  ],
+                  if (userProfile.twitter?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty || userProfile.website?.isNotEmpty == true || userProfile.instagram?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.xTwitter,
+                      label: "Twitter",
+                      value: userProfile.twitter!,
+                      onTap: onTwitterTap,
+                    ),
+                  ],
+                  if (userProfile.facebook?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty || userProfile.website?.isNotEmpty == true || userProfile.instagram?.isNotEmpty == true || userProfile.twitter?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.facebook,
+                      label: "Facebook",
+                      value: userProfile.facebook!,
+                      onTap: onFacebookTap,
+                    ),
+                  ],
+                  if (userProfile.tiktok?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty || userProfile.website?.isNotEmpty == true || userProfile.instagram?.isNotEmpty == true || userProfile.twitter?.isNotEmpty == true || userProfile.facebook?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.tiktok,
+                      label: "TikTok",
+                      value: userProfile.tiktok!,
+                      onTap: onTikTokTap,
+                    ),
+                  ],
+                  if (userProfile.youtube?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty || userProfile.website?.isNotEmpty == true || userProfile.instagram?.isNotEmpty == true || userProfile.twitter?.isNotEmpty == true || userProfile.facebook?.isNotEmpty == true || userProfile.tiktok?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.youtube,
+                      label: "YouTube",
+                      value: userProfile.youtube!,
+                      onTap: onYouTubeTap,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -982,285 +1248,43 @@ class _AboutTab extends StatelessWidget {
   }
 }
 
-/* ---------------- SCHEDULES TAB ---------------- */
-
-class _SchedulesTab extends StatelessWidget {
-  final List<Map<String, dynamic>> schedules;
+// Schedules Tab Content
+class _SchedulesTabContent extends StatelessWidget {
   final bool isMyProfile;
-  final VoidCallback? onAddSchedule;
-
-  const _SchedulesTab({
-    required this.schedules,
-    required this.isMyProfile,
-    this.onAddSchedule,
-  });
+  const _SchedulesTabContent({required this.isMyProfile});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      floatingActionButton: isMyProfile
-          ? FloatingActionButton(
-              onPressed: onAddSchedule,
-              backgroundColor: AppColors.primary,
-              child: const Icon(FontAwesomeIcons.plus, color: Colors.white),
-            )
-          : null,
-      body: schedules.isEmpty ? _buildEmptyState() : _buildSchedulesList(),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            FontAwesomeIcons.calendar,
-            size: 60,
-            color: Colors.black.withOpacity(0.3),
-          ),
-          const SizedBox(height: 16),
+          Icon(FontAwesomeIcons.calendar, size: 60, color: Colors.black26),
+          SizedBox(height: 16),
           Text(
-            isMyProfile ? "No schedules yet" : "No upcoming schedules",
-            style: const TextStyle(
+            "No schedules yet.",
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Colors.black54,
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
-            isMyProfile
-                ? "Tap the + button to add your first schedule!"
-                : "Check back later for upcoming streams.",
-            style: const TextStyle(fontSize: 14, color: Colors.black45),
-            textAlign: TextAlign.center,
+            "Check back later for upcoming streams.",
+            style: TextStyle(fontSize: 14, color: Colors.black45),
           ),
         ],
       ),
     );
   }
-
-  Widget _buildSchedulesList() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: schedules.length,
-      itemBuilder: (context, index) {
-        final schedule = schedules[index];
-        return _ScheduleCard(
-          title: schedule['title'],
-          dateTime: schedule['dateTime'],
-          description: schedule['description'],
-          isMyProfile: isMyProfile,
-        );
-      },
-    );
-  }
 }
 
-class _ScheduleCard extends StatefulWidget {
-  final String title;
-  final DateTime dateTime;
-  final String description;
-  final bool isMyProfile;
-
-  const _ScheduleCard({
-    required this.title,
-    required this.dateTime,
-    required this.description,
-    required this.isMyProfile,
-  });
-
-  @override
-  State<_ScheduleCard> createState() => _ScheduleCardState();
-}
-
-class _ScheduleCardState extends State<_ScheduleCard> {
-  late Timer _timer;
-  Duration _timeLeft = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _calculateTimeLeft();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _calculateTimeLeft();
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer.cancel();
-    super.dispose();
-  }
-
-  void _calculateTimeLeft() {
-    final now = DateTime.now();
-    _timeLeft = widget.dateTime.isAfter(now)
-        ? widget.dateTime.difference(now)
-        : Duration.zero;
-  }
-
-  String _formatCountdown() {
-    if (_timeLeft.inDays > 0) {
-      return "${_timeLeft.inDays}d ${_timeLeft.inHours.remainder(24)}h ${_timeLeft.inMinutes.remainder(60)}m";
-    } else if (_timeLeft.inHours > 0) {
-      return "${_timeLeft.inHours}h ${_timeLeft.inMinutes.remainder(60)}m ${_timeLeft.inSeconds.remainder(60)}s";
-    } else if (_timeLeft.inMinutes > 0) {
-      return "${_timeLeft.inMinutes}m ${_timeLeft.inSeconds.remainder(60)}s";
-    } else {
-      return "Starting soon!";
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                      color: Colors.black87,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (widget.isMyProfile)
-                  IconButton(
-                    icon: const Icon(
-                      FontAwesomeIcons.ellipsisVertical,
-                      size: 16,
-                    ),
-                    onPressed: () {
-                      _showScheduleOptions();
-                    },
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              widget.description,
-              style: const TextStyle(
-                fontWeight: FontWeight.w500,
-                color: Colors.black54,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(FontAwesomeIcons.clock, size: 14, color: Colors.black54),
-                const SizedBox(width: 6),
-                Text(
-                  _fmtDateTime(widget.dateTime),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    FontAwesomeIcons.hourglassHalf,
-                    size: 12,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    _formatCountdown(),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showScheduleOptions() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(FontAwesomeIcons.pencil),
-                title: const Text('Edit Schedule'),
-                onTap: () {
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(FontAwesomeIcons.trash, color: Colors.red),
-                title: const Text(
-                  'Delete Schedule',
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/* ---------------- COMPONENTS ---------------- */
-
+// UI Components for About Tab
 class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
   final String title;
   final Widget child;
+  const _SectionCard({required this.title, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -1299,14 +1323,15 @@ class _SectionCard extends StatelessWidget {
 }
 
 class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
   const _InfoTile({
     required this.icon,
     required this.label,
     required this.value,
   });
-  final IconData icon;
-  final String label;
-  final String value;
 
   @override
   Widget build(BuildContext context) {
@@ -1345,16 +1370,17 @@ class _InfoTile extends StatelessWidget {
 }
 
 class _ClickableInfoTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
   const _ClickableInfoTile({
     required this.icon,
     required this.label,
     required this.value,
     required this.onTap,
   });
-  final IconData icon;
-  final String label;
-  final String value;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1402,150 +1428,4 @@ class _ClickableInfoTile extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SettingRow extends StatelessWidget {
-  const _SettingRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.onTap,
-  });
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.black87, size: 18),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black54,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              FontAwesomeIcons.chevronRight,
-              color: Colors.black45,
-              size: 14,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatTile extends StatelessWidget {
-  const _StatTile({required this.label, required this.value});
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _shortNumber(value),
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 16,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.black54,
-              fontWeight: FontWeight.w400,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/* ---------------- HELPER FUNCTIONS ---------------- */
-
-String _fmtDate(DateTime d) {
-  final months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  return "${months[d.month - 1]} ${d.day}, ${d.year}";
-}
-
-String _fmtDateTime(DateTime d) {
-  final months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
-  final period = d.hour < 12 ? 'AM' : 'PM';
-  return "${months[d.month - 1]} ${d.day}, ${d.year} at $hour:${d.minute.toString().padLeft(2, '0')} $period";
-}
-
-String _shortNumber(int n) {
-  if (n >= 1000000) return "${(n / 1000000).toStringAsFixed(1)}M";
-  if (n >= 1000) return "${(n / 1000).toStringAsFixed(1)}K";
-  return n.toString();
 }
