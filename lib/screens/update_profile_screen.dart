@@ -2,6 +2,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Font Awesome
+import '../constants/app_colors.dart';
+import 'home_screen.dart'; // DiscoverPage   (swipe cards)
+import 'profile_screen.dart'; // ⬅️
+import 'discover_screen.dart';
 
 // navigate targets
 import 'constants/app_colors.dart';// DiscoverScreen (feed style)
@@ -11,12 +15,14 @@ import 'user_channel.dart'; // ⬅️ NEW: My Profile (followers/following/subsc
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+class UpdateProfileScreen extends StatefulWidget {
+  const UpdateProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<UpdateProfileScreen> createState() => _UpdateProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
   int _tab = 0; // 0: Pay plan, 1: Dating advice, 2: Photo insights
 
   @override

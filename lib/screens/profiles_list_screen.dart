@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class ProfileDisplay extends StatelessWidget {
-  const ProfileDisplay({
+class ProfilesListScreen extends StatelessWidget {
+  const ProfilesListScreen({
     super.key,
     required this.name,
     required this.age,
@@ -11,13 +11,11 @@ class ProfileDisplay extends StatelessWidget {
     required this.isAsset,
     required this.verified,
     required this.newHere,
-    // Optional extras
     this.bio,
     this.interests = const [],
     this.distanceKm,
     this.location,
     this.galleryImages = const [], // up to 5 more (total 6 with hero)
-    // Optional custom section texts (fallbacks provided)
     this.excitedAbout,
     this.greenFlags,
     this.weekendVibe,
@@ -57,19 +55,15 @@ class ProfileDisplay extends StatelessWidget {
   final String? promptThree;
   final String? promptFour;
 
-  /// Custom chips per section (length 7). Each inner list is chips for that section.
-  /// If null or a section's list is null/empty, sensible defaults are used.
   final List<List<_ChipData>>? customChips;
 
   @override
   Widget build(BuildContext context) {
     final heroTag = 'profile-img-$image';
 
-    // Build a 6-image list (first = hero). If fewer provided, repeat safely.
     final base = <String>[image, ...galleryImages];
     final imgs = _fillToSix(base);
 
-    // Defaults if texts not supplied
     final iList = interests.isNotEmpty
         ? interests
         : const ["Music", "Reading", "Coffee", "Hiking"];

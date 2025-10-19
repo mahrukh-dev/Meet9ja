@@ -1,19 +1,19 @@
-// lib/user_channel.dart
+// lib/profile_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'constants/app_colors.dart';
+import '../constants/app_colors.dart';
 
-class UserChannelScreen extends StatefulWidget {
+class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
-  const UserChannelScreen({super.key, this.isMyProfile = true});
+  const ProfileScreen({super.key, this.isMyProfile = true});
 
   @override
-  State<UserChannelScreen> createState() => _UserChannelScreenState();
+  State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _UserChannelScreenState extends State<UserChannelScreen>
+class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
