@@ -32,6 +32,7 @@ class FirebaseService {
     required String uid,
     required String email,
     required String name,
+    required String username,
     required int age,
     required String selectedMode,
     required String travelPreference,
@@ -44,6 +45,7 @@ class FirebaseService {
         'email': email,
         'name': name,
         'age': age,
+        'username': username,
         'mode': {
           'date': selectedMode == 'Date',
           'travel_partner': selectedMode == 'Travel partner',
@@ -79,6 +81,7 @@ class FirebaseService {
     required String email,
     required String password,
     required String name,
+    required String username,
     required int age,
     required String selectedMode,
     required String travelPreference,
@@ -97,6 +100,7 @@ class FirebaseService {
           email: email,
           name: name,
           age: age,
+          username: username,
           selectedMode: selectedMode,
           travelPreference: travelPreference,
         );

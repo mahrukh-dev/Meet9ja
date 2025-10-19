@@ -20,6 +20,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _emailCtrl = TextEditingController(text: "test@example.com");
   final TextEditingController _passwordCtrl = TextEditingController(text: "123456");
   final TextEditingController _ageCtrl = TextEditingController(text: "25");
+  final TextEditingController _usernameCtrl = TextEditingController(text: "username");
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
 
@@ -79,6 +80,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           password: _passwordCtrl.text.trim(),
           name: _nameCtrl.text.trim(),
           age: age, // Use the validated age
+          username: _usernameCtrl.text.trim(),
           selectedMode: _getSelectedMode(),
           travelPreference: _getTravelPreference(),
         );
@@ -229,40 +231,47 @@ class _SignUpScreenState extends State<SignUpScreen> {
             _H1("Let's create your\nprofile"),
             const SizedBox(height: 8),
             const _BodyText("Fill in your basic information to get started"),
-            const SizedBox(height: 28),
+            const SizedBox(height: 20),
 
             // Name
             const _SectionLabel("Name"),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             _PinkField(
               controller: _nameCtrl,
               hint: "Enter your name",
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
 
             // Email
             const _SectionLabel("Email"),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             _PinkField(
               controller: _emailCtrl,
               hint: "Enter your email",
               keyboardType: TextInputType.emailAddress,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
+            const _SectionLabel("Username"),
+            const SizedBox(height: 5),
+            _PinkField(
+              controller: _usernameCtrl,
+              hint: "Username",
+            ),
+            const SizedBox(height: 10),
 
             // Password
             const _SectionLabel("Password"),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             _PinkField(
               controller: _passwordCtrl,
               hint: "Create a password",
               obscureText: true,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
 
             // Age
             const _SectionLabel("Age"),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             _PinkField(
               controller: _ageCtrl,
               hint: "Enter your age",

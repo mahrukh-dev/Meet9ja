@@ -4,6 +4,7 @@ class UserModel {
   final String uid;
   final String email;
   final String name;
+  final String username;
   final int age;
   final String? photoUrl;
   final Map<String, dynamic> mode;
@@ -27,6 +28,7 @@ class UserModel {
     required this.email,
     required this.name,
     required this.age,
+    required this.username,
     this.photoUrl,
     required this.mode,
     required this.preferences,
@@ -51,6 +53,7 @@ class UserModel {
       email: data['email'] ?? '',
       name: data['name'] ?? '',
       age: data['age'] ?? 0,
+      username: data['username'] ?? '',
       photoUrl: data['photo_url'],
       mode: Map<String, dynamic>.from(data['mode'] ?? {}),
       preferences: data['preferences'] ?? '',

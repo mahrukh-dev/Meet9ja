@@ -1,6 +1,7 @@
 users: [{
     UID : "",
     email: "",
+    username: '', MUST BE UNIQUE
     photo_url: "",
     first_photos: {
         photo1url: '',
