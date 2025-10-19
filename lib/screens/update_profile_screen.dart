@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Font Awesome
 import '../constants/app_colors.dart';
 import 'home_screen.dart'; // DiscoverPage   (swipe cards)
-import '../user_channel.dart'; // ⬅️
+import 'profile_screen.dart'; // ⬅️
 import 'discover_screen.dart';
 
 class UpdateProfileScreen extends StatefulWidget {
@@ -70,7 +70,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const UserChannelScreen(isMyProfile: true),
+                              builder: (_) => const ProfileScreen(isMyProfile: true),
                             ),
                           );
                         },

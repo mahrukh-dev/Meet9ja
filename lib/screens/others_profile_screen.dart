@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class ProfileView extends StatelessWidget {
-  const ProfileView({
+class OthersProfileScreen extends StatelessWidget {
+  const OthersProfileScreen({
     super.key,
     required this.name,
     required this.age,
@@ -26,7 +26,6 @@ class ProfileView extends StatelessWidget {
   final bool verified;
   final bool newHere;
 
-  // Optional extra details
   final String? bio;
   final List<String> interests;
   final int? distanceKm;
@@ -34,11 +33,9 @@ class ProfileView extends StatelessWidget {
 
   ImageProvider get _imgProvider =>
       isAsset ? AssetImage(image) : NetworkImage(image) as ImageProvider;
-
   @override
   Widget build(BuildContext context) {
     final flagGreen = const Color(0xFF008751);
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: CustomScrollView(
