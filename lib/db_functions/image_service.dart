@@ -1,31 +1,17 @@
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:meet9ja/db_functions/permission_service.dart';
 import 'package:path/path.dart' as path;
-import 'package:permission_handler/permission_handler.dart';
+
 class ImageService {
   static final FirebaseStorage _storage = FirebaseStorage.instance;
   static final ImagePicker _imagePicker = ImagePicker();
 
-  // Pick image from gallery with robust permission handling
+  // Pick image from gallery
   static Future<File?> pickImageFromGallery() async {
     try {
-      print('📱 Starting image picker process...');
+      print('📱 Starting image picker...');
 
-      // First, check if we have permission
-      bool hasPermission = await PermissionService.hasPhotoPermission();
-
-      if (!hasPermission) {
-        print('📱 Requesting photo permission...');
-        hasPermission = await PermissionService.requestPhotoPermission();
-
-        if (!hasPermission) {
-          throw 'Gallery access permission denied. Please enable photo access in your device settings.';
-        }
-      }
-
-      print('📱 Permission granted, picking image...');
       final XFile? pickedFile = await _imagePicker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 85,
@@ -43,34 +29,21 @@ class ImageService {
     } catch (e) {
       print('❌ Error in pickImageFromGallery: $e');
 
-      // Handle permission-related errors
-      if (e.toString().contains('permission') ||
-          e.toString().contains('PERMISSION_DENIED') ||
+      if (e.toString().contains('PERMISSION_DENIED') ||
+          e.toString().contains('permission') ||
           e.toString().contains('Permission')) {
-        throw 'Photo access permission required. Please grant permission in app settings to select photos.';
+        throw 'Gallery access denied. Please grant photo permission in app settings.';
+      } else {
+        throw 'Failed to pick image. Please try again.';
       }
-
-      throw 'Failed to pick image: $e';
     }
   }
 
   // Pick multiple images
   static Future<List<File>> pickMultipleImagesFromGallery() async {
     try {
-      print('📱 Starting multiple image picker process...');
+      print('📱 Starting multiple image picker...');
 
-      // Check permission first
-      bool hasPermission = await PermissionService.hasPhotoPermission();
-
-      if (!hasPermission) {
-        hasPermission = await PermissionService.requestPhotoPermission();
-
-        if (!hasPermission) {
-          throw 'Gallery access permission denied. Please enable photo access in your device settings.';
-        }
-      }
-
-      print('📱 Permission granted, picking multiple images...');
       final List<XFile> pickedFiles = await _imagePicker.pickMultiImage(
         imageQuality: 85,
         maxWidth: 1080,
@@ -87,16 +60,16 @@ class ImageService {
     } catch (e) {
       print('❌ Error in pickMultipleImagesFromGallery: $e');
 
-      if (e.toString().contains('permission') ||
-          e.toString().contains('PERMISSION_DENIED')) {
-        throw 'Photo access permission required. Please grant permission in app settings to select photos.';
+      if (e.toString().contains('PERMISSION_DENIED') ||
+          e.toString().contains('permission')) {
+        throw 'Gallery access denied. Please grant photo permission in app settings.';
       }
 
-      throw 'Failed to pick images: $e';
+      throw 'Failed to pick images. Please try again.';
     }
   }
 
-  // Upload image to Firebase Storage
+  // Upload image to Firebase Storage - IMPROVED
   static Future<String> uploadImage({
     required File imageFile,
     required String userId,
@@ -105,16 +78,21 @@ class ImageService {
     try {
       print('📤 Uploading image: $imageType for user: $userId');
 
-      // Validate file
       if (!await imageFile.exists()) {
-        throw 'Image file not found or inaccessible';
+        throw 'Image file not found';
       }
 
-      // Generate unique filename
+      // Get file size for logging
+      final fileLength = await imageFile.length();
+      print('📁 File size: ${(fileLength / 1024 / 1024).toStringAsFixed(2)} MB');
+
+      // Generate unique filename with user ID
       String fileName = '${userId}_${imageType}_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
 
-      // Create storage reference
-      Reference storageRef = _storage.ref().child('users/$userId/$fileName');
+      // Create storage reference in user's folder
+      Reference storageRef = _storage.ref().child('users/$userId/profile_photos/$fileName');
+
+      print('📁 Storage path: users/$userId/profile_photos/$fileName');
 
       // Upload file with metadata
       UploadTask uploadTask = storageRef.putFile(
@@ -124,6 +102,7 @@ class ImageService {
           customMetadata: {
             'uploadedBy': userId,
             'uploadedAt': DateTime.now().toIso8601String(),
+            'imageType': imageType,
           },
         ),
       );
@@ -135,18 +114,20 @@ class ImageService {
       });
 
       // Wait for completion
-      TaskSnapshot snapshot = await uploadTask.whenComplete(() {});
+      TaskSnapshot snapshot = await uploadTask;
       String downloadUrl = await snapshot.ref.getDownloadURL();
 
-      print('✅ Image uploaded successfully. URL: $downloadUrl');
+      print('✅ Image uploaded successfully for user $userId');
+      print('🔗 Download URL: $downloadUrl');
+
       return downloadUrl;
     } catch (e) {
-      print('❌ Error uploading image: $e');
-      throw 'Failed to upload image. Please try again.';
+      print('❌ Error uploading image for user $userId: $e');
+      throw 'Failed to upload image. Please try again. Error: ${e.toString()}';
     }
   }
 
-  // Upload multiple photos for first_photos
+  // Upload multiple photos for first_photos - IMPROVED
   static Future<Map<String, String>> uploadFirstPhotos({
     required String userId,
     required List<File> photoFiles,
@@ -173,7 +154,7 @@ class ImageService {
         }
 
         try {
-          print('📤 Uploading photo ${i + 1} of ${photoFiles.length}');
+          print('📤 Uploading photo ${i + 1} of ${photoFiles.length} for user $userId');
           String downloadUrl = await uploadImage(
             imageFile: photoFiles[i],
             userId: userId,
@@ -181,24 +162,24 @@ class ImageService {
           );
 
           photoUrls['photo${i + 1}url'] = downloadUrl;
-          print('✅ Photo ${i + 1} uploaded successfully');
+          print('✅ Photo ${i + 1} uploaded successfully for user $userId');
 
         } catch (e) {
-          print('❌ Failed to upload photo ${i + 1}: $e');
-          // Continue with other photos even if one fails
+          print('❌ Failed to upload photo ${i + 1} for user $userId: $e');
+          // Set empty string for failed uploads but continue with others
           photoUrls['photo${i + 1}url'] = '';
         }
       }
 
-      print('✅ All photos processed. Results: $photoUrls');
+      print('✅ All photos processed for user $userId. Results: $photoUrls');
       return photoUrls;
     } catch (e) {
-      print('❌ Error in uploadFirstPhotos: $e');
+      print('❌ Error in uploadFirstPhotos for user $userId: $e');
       throw 'Failed to upload photos: ${e.toString()}';
     }
   }
 
-  // Delete image from storage (optional cleanup)
+  // Delete image from storage
   static Future<void> deleteImage(String imageUrl) async {
     try {
       if (imageUrl.isNotEmpty && imageUrl.startsWith('http')) {
