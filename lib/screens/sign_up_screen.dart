@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/screens/selfie_onboarding_screen.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_colors.dart';
 import '../db_functions/firebase_service.dart';
 import '../db_functions/image_service.dart';
@@ -105,16 +106,99 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // Photo handling methods
   Future<void> _pickAndAddPhoto() async {
     try {
+      // Show loading indicator
+      _showLoadingDialog('Accessing your photos...');
+
       File? imageFile = await ImageService.pickImageFromGallery();
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+      }
+
       if (imageFile != null && mounted) {
-        setState(() {
-          if (_selectedPhotos.length < 4) {
+        if (_selectedPhotos.length < 4) {
+          setState(() {
             _selectedPhotos.add(imageFile);
-          }
-        });
+          });
+
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Photo added successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else {
+          _showErrorDialog('Maximum 4 photos allowed. Please remove one to add another.');
+        }
       }
     } catch (e) {
-      _showErrorDialog('Failed to pick image: $e');
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+
+        // Handle permission errors specifically
+        if (e.toString().contains('permission') || e.toString().contains('Permission')) {
+          _showPermissionDialog();
+        } else {
+          _showErrorDialog(e.toString());
+        }
+      }
+    }
+  }
+
+  Future<void> _pickMultiplePhotos() async {
+    try {
+      _showLoadingDialog('Accessing your photos...');
+
+      List<File> imageFiles = await ImageService.pickMultipleImagesFromGallery();
+
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      if (imageFiles.isNotEmpty && mounted) {
+        int remainingSlots = 4 - _selectedPhotos.length;
+
+        if (remainingSlots > 0) {
+          int imagesToAdd = imageFiles.length > remainingSlots ? remainingSlots : imageFiles.length;
+
+          setState(() {
+            _selectedPhotos.addAll(imageFiles.take(imagesToAdd));
+          });
+
+          // Show appropriate message
+          if (imageFiles.length > remainingSlots) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Added $imagesToAdd photos (maximum 4 total)'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Added ${imageFiles.length} photos successfully!'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        } else {
+          _showErrorDialog('You already have 4 photos. Please remove some to add more.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+
+        if (e.toString().contains('permission') || e.toString().contains('Permission')) {
+          _showPermissionDialog();
+        } else {
+          _showErrorDialog(e.toString());
+        }
+      }
     }
   }
 
@@ -122,6 +206,41 @@ class _SignUpScreenState extends State<SignUpScreen> {
     setState(() {
       _selectedPhotos.removeAt(index);
     });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Photo removed'),
+        backgroundColor: Colors.blue,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showPermissionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Permission Required'),
+        content: const Text(
+          'Meet9ja needs access to your photos to select profile pictures. '
+              'This allows you to choose photos from your gallery for your profile.\n\n'
+              'Please grant photo access permission to continue.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Not Now'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _next() async {
@@ -327,7 +446,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       barColor: AppColors.primary,
                     ),
                   ),
+
                   const SizedBox(height: 24),
+
                   Expanded(
                     child: PageView(
                       controller: _page,
@@ -342,6 +463,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ],
               ),
+
               if (_step > 0)
                 Positioned(
                   left: 6,
@@ -354,6 +476,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     ),
                   ),
                 ),
+
               Positioned(
                 right: 20,
                 bottom: 24,
@@ -385,6 +508,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             const SizedBox(height: 8),
             const _BodyText("Fill in your basic information to get started"),
             const SizedBox(height: 20),
+
             // Name
             const _SectionLabel("Name"),
             const SizedBox(height: 5),
@@ -393,6 +517,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               hint: "Enter your name",
             ),
             const SizedBox(height: 10),
+
             // Email
             const _SectionLabel("Email"),
             const SizedBox(height: 5),
@@ -402,6 +527,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 10),
+
             // Username with validation
             const _SectionLabel("Username"),
             const SizedBox(height: 5),
@@ -414,6 +540,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               errorText: _usernameError,
             ),
             const SizedBox(height: 10),
+
             // Password
             const _SectionLabel("Password"),
             const SizedBox(height: 5),
@@ -423,6 +550,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               obscureText: true,
             ),
             const SizedBox(height: 10),
+
             // Age
             const _SectionLabel("Age"),
             const SizedBox(height: 5),
@@ -445,56 +573,129 @@ class _SignUpScreenState extends State<SignUpScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _H1("Add your first 2\nphotos"),
+          _H1("Add your photos"),
           const SizedBox(height: 8),
-          _BodyText("Add at least 2 photos to continue"),
-          const SizedBox(height: 16),
-          Expanded(
-            child: Center(
-              child: SizedBox(
-                width: 300,
-                child: GridView.count(
-                  padding: EdgeInsets.zero,
-                  shrinkWrap: true,
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  children: [
-                    // Display selected photos
-                    ..._selectedPhotos.asMap().entries.map((entry) {
-                      int index = entry.key;
-                      File photo = entry.value;
-                      return _PhotoTile.image(
-                        imageFile: photo,
-                        onTap: () => _removePhoto(index),
-                      );
-                    }).toList(),
-                    // Add button if less than 4 photos
-                    if (_selectedPhotos.length < 4)
-                      _PhotoTile.add(onTap: _pickAndAddPhoto),
-                    // Empty slots
-                    ...List.generate(
-                      4 - _selectedPhotos.length - (_selectedPhotos.length < 4 ? 1 : 0),
-                          (index) => _PhotoTile.empty(),
-                    ),
-                  ].sublist(0, 4), // Ensure exactly 4 items
+          const _BodyText("Choose 2-4 photos for your profile"),
+          const SizedBox(height: 20),
+
+          // Photo selection buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _pickAndAddPhoto,
+                  icon: const Icon(Icons.add_photo_alternate, size: 20),
+                  label: const Text('Add Single Photo'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _pickMultiplePhotos,
+                  icon: const Icon(Icons.photo_library, size: 20),
+                  label: const Text('Add Multiple'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // Photos grid
+          Expanded(
+            child: _selectedPhotos.isEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.photo_camera_back,
+                    size: 80,
+                    color: Colors.grey[300],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No photos yet',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap the buttons above to add photos\nfrom your gallery',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+                : GridView.builder(
+              padding: const EdgeInsets.all(8),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.85,
+              ),
+              itemCount: _selectedPhotos.length,
+              itemBuilder: (context, index) {
+                return _PhotoTile.image(
+                  imageFile: _selectedPhotos[index],
+                  onTap: () => _removePhoto(index),
+                );
+              },
             ),
           ),
-          if (_selectedPhotos.length < 2) ...[
-            const SizedBox(height: 16),
-            Center(
-              child: Text(
-                'Please add at least 2 photos',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontSize: 14,
+
+          // Photo counter and validation
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              children: [
+                Text(
+                  '${_selectedPhotos.length}/4 Photos Added',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: _selectedPhotos.length >= 2 ? Colors.green : Colors.orange,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 8),
+                if (_selectedPhotos.length < 2)
+                  Text(
+                    'Add at least 2 photos to continue',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 14,
+                    ),
+                  )
+                else if (_selectedPhotos.length == 4)
+                  Text(
+                    'Maximum photos reached',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontSize: 14,
+                    ),
+                  ),
+              ],
             ),
-          ],
-          const SizedBox(height: 80),
+          ),
         ],
       ),
     );
@@ -566,7 +767,92 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 }
 
-// ===== Updated PhotoTile with image support =====
+// ===== Username Field with Validation =====
+class _UsernameField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final bool isChecking;
+  final bool isAvailable;
+  final String errorText;
+
+  const _UsernameField({
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
+    required this.isChecking,
+    required this.isAvailable,
+    required this.errorText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: controller,
+          cursorColor: Colors.white,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: Colors.white70),
+            filled: true,
+            fillColor: AppColors.primary,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: isChecking
+                ? const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            )
+                : controller.text.length >= 3
+                ? Icon(
+              isAvailable ? Icons.check_circle : Icons.cancel,
+              color: isAvailable ? Colors.white : Colors.white,
+            )
+                : null,
+          ),
+          onChanged: onChanged,
+        ),
+        if (errorText.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            errorText,
+            style: const TextStyle(
+              color: Colors.red,
+              fontSize: 12,
+            ),
+          ),
+        ] else if (controller.text.length >= 3 && isAvailable) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Username is available!',
+            style: TextStyle(
+              color: Colors.green[600],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ===== PhotoTile Widget =====
 class _PhotoTile extends StatelessWidget {
   final VoidCallback? onTap;
   final Widget child;
@@ -653,91 +939,7 @@ class _PhotoTile extends StatelessWidget {
   }
 }
 
-// ... Rest of your existing UI classes (_UsernameField, _ProgressLine, _H1, _BodyText, _SectionLabel, _PinkField, _SelectCard, _RadioCard) remain the same
-class _UsernameField extends StatelessWidget {
-  final TextEditingController controller;
-  final String hint;
-  final ValueChanged<String> onChanged;
-  final bool isChecking;
-  final bool isAvailable;
-  final String errorText;
-
-  const _UsernameField({
-    required this.controller,
-    required this.hint,
-    required this.onChanged,
-    required this.isChecking,
-    required this.isAvailable,
-    required this.errorText,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: controller,
-          cursorColor: Colors.white,
-          style: const TextStyle(color: Colors.white, fontSize: 16),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: Colors.white70),
-            filled: true,
-            fillColor: AppColors.primary,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 12,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            suffixIcon: isChecking
-                ? const Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-            )
-                : controller.text.length >= 3
-                ? Icon(
-              isAvailable ? Icons.check_circle : Icons.cancel,
-              color: isAvailable ? Colors.white : Colors.white,
-            )
-                : null,
-          ),
-          onChanged: onChanged,
-        ),
-        if (errorText.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            errorText,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-            ),
-          ),
-        ] else if (controller.text.length >= 3 && isAvailable) ...[
-          const SizedBox(height: 4),
-          Text(
-            'Username is available!',
-            style: TextStyle(
-              color: Colors.green[600],
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
+// ===== UI Component Widgets =====
 class _ProgressLine extends StatelessWidget {
   final double progress;
   final Color trackColor;

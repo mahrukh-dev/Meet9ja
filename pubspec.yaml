@@ -42,6 +42,7 @@ dependencies:
   firebase_storage: ^13.0.3
   image_picker: ^1.2.0
   path: ^1.9.1
+  permission_handler: ^12.0.1
   camera: ^0.11.2
   zego_zim: ^2.21.1+2
   zego_uikit_prebuilt_video_conference: ^2.10.3

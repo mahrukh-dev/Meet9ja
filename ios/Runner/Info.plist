@@ -19,6 +19,12 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>meet9ja</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+    <string>This app needs access to photos to let you share images.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>This app needs access to the camera to take photos.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app needs access to the microphone for video recording.</string>
 	<key>CFBundlePackageType</key>
 	<key>NSCameraUsageDescription</key>
     <string>We need access to your camera to enable live streaming.</string>
