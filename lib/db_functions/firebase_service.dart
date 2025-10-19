@@ -1,11 +1,15 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'image_service.dart';
 
 class FirebaseService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // Check if username is available
   static Future<bool> isUsernameAvailable(String username) async {
     try {
       final querySnapshot = await _firestore
@@ -17,7 +21,7 @@ class FirebaseService {
       return querySnapshot.docs.isEmpty;
     } catch (e) {
       print('❌ Error checking username availability: $e');
-      throw 'Failed to check username availability';
+      throw 'Failed to check username availability: $e';
     }
   }
 
@@ -25,22 +29,13 @@ class FirebaseService {
   static Future<User?> createUserWithEmailAndPassword({
     required String email,
     required String password,
-    required String username,
   }) async {
     try {
-      print('🔥 Attempting to create user with email: $email, username: $username');
-
-      final isAvailable = await isUsernameAvailable(username);
-      if (!isAvailable) {
-        throw 'Username "$username" is already taken. Please choose another one.';
-      }
-
+      print('🔥 Attempting to create user with email: $email');
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-
-      await userCredential.user?.updateDisplayName(username);
       print('✅ User created successfully: ${userCredential.user?.uid}');
       return userCredential.user;
     } on FirebaseAuthException catch (e) {
@@ -52,7 +47,7 @@ class FirebaseService {
     }
   }
 
-  // Save user profile to Firestore
+  // Save user profile to Firestore with photos
   static Future<void> saveUserProfile({
     required String uid,
     required String email,
@@ -61,18 +56,17 @@ class FirebaseService {
     required int age,
     required String selectedMode,
     required String travelPreference,
-    required Map<String, String> firstPhotos,
+    required Map<String, String> firstPhotos, // Add this parameter
   }) async {
     try {
-      print('💾 Saving user profile to Firestore for UID: $uid, username: $username');
+      print('💾 Saving user profile to Firestore for UID: $uid');
 
       final userData = {
         'UID': uid,
         'email': email,
         'name': name,
         'age': age,
-        'username': username.toLowerCase(), // Store in lowercase for case-insensitive search
-        'username_lowercase': username.toLowerCase(), // Additional field for easy searching
+        'username': username.toLowerCase(),
         'mode': {
           'date': selectedMode == 'Date',
           'travel_partner': selectedMode == 'Travel partner',
@@ -87,7 +81,7 @@ class FirebaseService {
         'live_status': false,
         'wallet': {'coin_balance': 0, 'total_earning': 0},
         'interests': [],
-        'first_photos': firstPhotos,
+        'first_photos': firstPhotos, // Use the provided photos
         'bio': '',
         'location': '',
         'created_at': FieldValue.serverTimestamp(),
@@ -96,14 +90,14 @@ class FirebaseService {
       };
 
       await _firestore.collection('users').doc(uid).set(userData);
-      print('✅ User profile saved successfully with username: $username');
+      print('✅ User profile saved successfully with photos');
     } catch (e) {
       print('❌ Error saving user profile: $e');
       throw 'Failed to save user profile: $e';
     }
   }
 
-  // Complete registration process
+  // Updated completeRegistration method in FirebaseService
   static Future<void> completeRegistration({
     required String email,
     required String password,
@@ -112,35 +106,78 @@ class FirebaseService {
     required int age,
     required String selectedMode,
     required String travelPreference,
-    required Map<String, String> firstPhotos,
+    required List<File> photoFiles,
   }) async {
-    try {
-      print('🚀 Starting complete registration process for username: $username');
+    User? user;
 
-      User? user = await createUserWithEmailAndPassword(
+    try {
+      print('🚀 Starting complete registration process...');
+      print('📧 Email: $email');
+      print('👤 Username: $username');
+      print('📸 Number of photos: ${photoFiles.length}');
+
+      // Step 1: Create user in Firebase Auth
+      user = await createUserWithEmailAndPassword(
         email: email,
         password: password,
-        username: username,
       );
 
-      if (user != null) {
-        await saveUserProfile(
-          uid: user.uid,
-          email: email,
-          name: name,
-          age: age,
-          username: username,
-          selectedMode: selectedMode,
-          travelPreference: travelPreference,
-          firstPhotos: firstPhotos,
-        );
-        print('🎉 Registration completed successfully for username: $username!');
-      } else {
+      if (user == null) {
         throw 'User creation returned null';
       }
+
+      final String userId = user.uid;
+      print('👤 User created with UID: $userId');
+
+      // Step 2: Upload photos to Firebase Storage
+      print('📤 Starting photo upload process...');
+      Map<String, String> photoUrls = await ImageService.uploadFirstPhotos(
+        userId: userId,
+        photoFiles: photoFiles,
+      );
+
+      // Check if any photos were successfully uploaded
+      final successfulUploads = photoUrls.values.where((url) => url.isNotEmpty).length;
+      print('✅ Photos uploaded successfully: $successfulUploads/${photoFiles.length}');
+      print('🔗 Photo URLs: $photoUrls');
+
+      if (successfulUploads == 0) {
+        throw 'No photos were successfully uploaded';
+      }
+
+      // Step 3: Save user profile with photo URLs
+      print('💾 Saving user profile to Firestore...');
+      await saveUserProfile(
+        uid: userId,
+        email: email,
+        name: name,
+        age: age,
+        username: username,
+        selectedMode: selectedMode,
+        travelPreference: travelPreference,
+        firstPhotos: photoUrls,
+      );
+
+      print('🎉 Registration completed successfully!');
+      print('👤 User: $userId');
+      print('📸 Photos saved: $photoUrls');
+
     } catch (e) {
       print('❌ Registration failed: $e');
-      rethrow;
+      print('🔍 Error type: ${e.runtimeType}');
+
+      // If registration fails, delete the created user from Auth
+      if (user != null) {
+        try {
+          await user.delete();
+          print('🗑️ Deleted user from Auth due to registration failure');
+        } catch (deleteError) {
+          print('⚠️ Could not delete user from Auth: $deleteError');
+        }
+      }
+
+      // Re-throw with more context
+      throw 'Registration failed: $e';
     }
   }
 
@@ -155,15 +192,7 @@ class FirebaseService {
         email: email,
         password: password,
       );
-
-      // Get user data from Firestore to verify username exists
-      final userDoc = await _firestore.collection('users').doc(userCredential.user?.uid).get();
-      if (userDoc.exists) {
-        final userData = userDoc.data();
-        final username = userData?['username'] ?? 'No username';
-        print('✅ User signed in successfully: ${userCredential.user?.uid}, username: $username');
-      }
-
+      print('✅ User signed in successfully: ${userCredential.user?.uid}');
       return userCredential.user;
     } on FirebaseAuthException catch (e) {
       print('❌ Firebase Auth Error during login: ${e.code} - ${e.message}');
@@ -174,57 +203,9 @@ class FirebaseService {
     }
   }
 
-  // Get user data including username
-  static Future<Map<String, dynamic>?> getUserData(String uid) async {
-    try {
-      final doc = await _firestore.collection('users').doc(uid).get();
-      if (doc.exists) {
-        return doc.data();
-      }
-      return null;
-    } catch (e) {
-      print('❌ Error getting user data: $e');
-      return null;
-    }
-  }
-
-  // Get current user's username
-  static Future<String?> getCurrentUsername() async {
-    final user = _auth.currentUser;
-    if (user != null) {
-      final userData = await getUserData(user.uid);
-      return userData?['username'] as String?;
-    }
-    return null;
-  }
-
-  // Update username
-  static Future<void> updateUsername(String newUsername) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) throw 'No user logged in';
-
-      // Check if new username is available
-      final isAvailable = await isUsernameAvailable(newUsername);
-      if (!isAvailable) {
-        throw 'Username "$newUsername" is already taken. Please choose another one.';
-      }
-
-      // Update in Firestore
-      await _firestore.collection('users').doc(user.uid).update({
-        'username': newUsername.toLowerCase(),
-        'username_lowercase': newUsername.toLowerCase(),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      // Update in Firebase Auth display name
-      await user.updateDisplayName(newUsername);
-
-      print('✅ Username updated successfully to: $newUsername');
-    } catch (e) {
-      print('❌ Error updating username: $e');
-      rethrow;
-    }
+  // Get current user
+  static User? getCurrentUser() {
+    return _auth.currentUser;
   }
 
   // Error handling

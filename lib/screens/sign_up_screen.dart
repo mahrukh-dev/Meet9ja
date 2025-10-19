@@ -103,11 +103,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return usernameRegex.hasMatch(username);
   }
 
-  // Photo handling methods
+  // Photo handling methods - UPDATED VERSION
   Future<void> _pickAndAddPhoto() async {
     try {
       // Show loading indicator
-      _showLoadingDialog('Accessing your photos...');
+      _showLoadingDialog('Opening gallery...');
 
       File? imageFile = await ImageService.pickImageFromGallery();
 
@@ -121,7 +121,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
             _selectedPhotos.add(imageFile);
           });
 
-          // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Photo added successfully!'),
@@ -137,9 +136,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
 
-        // Handle permission errors specifically
-        if (e.toString().contains('permission') || e.toString().contains('Permission')) {
-          _showPermissionDialog();
+        // Show appropriate error message
+        if (e.toString().contains('permission') ||
+            e.toString().contains('Permission') ||
+            e.toString().contains('access denied') ||
+            e.toString().contains('denied')) {
+          _showPermissionDialog(e.toString());
         } else {
           _showErrorDialog(e.toString());
         }
@@ -149,7 +151,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Future<void> _pickMultiplePhotos() async {
     try {
-      _showLoadingDialog('Accessing your photos...');
+      _showLoadingDialog('Opening gallery...');
 
       List<File> imageFiles = await ImageService.pickMultipleImagesFromGallery();
 
@@ -167,7 +169,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
             _selectedPhotos.addAll(imageFiles.take(imagesToAdd));
           });
 
-          // Show appropriate message
           if (imageFiles.length > remainingSlots) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -193,8 +194,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
       if (mounted) {
         Navigator.pop(context);
 
-        if (e.toString().contains('permission') || e.toString().contains('Permission')) {
-          _showPermissionDialog();
+        if (e.toString().contains('permission') ||
+            e.toString().contains('Permission') ||
+            e.toString().contains('access denied') ||
+            e.toString().contains('denied')) {
+          _showPermissionDialog(e.toString());
         } else {
           _showErrorDialog(e.toString());
         }
@@ -216,31 +220,76 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  void _showPermissionDialog() {
+  // UPDATED Permission Dialog
+  void _showPermissionDialog(String errorMessage) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Permission Required'),
-        content: const Text(
-          'Meet9ja needs access to your photos to select profile pictures. '
-              'This allows you to choose photos from your gallery for your profile.\n\n'
-              'Please grant photo access permission to continue.',
+        title: const Text('Gallery Access Required'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Meet9ja needs access to your photos to select profile pictures.',
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Error: ${errorMessage.contains('denied') ? 'Permission was denied' : 'Permission required'}',
+              style: TextStyle(
+                color: Colors.red[700],
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Please grant photo access permission to continue:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 5),
+            const Text('• Go to Device Settings'),
+            const Text('• Tap on "Apps" or "Application Manager"'),
+            const Text('• Find "Meet9ja"'),
+            const Text('• Tap on "Permissions"'),
+            const Text('• Enable "Photos" or "Storage" permission'),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Not Now'),
+            child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
               await openAppSettings();
+              // After returning from settings, check if permission is granted
+              await Future.delayed(const Duration(seconds: 1));
+              _checkPermissionAndRetry();
             },
             child: const Text('Open Settings'),
           ),
         ],
       ),
     );
+  }
+
+  // Check permission after returning from settings
+  Future<void> _checkPermissionAndRetry() async {
+    try {
+      print('🔍 Checking permission status after settings...');
+      // You can add a retry logic here if needed
+      // For now, we'll just show a message that user can try again
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please try selecting photos again after granting permission'),
+          backgroundColor: Colors.blue,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      print('❌ Error checking permission: $e');
+    }
   }
 
   void _next() async {
@@ -319,15 +368,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _showLoadingDialog('Creating your account...');
 
     try {
-      // Upload photos first
       setState(() => _isUploadingPhotos = true);
 
-      Map<String, String> photoUrls = await ImageService.uploadFirstPhotos(
-        userId: 'temp_user_id', // We'll update this after user creation
-        photoFiles: _selectedPhotos,
-      );
+      print('📝 Starting registration process...');
+      print('📧 Email: ${_emailCtrl.text.trim()}');
+      print('👤 Username: ${_usernameCtrl.text.trim()}');
+      print('📸 Photos to upload: ${_selectedPhotos.length}');
 
-      // Complete registration with photo URLs
       await FirebaseService.completeRegistration(
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text.trim(),
@@ -336,12 +383,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
         username: _usernameCtrl.text.trim(),
         selectedMode: _getSelectedMode(),
         travelPreference: _getTravelPreference(),
-        firstPhotos: photoUrls,
+        photoFiles: _selectedPhotos,
       );
 
       // Navigate to next screen
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
+        print('✅ Registration successful, navigating to next screen');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
@@ -350,7 +398,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        _showErrorDialog(e.toString());
+        print('❌ Registration error in UI: $e');
+        _showErrorDialog('Registration failed: $e');
       }
     } finally {
       setState(() => _isUploadingPhotos = false);
@@ -471,8 +520,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   child: IconButton(
                     onPressed: _back,
                     icon: const Icon(
-                      color: Colors.black87,
                       CupertinoIcons.back,
+                      color: Colors.black87,
                     ),
                   ),
                 ),
@@ -703,10 +752,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Widget _buildModeStep() {
     final items = const [
-      ("Date", "Make moves to find that spark"),
-      ("Travel partner", "Make travel buddies"),
-      ("BFF", "Make friends and find community"),
-      ("Bizz", "Move your career forward"),
+      {'title': 'Date', 'subtitle': 'Make moves to find that spark'},
+      {'title': 'Travel partner', 'subtitle': 'Make travel buddies'},
+      {'title': 'BFF', 'subtitle': 'Make friends and find community'},
+      {'title': 'Bizz', 'subtitle': 'Move your career forward'},
     ];
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: kSide),
@@ -721,7 +770,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
               itemCount: items.length,
               separatorBuilder: (_, __) => const SizedBox(height: 14),
               itemBuilder: (context, i) {
-                final (title, sub) = items[i];
+                final title = items[i]['title']!;
+                final sub = items[i]['subtitle']!;
                 final selected = _modeIndex == i;
                 return _SelectCard(
                   title: title,
@@ -822,7 +872,7 @@ class _UsernameField extends StatelessWidget {
                 : controller.text.length >= 3
                 ? Icon(
               isAvailable ? Icons.check_circle : Icons.cancel,
-              color: isAvailable ? Colors.white : Colors.white,
+              color: Colors.white,
             )
                 : null,
           ),
@@ -858,24 +908,25 @@ class _PhotoTile extends StatelessWidget {
   final Widget child;
   final File? imageFile;
 
-  const _PhotoTile._(this.child, {this.onTap, this.imageFile});
+  const _PhotoTile(this.child, {this.onTap, this.imageFile});
 
   factory _PhotoTile.add({VoidCallback? onTap}) {
-    return _PhotoTile._(
+    return _PhotoTile(
       const Icon(CupertinoIcons.add, size: 42, color: AppColors.primary),
       onTap: onTap,
     );
   }
 
   factory _PhotoTile.empty() {
-    return const _PhotoTile._(
-      Icon(CupertinoIcons.photo, size: 38, color: Colors.grey),
+    return _PhotoTile(
+      const Icon(CupertinoIcons.photo, size: 38, color: Colors.grey),
     );
   }
 
   factory _PhotoTile.image({required File imageFile, VoidCallback? onTap}) {
-    return _PhotoTile._(
-      Container(), // Placeholder, we'll build the image in build method
+    // Provide a placeholder child; build() uses imageFile to show the image when provided
+    return _PhotoTile(
+      const SizedBox.shrink(),
       onTap: onTap,
       imageFile: imageFile,
     );
@@ -963,7 +1014,7 @@ class _ProgressLine extends StatelessWidget {
             ),
           ),
           FractionallySizedBox(
-            widthFactor: progress.clamp(0, 1),
+            widthFactor: progress.clamp(0.0, 1.0),
             child: Container(
               decoration: BoxDecoration(
                 color: barColor,
