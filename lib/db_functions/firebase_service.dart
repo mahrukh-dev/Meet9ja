@@ -1,16 +1,17 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+
 class FirebaseService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Check if username already exists
   static Future<bool> isUsernameAvailable(String username) async {
     try {
       final querySnapshot = await _firestore
           .collection('users')
           .where('username', isEqualTo: username.toLowerCase())
+          .limit(1)
           .get();
 
       return querySnapshot.docs.isEmpty;
@@ -29,7 +30,6 @@ class FirebaseService {
     try {
       print('🔥 Attempting to create user with email: $email, username: $username');
 
-      // Check if username is available
       final isAvailable = await isUsernameAvailable(username);
       if (!isAvailable) {
         throw 'Username "$username" is already taken. Please choose another one.';
@@ -40,9 +40,7 @@ class FirebaseService {
         password: password,
       );
 
-      // Update display name in Firebase Auth
       await userCredential.user?.updateDisplayName(username);
-
       print('✅ User created successfully: ${userCredential.user?.uid}');
       return userCredential.user;
     } on FirebaseAuthException catch (e) {
@@ -63,6 +61,7 @@ class FirebaseService {
     required int age,
     required String selectedMode,
     required String travelPreference,
+    required Map<String, String> firstPhotos,
   }) async {
     try {
       print('💾 Saving user profile to Firestore for UID: $uid, username: $username');
@@ -88,7 +87,7 @@ class FirebaseService {
         'live_status': false,
         'wallet': {'coin_balance': 0, 'total_earning': 0},
         'interests': [],
-        'first_photos': {'photo1url': '', 'photo2url': '', 'photo3url': '', 'photo4url': ''},
+        'first_photos': firstPhotos,
         'bio': '',
         'location': '',
         'created_at': FieldValue.serverTimestamp(),
@@ -113,6 +112,7 @@ class FirebaseService {
     required int age,
     required String selectedMode,
     required String travelPreference,
+    required Map<String, String> firstPhotos,
   }) async {
     try {
       print('🚀 Starting complete registration process for username: $username');
@@ -132,6 +132,7 @@ class FirebaseService {
           username: username,
           selectedMode: selectedMode,
           travelPreference: travelPreference,
+          firstPhotos: firstPhotos,
         );
         print('🎉 Registration completed successfully for username: $username!');
       } else {

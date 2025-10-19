@@ -1,11 +1,11 @@
+import 'dart:io';
 import 'dart:async';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/screens/selfie_onboarding_screen.dart';
-
 import '../constants/app_colors.dart';
 import '../db_functions/firebase_service.dart';
+import '../db_functions/image_service.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -26,11 +26,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
 
-  // Username validation state
   bool _isCheckingUsername = false;
   bool _isUsernameAvailable = false;
   String _usernameError = '';
   Timer? _usernameDebounceTimer;
+
+  // Photo management
+  List<File> _selectedPhotos = [];
+  bool _isUploadingPhotos = false;
 
   static const double kSide = 20.0;
 
@@ -46,12 +49,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
-  // Real-time username availability check
   void _checkUsernameAvailability(String username) {
-    // Cancel previous timer
     _usernameDebounceTimer?.cancel();
 
-    // Reset state for short usernames
     if (username.length < 3) {
       setState(() {
         _isCheckingUsername = false;
@@ -61,7 +61,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    // Validate username format
     if (!_isValidUsername(username)) {
       setState(() {
         _isCheckingUsername = false;
@@ -76,7 +75,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
       _usernameError = '';
     });
 
-    // Debounce the API call
     _usernameDebounceTimer = Timer(const Duration(milliseconds: 500), () async {
       try {
         final isAvailable = await FirebaseService.isUsernameAvailable(username);
@@ -104,8 +102,36 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return usernameRegex.hasMatch(username);
   }
 
+  // Photo handling methods
+  Future<void> _pickAndAddPhoto() async {
+    try {
+      File? imageFile = await ImageService.pickImageFromGallery();
+      if (imageFile != null && mounted) {
+        setState(() {
+          if (_selectedPhotos.length < 4) {
+            _selectedPhotos.add(imageFile);
+          }
+        });
+      }
+    } catch (e) {
+      _showErrorDialog('Failed to pick image: $e');
+    }
+  }
+
+  void _removePhoto(int index) {
+    setState(() {
+      _selectedPhotos.removeAt(index);
+    });
+  }
+
   void _next() async {
     if (_step < 3) {
+      // Validate current step before proceeding
+      if (_step == 1 && _selectedPhotos.length < 2) {
+        _showErrorDialog('Please add at least 2 photos to continue');
+        return;
+      }
+
       setState(() => _step++);
       _page.animateToPage(
         _step,
@@ -113,94 +139,115 @@ class _SignUpScreenState extends State<SignUpScreen> {
         curve: Curves.easeOut,
       );
     } else {
-      // Validate all fields before registration
-      if (_nameCtrl.text.isEmpty ||
-          _emailCtrl.text.isEmpty ||
-          _passwordCtrl.text.isEmpty ||
-          _ageCtrl.text.isEmpty ||
-          _usernameCtrl.text.isEmpty) {
-        _showErrorDialog('Please fill in all fields');
-        return;
-      }
-
-      // Validate username
-      if (!_isValidUsername(_usernameCtrl.text.trim())) {
-        _showErrorDialog('Username can only contain letters, numbers, and underscores');
-        return;
-      }
-
-      if (_usernameCtrl.text.length < 3) {
-        _showErrorDialog('Username must be at least 3 characters long');
-        return;
-      }
-
-      // Check username availability one more time before registration
-      if (!_isUsernameAvailable) {
-        _showErrorDialog('Please choose an available username');
-        return;
-      }
-
-      // Validate age
-      int? age = int.tryParse(_ageCtrl.text.trim());
-      if (age == null || age < 18 || age > 100) {
-        _showErrorDialog('Please enter a valid age between 18 and 100');
-        return;
-      }
-
-      // Validate email format
-      if (!_isValidEmail(_emailCtrl.text.trim())) {
-        _showErrorDialog('Please enter a valid email address');
-        return;
-      }
-
-      // Validate password length
-      if (_passwordCtrl.text.length < 6) {
-        _showErrorDialog('Password must be at least 6 characters long');
-        return;
-      }
-
-      // Show loading dialog
-      _showLoadingDialog();
-
-      // Complete registration
-      try {
-        await FirebaseService.completeRegistration(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text.trim(),
-          name: _nameCtrl.text.trim(),
-          age: age,
-          username: _usernameCtrl.text.trim(),
-          selectedMode: _getSelectedMode(),
-          travelPreference: _getTravelPreference(),
-        );
-
-        // Navigate to next screen
-        if (mounted) {
-          Navigator.pop(context); // Close loading dialog
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pop(context); // Close loading dialog
-          _showErrorDialog(e.toString());
-        }
-      }
+      // Final validation and registration
+      await _completeRegistration();
     }
   }
 
-  void _showLoadingDialog() {
+  Future<void> _completeRegistration() async {
+    // Validate all fields before registration
+    if (_nameCtrl.text.isEmpty ||
+        _emailCtrl.text.isEmpty ||
+        _passwordCtrl.text.isEmpty ||
+        _ageCtrl.text.isEmpty ||
+        _usernameCtrl.text.isEmpty) {
+      _showErrorDialog('Please fill in all fields');
+      return;
+    }
+
+    if (!_isValidUsername(_usernameCtrl.text.trim())) {
+      _showErrorDialog('Username can only contain letters, numbers, and underscores');
+      return;
+    }
+
+    if (_usernameCtrl.text.length < 3) {
+      _showErrorDialog('Username must be at least 3 characters long');
+      return;
+    }
+
+    // Check username availability one more time before registration
+    if (!_isUsernameAvailable) {
+      _showErrorDialog('Please choose an available username');
+      return;
+    }
+
+    // Validate age
+    int? age = int.tryParse(_ageCtrl.text.trim());
+    if (age == null || age < 18 || age > 100) {
+      _showErrorDialog('Please enter a valid age between 18 and 100');
+      return;
+    }
+
+    // Validate email format
+    if (!_isValidEmail(_emailCtrl.text.trim())) {
+      _showErrorDialog('Please enter a valid email address');
+      return;
+    }
+
+    // Validate password length
+    if (_passwordCtrl.text.length < 6) {
+      _showErrorDialog('Password must be at least 6 characters long');
+      return;
+    }
+
+    // Validate photos
+    if (_selectedPhotos.length < 2) {
+      _showErrorDialog('Please add at least 2 photos');
+      return;
+    }
+
+    // Show loading dialog
+    _showLoadingDialog('Creating your account...');
+
+    try {
+      // Upload photos first
+      setState(() => _isUploadingPhotos = true);
+
+      Map<String, String> photoUrls = await ImageService.uploadFirstPhotos(
+        userId: 'temp_user_id', // We'll update this after user creation
+        photoFiles: _selectedPhotos,
+      );
+
+      // Complete registration with photo URLs
+      await FirebaseService.completeRegistration(
+        email: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text.trim(),
+        name: _nameCtrl.text.trim(),
+        age: age,
+        username: _usernameCtrl.text.trim(),
+        selectedMode: _getSelectedMode(),
+        travelPreference: _getTravelPreference(),
+        firstPhotos: photoUrls,
+      );
+
+      // Navigate to next screen
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        _showErrorDialog(e.toString());
+      }
+    } finally {
+      setState(() => _isUploadingPhotos = false);
+    }
+  }
+
+  void _showLoadingDialog(String message) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const AlertDialog(
+      builder: (context) => AlertDialog(
         content: Row(
           children: [
-            CircularProgressIndicator(color: AppColors.primary),
-            SizedBox(width: 16),
-            Text('Creating your account...'),
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(width: 16),
+            Expanded(child: Text(message)),
           ],
         ),
       ),
@@ -237,7 +284,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Registration Error'),
+        title: const Text('Error'),
         content: Text(message),
         actions: [
           TextButton(
@@ -272,8 +319,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 8),
-
-                  // Progress line
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: kSide),
                     child: _ProgressLine(
@@ -282,9 +327,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       barColor: AppColors.primary,
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
                   Expanded(
                     child: PageView(
                       controller: _page,
@@ -299,7 +342,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ],
               ),
-
               if (_step > 0)
                 Positioned(
                   left: 6,
@@ -312,7 +354,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     ),
                   ),
                 ),
-
               Positioned(
                 right: 20,
                 bottom: 24,
@@ -344,7 +385,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
             const SizedBox(height: 8),
             const _BodyText("Fill in your basic information to get started"),
             const SizedBox(height: 20),
-
             // Name
             const _SectionLabel("Name"),
             const SizedBox(height: 5),
@@ -353,7 +393,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               hint: "Enter your name",
             ),
             const SizedBox(height: 10),
-
             // Email
             const _SectionLabel("Email"),
             const SizedBox(height: 5),
@@ -363,7 +402,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 10),
-
             // Username with validation
             const _SectionLabel("Username"),
             const SizedBox(height: 5),
@@ -376,7 +414,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               errorText: _usernameError,
             ),
             const SizedBox(height: 10),
-
             // Password
             const _SectionLabel("Password"),
             const SizedBox(height: 5),
@@ -386,7 +423,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               obscureText: true,
             ),
             const SizedBox(height: 10),
-
             // Age
             const _SectionLabel("Age"),
             const SizedBox(height: 5),
@@ -402,7 +438,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // ... Rest of your existing methods (_buildPhotosStep, _buildModeStep, _buildTravelWithStep) remain the same
+  // ---------- Step 2: Photos ----------
   Widget _buildPhotosStep() {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: kSide),
@@ -410,6 +446,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _H1("Add your first 2\nphotos"),
+          const SizedBox(height: 8),
+          _BodyText("Add at least 2 photos to continue"),
           const SizedBox(height: 16),
           Expanded(
             child: Center(
@@ -422,15 +460,40 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   mainAxisSpacing: 16,
                   crossAxisSpacing: 16,
                   children: [
-                    _PhotoTile.sample(),
-                    _PhotoTile.add(onTap: () {}),
-                    _PhotoTile.add(onTap: () {}),
-                    _PhotoTile.add(onTap: () {}),
-                  ],
+                    // Display selected photos
+                    ..._selectedPhotos.asMap().entries.map((entry) {
+                      int index = entry.key;
+                      File photo = entry.value;
+                      return _PhotoTile.image(
+                        imageFile: photo,
+                        onTap: () => _removePhoto(index),
+                      );
+                    }).toList(),
+                    // Add button if less than 4 photos
+                    if (_selectedPhotos.length < 4)
+                      _PhotoTile.add(onTap: _pickAndAddPhoto),
+                    // Empty slots
+                    ...List.generate(
+                      4 - _selectedPhotos.length - (_selectedPhotos.length < 4 ? 1 : 0),
+                          (index) => _PhotoTile.empty(),
+                    ),
+                  ].sublist(0, 4), // Ensure exactly 4 items
                 ),
               ),
             ),
           ),
+          if (_selectedPhotos.length < 2) ...[
+            const SizedBox(height: 16),
+            Center(
+              child: Text(
+                'Please add at least 2 photos',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 80),
         ],
       ),
@@ -503,7 +566,94 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 }
 
-// ===== NEW: Username Field with Validation =====
+// ===== Updated PhotoTile with image support =====
+class _PhotoTile extends StatelessWidget {
+  final VoidCallback? onTap;
+  final Widget child;
+  final File? imageFile;
+
+  const _PhotoTile._(this.child, {this.onTap, this.imageFile});
+
+  factory _PhotoTile.add({VoidCallback? onTap}) {
+    return _PhotoTile._(
+      const Icon(CupertinoIcons.add, size: 42, color: AppColors.primary),
+      onTap: onTap,
+    );
+  }
+
+  factory _PhotoTile.empty() {
+    return const _PhotoTile._(
+      Icon(CupertinoIcons.photo, size: 38, color: Colors.grey),
+    );
+  }
+
+  factory _PhotoTile.image({required File imageFile, VoidCallback? onTap}) {
+    return _PhotoTile._(
+      Container(), // Placeholder, we'll build the image in build method
+      onTap: onTap,
+      imageFile: imageFile,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: imageFile != null ? Colors.transparent : AppColors.primary.withOpacity(0.3),
+            width: 2,
+          ),
+          boxShadow: [
+            if (imageFile != null)
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+          ],
+        ),
+        child: imageFile != null
+            ? Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.file(
+                imageFile!,
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            if (onTap != null)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ),
+          ],
+        )
+            : Center(child: child),
+      ),
+    );
+  }
+}
+
+// ... Rest of your existing UI classes (_UsernameField, _ProgressLine, _H1, _BodyText, _SectionLabel, _PinkField, _SelectCard, _RadioCard) remain the same
 class _UsernameField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -588,7 +738,6 @@ class _UsernameField extends StatelessWidget {
   }
 }
 
-// ... Rest of your existing UI classes (_ProgressLine, _H1, _BodyText, _SectionLabel, _PinkField, etc.) remain the same
 class _ProgressLine extends StatelessWidget {
   final double progress;
   final Color trackColor;
@@ -709,40 +858,6 @@ class _PinkField extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
-      ),
-    );
-  }
-}
-
-class _PhotoTile extends StatelessWidget {
-  final VoidCallback? onTap;
-  final Widget child;
-  const _PhotoTile._(this.child, {this.onTap});
-
-  factory _PhotoTile.add({VoidCallback? onTap}) {
-    return _PhotoTile._(
-      const Icon(CupertinoIcons.add, size: 42, color: AppColors.primary),
-      onTap: onTap,
-    );
-  }
-
-  factory _PhotoTile.sample() {
-    return const _PhotoTile._(
-      Icon(CupertinoIcons.photo, size: 38, color: AppColors.primary),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Center(child: child),
       ),
     );
   }

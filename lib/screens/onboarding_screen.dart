@@ -98,7 +98,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     ),
                   ),
 
-                  // pages
                   Expanded(
                     child: PageView.builder(
                       controller: _pageController,
@@ -107,14 +106,12 @@ class _OnboardingPageState extends State<OnboardingPage> {
                       itemBuilder: (context, index) {
                         final data = _pages[index];
                         final t = (_page - index).clamp(-1.0, 1.0);
-
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // animated icon (no glass card)
                                 TweenAnimationBuilder<double>(
                                   key: ValueKey(index),
                                   tween: Tween(begin: 0.9, end: 1.0),
@@ -178,7 +175,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     ),
                   ),
 
-                  // indicators + CTA
                   SafeArea(
                     top: false,
                     minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -314,7 +310,6 @@ class _FadeSlideState extends State<_FadeSlide>
   }
 }
 
-// data class
 class _OnboardData {
   final IconData icon;
   final String title;
