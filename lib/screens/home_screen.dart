@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:meet9ja/startlive.dart';
+import 'package:meet9ja/screens/explore_live_screen.dart';
 import '../constants/app_colors.dart';
 import 'home_screen_filters.dart';
 import 'discover_screen.dart';
@@ -286,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const StartLivePage()),
+                      MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
                     );
                   },
                   label: const Text(

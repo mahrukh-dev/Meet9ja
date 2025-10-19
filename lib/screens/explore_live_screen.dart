@@ -2,16 +2,16 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'constants/app_colors.dart';
-import 'screens/livestream_screen.dart'; // Assuming 'livestream_screen.dart' exists for LiveStreamPage
+import '../constants/app_colors.dart';
+import 'livestream_screen.dart'; // Assuming 'livestream_screen.dart' exists for LiveStreamPage
 
-class StartLivePage extends StatefulWidget {
-  const StartLivePage({super.key});
+class ExploreLiveScreen extends StatefulWidget {
+  const ExploreLiveScreen({super.key});
   @override
-  State<StartLivePage> createState() => _StartLivePageState();
+  State<ExploreLiveScreen> createState() => _ExploreLiveScreenState();
 }
 
-class _StartLivePageState extends State<StartLivePage>
+class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
