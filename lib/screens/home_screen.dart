@@ -3,12 +3,12 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:meet9ja/screens/update_profile_screen.dart';
 import 'package:meet9ja/startlive.dart';
 import '../constants/app_colors.dart';
 import 'home_screen_filters.dart';
 import 'discover_screen.dart';
-import '../messages.dart';
+import '../profile.dart';
+import 'messages_screen.dart';
 import '../profiledisplay.dart'; // ⬅️ updated import
 
 class HomeScreen extends StatefulWidget {
@@ -930,7 +930,7 @@ class _BottomNav extends StatelessWidget {
                 if (i == 0 && current != 0) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => UpdateProfileScreen()),
+                    MaterialPageRoute(builder: (_) => const ProfileScreen()),
                   );
                   return;
                 }

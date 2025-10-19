@@ -1,11 +1,13 @@
+// lib/messages.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:meet9ja/screens/update_profile_screen.dart';
-import 'screens/discover_screen.dart';
-import 'constants/app_colors.dart';
-import 'conversation.dart';
-import 'screens/home_screen.dart';
+import 'package:meet9ja/constants/app_colors.dart';
+import 'package:meet9ja/profile.dart';
+
+import 'discover_screen.dart';
+import 'chat_screen.dart';
+import 'home_screen.dart'; // <<< Font Awesome Import
 
 
 class MessagesScreen extends StatefulWidget {
@@ -208,7 +210,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => ConversationScreen(
+                                  builder: (_) => ChatScreen(
                                     name: chats[i].name,
                                     avatar: chats[i].avatar,
                                     messages: chats[i].messages
@@ -365,188 +367,6 @@ class _ChatTile extends StatelessWidget {
     );
   }
 }
-
-// ---------- Chat Screen (with a few messages) ----------
-class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.conv});
-  final _Conversation conv;
-
-  @override
-  State<ChatScreen> createState() => _ChatScreenState();
-}
-
-class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _ctrl = TextEditingController();
-  late List<_Msg> msgs;
-
-  @override
-  void initState() {
-    super.initState();
-    // Must clone the list to allow local mutation
-    msgs = List<_Msg>.from(widget.conv.messages);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _send() {
-    final txt = _ctrl.text.trim();
-    if (txt.isEmpty) return;
-    setState(() {
-      msgs.add(_Msg(other: false, text: txt));
-      _ctrl.clear();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      // ChatScreen also uses plain white background now
-      body: Container(
-        color: Colors.white,
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Top bar
-              Padding(
-                padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    CircleAvatar(
-                      backgroundImage: NetworkImage(widget.conv.avatar),
-                      radius: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        widget.conv.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.more_vert, color: Colors.black87),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Messages
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-                  itemCount: msgs.length,
-                  itemBuilder: (_, i) {
-                    final m = msgs[i];
-                    final align = m.other
-                        ? Alignment.centerLeft
-                        : Alignment.centerRight;
-                    final bg = m.other
-                        ? Colors.white
-                        : AppColors.primary.withOpacity(0.12);
-                    final fg = m.other ? Colors.black87 : Colors.black87;
-                    return Align(
-                      alignment: align,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.72,
-                        ),
-                        decoration: BoxDecoration(
-                          color: bg,
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(16),
-                            topRight: const Radius.circular(16),
-                            bottomLeft: Radius.circular(m.other ? 4 : 16),
-                            bottomRight: Radius.circular(m.other ? 16 : 4),
-                          ),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black12, blurRadius: 4),
-                          ],
-                        ),
-                        child: Text(
-                          m.text,
-                          style: TextStyle(color: fg, fontSize: 15.5),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-
-              // Input
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                          child: TextField(
-                            controller: _ctrl,
-                            decoration: InputDecoration(
-                              hintText: "Type a message…",
-                              filled: true,
-                              fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(999),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            onSubmitted: (_) => _send(),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Material(
-                      color: AppColors.primary,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: _send,
-                        child: const Padding(
-                          padding: EdgeInsets.all(12),
-                          // UPDATED TO FA ICON
-                          child: FaIcon(
-                            FontAwesomeIcons.solidPaperPlane,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ---------- Bottom Nav (same style; Chats selected when current==4) ----------
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
