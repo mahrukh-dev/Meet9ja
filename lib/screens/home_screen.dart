@@ -7,10 +7,18 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/screens/explore_live_screen.dart';
 import 'package:meet9ja/screens/update_profile_screen.dart';
 import '../constants/app_colors.dart';
+import '../db_functions/getDiscoveryProfiles.dart';
+import '../db_functions/getUserAge.dart';
+import '../db_functions/getUserBio.dart';
+import '../db_functions/getUserName.dart';
+import '../db_functions/getUserPhotoUrl.dart';
+import '../db_functions/isUserPremium.dart';
+import '../db_functions/likeProfile.dart';
+import '../db_functions/passProfile.dart';
 import 'home_screen_filters.dart';
 import 'discover_screen.dart';
 import 'messages_screen.dart';
-import 'profiles_list_screen.dart'; // ⬅️ updated import
+import 'profiles_list_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,91 +30,19 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final PageController _pageCtrl;
   int _index = 0;
-
-  // Track page safely without using controller.position
   double _currentPage = 0.0;
 
-  // ---- DATA: 7+ profiles ----
-  final List<_Profile> profiles = [
-    _Profile.net(
-      name: "Zara",
-      age: 19,
-      job: "Customer Support",
-      edu: "Bahria University 2029",
-      url: "https://i.pravatar.cc/800?img=65",
-      newHere: true,
-      verified: true,
-    ),
-    _Profile.net(
-      name: "Um",
-      age: 24,
-      job: "Marketing Associate",
-      edu: "IoBM 2022",
-      url: "https://i.pravatar.cc/800?img=47",
-      newHere: true,
-      verified: false,
-    ),
-    _Profile.net(
-      name: "Areeba",
-      age: 22,
-      job: "UX Intern",
-      edu: "NCA 2026",
-      url: "https://i.pravatar.cc/800?img=57",
-      newHere: false,
-      verified: true,
-    ),
-    _Profile.net(
-      name: "Hira",
-      age: 25,
-      job: "Product Designer",
-      edu: "FAST 2021",
-      url: "https://i.pravatar.cc/800?img=68",
-      newHere: false,
-      verified: true,
-    ),
-    _Profile.net(
-      name: "Noor",
-      age: 23,
-      job: "Customer Success",
-      edu: "Habib University 2024",
-      url: "https://i.pravatar.cc/800?img=56",
-      newHere: true,
-      verified: false,
-    ),
-    _Profile.net(
-      name: "Mariam",
-      age: 26,
-      job: "Data Analyst",
-      edu: "IBA 2020",
-      url: "https://i.pravatar.cc/800?img=49",
-      newHere: false,
-      verified: true,
-    ),
-    _Profile.net(
-      name: "Laiba",
-      age: 21,
-      job: "Student",
-      edu: "SZABIST 2026",
-      url: "https://i.pravatar.cc/800?img=66",
-      newHere: false,
-      verified: false,
-    ),
-    _Profile.net(
-      name: "Anaya",
-      age: 24,
-      job: "Front Desk",
-      edu: "UoK 2023",
-      url: "https://i.pravatar.cc/800?img=58",
-      newHere: false,
-      verified: true,
-    ),
-  ];
+  // Real profiles from Firebase
+  List<Map<String, dynamic>> _profiles = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
     _pageCtrl = PageController(viewportFraction: 0.92);
     _currentPage = _pageCtrl.initialPage.toDouble();
+    _loadProfiles();
   }
 
   @override
@@ -115,46 +51,143 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // Load profiles from Firebase
+  Future<void> _loadProfiles() async {
+    try {
+      print('🔄 Starting to load profiles...');
+      setState(() {
+        _isLoading = true;
+        _errorMessage = '';
+      });
+
+      final profiles = await getDiscoveryProfiles();
+      print('📥 Loaded ${profiles.length} profiles from Firebase');
+
+      if (mounted) {
+        setState(() {
+          _profiles = profiles;
+          _isLoading = false;
+        });
+        print('✅ Profiles state updated: ${_profiles.length} profiles');
+      }
+    } catch (e) {
+      print('❌ Error in _loadProfiles: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Failed to load profiles: $e';
+        });
+      }
+    }
+  }
+
   void _goNext() {
-    if (_index < profiles.length - 1) {
+    if (_index < _profiles.length - 1) {
       _pageCtrl.nextPage(
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeOut,
       );
+    } else {
+      print('🔄 Reached end of profiles, loading more...');
+      // Reached end, reload more profiles
+      _loadProfiles();
     }
   }
 
-  void _onSwipeRight(_Profile p) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("You liked ${p.name}"),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(milliseconds: 800),
-      ),
-    );
-    _goNext();
+  // Like profile function - only triggered by ❤️ icon
+  Future<void> _likeProfile(Map<String, dynamic> profile) async {
+    try {
+      final String uid = profile['uid'] ?? profile['UID'];
+      final String name = getUserName(profile);
+      print('❤️ Liking profile: $uid');
+
+      await likeProfile(uid);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("You liked $name"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 800),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // DO NOT navigate to next screen - only like action
+    } catch (e) {
+      print('❌ Error in _likeProfile: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1500),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _onSwipeLeft(_Profile p) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("You passed on ${p.name}"),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(milliseconds: 700),
+  // Pass profile function - only triggered by ❌ icon
+  Future<void> _passProfile(Map<String, dynamic> profile) async {
+    try {
+      final String uid = profile['uid'] ?? profile['UID'];
+      final String name = getUserName(profile);
+      print('👎 Passing on profile: $uid');
+
+      await passProfile(uid);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("You passed on $name"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 700),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      // DO NOT navigate to next screen - only pass action
+    } catch (e) {
+      print('❌ Error in _passProfile: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1500),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Navigate to profile details - only triggered by share icon or card tap
+  void _navigateToProfileDetails(Map<String, dynamic> profile) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfilesListScreen(
+          name: getUserName(profile),
+          age: getUserAge(profile),
+          job: '', // Removed job
+          edu: '', // Removed education
+          image: getUserPhotoUrl(profile),
+          isAsset: false,
+          verified: isUserPremium(profile),
+          newHere: false,
+          bio: getUserBio(profile),
+          interests: List<String>.from(profile['interests'] ?? []),
+          distanceKm: 3,
+          location: profile['location']?.toString() ?? 'Unknown',
+        ),
       ),
     );
-    _goNext();
   }
 
   @override
   Widget build(BuildContext context) {
+    print('🏠 Building HomeScreen - Loading: $_isLoading, Profiles: ${_profiles.length}');
     return Scaffold(
       body: Container(
-        color: Colors.white, // ✅ solid white background
+        color: Colors.white,
         child: SafeArea(
           child: Column(
             children: [
-              // ----- Top bar: LIVE + Logo + Filter -----
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                 child: Row(
@@ -177,71 +210,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // ----- progress (how many profiles viewed) -----
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 28,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: List.generate(profiles.length, (i) {
-                    final active = i <= _index;
-                    return Expanded(
-                      child: Container(
-                        height: 4,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        decoration: BoxDecoration(
-                          color: active
-                              ? AppColors.primary
-                              : Colors.black12,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-
-              // ----- Swipeable cards (swipe to match) -----
-              Expanded(
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (n) {
-                    // Only handle PageView notifications
-                    if (n.metrics is PageMetrics) {
-                      final m = n.metrics as PageMetrics;
-                      setState(() {
-                        _currentPage = m.page ?? _index.toDouble();
-                      });
-                    }
-                    return false;
-                  },
-                  child: PageView.builder(
-                    controller: _pageCtrl,
-                    onPageChanged: (i) => setState(() => _index = i),
-                    itemCount: profiles.length,
-                    itemBuilder: (context, i) {
-                      // Compute transform from tracked _currentPage
-                      final t = (_currentPage - i).abs().clamp(0.0, 1.0);
-                      final scale = lerpDouble(1.0, 0.94, t)!;
-                      final translateY = lerpDouble(0, 14, t)!;
-
-                      return Transform.translate(
-                        offset: Offset(0, translateY),
-                        child: Transform.scale(
-                          scale: scale,
-                          child: _SwipeCard(
-                            profile: profiles[i],
-                            onSwipeLeft: () => _onSwipeLeft(profiles[i]),
-                            onSwipeRight: () => _onSwipeRight(profiles[i]),
+              // Progress indicator
+              if (!_isLoading && _profiles.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                  child: Row(
+                    children: List.generate(_profiles.length, (i) {
+                      final active = i <= _index;
+                      return Expanded(
+                        child: Container(
+                          height: 4,
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          decoration: BoxDecoration(
+                            color: active ? AppColors.primary : Colors.black12,
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         ),
                       );
-                    },
+                    }),
                   ),
                 ),
+
+              // Content Area
+              Expanded(
+                child: _isLoading
+                    ? _buildLoadingState()
+                    : _errorMessage.isNotEmpty
+                    ? _buildErrorState()
+                    : _profiles.isEmpty
+                    ? _buildEmptyState()
+                    : _buildProfilesList(),
               ),
 
-              // ----- Bottom nav -----
+              // Bottom nav
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
                 child: _BottomNav(current: 2),
@@ -249,6 +250,144 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppColors.primary),
+          SizedBox(height: 16),
+          Text(
+            'Loading profiles...',
+            style: TextStyle(
+              color: Colors.black54,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              CupertinoIcons.exclamationmark_triangle,
+              size: 64,
+              color: Colors.orange,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.black54,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _loadProfiles,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Try Again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.person,
+              size: 64,
+              color: Colors.black38,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No profiles found',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Check back later for new people in your area',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.black45,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _loadProfiles,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Refresh'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfilesList() {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n.metrics is PageMetrics) {
+          final m = n.metrics as PageMetrics;
+          setState(() {
+            _currentPage = m.page ?? _index.toDouble();
+          });
+        }
+        return false;
+      },
+      child: PageView.builder(
+        controller: _pageCtrl,
+        onPageChanged: (i) => setState(() => _index = i),
+        itemCount: _profiles.length,
+        itemBuilder: (context, i) {
+          final profile = _profiles[i];
+          final t = (_currentPage - i).abs().clamp(0.0, 1.0);
+          final scale = lerpDouble(1.0, 0.94, t)!;
+          final translateY = lerpDouble(0, 14, t)!;
+
+          return Transform.translate(
+            offset: Offset(0, translateY),
+            child: Transform.scale(
+              scale: scale,
+              child: _SwipeCard(
+                profile: profile,
+                onLike: () => _likeProfile(profile), // Only like action
+                onPass: () => _passProfile(profile), // Only pass action
+                onViewDetails: () => _navigateToProfileDetails(profile), // Only navigation action
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -269,8 +408,6 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const _LiveHeader(),
               const SizedBox(height: 12),
-
-              // Start Live button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -296,10 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 10),
-
-              // Join Lives button (with thicker outline)
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -307,7 +441,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(
                       color: Colors.black12,
-                      width: 2.0, // ✅ increased outline thickness
+                      width: 2.0,
                     ),
                     foregroundColor: Colors.black87,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -331,9 +465,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 8),
-
               const Text(
                 "Go live to stream yourself and hop into video calls.",
                 textAlign: TextAlign.center,
@@ -348,187 +480,82 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ---------------- Widgets ----------------
+// ===== Updated Widgets for Real Data =====
 
-class _SwipeCard extends StatefulWidget {
+class _SwipeCard extends StatelessWidget {
   const _SwipeCard({
     required this.profile,
-    required this.onSwipeLeft,
-    required this.onSwipeRight,
+    required this.onLike,
+    required this.onPass,
+    required this.onViewDetails,
   });
 
-  final _Profile profile;
-  final VoidCallback onSwipeLeft;
-  final VoidCallback onSwipeRight;
-
-  @override
-  State<_SwipeCard> createState() => _SwipeCardState();
-}
-
-class _SwipeCardState extends State<_SwipeCard> {
-  Offset _offset = Offset.zero;
-  double _rotation = 0.0; // radians
-  bool _swipingRight = false;
-  bool _swipingLeft = false;
-
-  static const double _threshold = 120; // px to count as swipe
-  static const double _maxRotation = 0.10; // ~6 deg
-
-  void _onPanUpdate(DragUpdateDetails d) {
-    setState(() {
-      _offset += d.delta;
-      _rotation = (_offset.dx / 300).clamp(-_maxRotation, _maxRotation);
-      _swipingRight = _offset.dx > 30;
-      _swipingLeft = _offset.dx < -30;
-    });
-  }
-
-  void _onPanEnd(DragEndDetails d) {
-    if (_offset.dx > _threshold) {
-      widget.onSwipeRight();
-    } else if (_offset.dx < -_threshold) {
-      widget.onSwipeLeft();
-    }
-    setState(() {
-      _offset = Offset.zero;
-      _rotation = 0.0;
-      _swipingLeft = false;
-      _swipingRight = false;
-    });
-  }
+  final Map<String, dynamic> profile;
+  final VoidCallback onLike; // Only like action
+  final VoidCallback onPass; // Only pass action
+  final VoidCallback onViewDetails; // Only navigation action
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Transform.translate(
-        offset: _offset,
-        child: Transform.rotate(
-          angle: _rotation,
-          child: Stack(
-            children: [
-              _ProfileCard(profile: widget.profile),
-
-              // LIKE / NOPE stamps
-              Positioned(
-                top: 18,
-                left: 18,
-                child: AnimatedOpacity(
-                  opacity: _swipingRight ? 1 : 0,
-                  duration: const Duration(milliseconds: 120),
-                  child: _SwipeStamp(
-                    text: "LIKE",
-                    color: Colors.green.shade600,
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 18,
-                right: 18,
-                child: AnimatedOpacity(
-                  opacity: _swipingLeft ? 1 : 0,
-                  duration: const Duration(milliseconds: 120),
-                  child: _SwipeStamp(text: "NOPE", color: Colors.red.shade600),
-                ),
-              ),
-
-              // Gesture layer
-              Positioned.fill(
-                child: GestureDetector(
-                  onPanUpdate: _onPanUpdate,
-                  onPanEnd: _onPanEnd,
-
-                  // ⬇️ tap: open detailed profile in ProfileDisplay
-                  onTap: () {
-                    final p = widget.profile;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ProfilesListScreen(
-                          name: p.name,
-                          age: p.age,
-                          job: p.job,
-                          edu: p.edu,
-                          image: p.image,
-                          isAsset: p.isAsset,
-                          verified: p.verified,
-                          newHere: p.newHere,
-                          bio: "Intro pending…",
-                          interests: const [
-                            "Music",
-                            "Reading",
-                            "Coffee",
-                            "Hiking",
-                          ],
-                          distanceKm: 3,
-                          location: "Karachi",
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SwipeStamp extends StatelessWidget {
-  const _SwipeStamp({required this.text, required this.color});
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Transform.rotate(
-      angle: -0.1,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          border: Border.all(color: color, width: 2),
-          borderRadius: BorderRadius.circular(8),
-          color: Colors.white.withOpacity(0.85),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: color,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
-          ),
-        ),
+      child: _ProfileCard(
+        profile: profile,
+        onLike: onLike,
+        onPass: onPass,
+        onViewDetails: onViewDetails,
       ),
     );
   }
 }
 
 class _ProfileCard extends StatelessWidget {
-  const _ProfileCard({required this.profile});
-  final _Profile profile;
+  const _ProfileCard({
+    required this.profile,
+    required this.onLike,
+    required this.onPass,
+    required this.onViewDetails,
+  });
+
+  final Map<String, dynamic> profile;
+  final VoidCallback onLike;
+  final VoidCallback onPass;
+  final VoidCallback onViewDetails;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    final name = getUserName(profile);
+    final age = getUserAge(profile);
+    final photoUrl = getUserPhotoUrl(profile);
+    final isPremium = isUserPremium(profile);
+    final bio = getUserBio(profile);
+
+    return GestureDetector(
+      onTap: onViewDetails, // Card tap navigates to profile details
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // ⬇️ Hero wrap (unique tag per image)
+            // Profile Image
             Hero(
-              tag: 'profile-img-${profile.image}',
-              child: _ProfileImage(profile: profile),
+              tag: 'profile-img-${profile['uid']}',
+              child: _ProfileImage(imageUrl: photoUrl),
             ),
 
+            // Share icon - triggers navigation
             Positioned(
               right: 10,
               top: 10,
-              child: _CircleBtn(icon: CupertinoIcons.share, onTap: () {}),
+              child: GestureDetector(
+                onTap: onViewDetails, // Share icon also navigates
+                child: _CircleBtn(
+                  icon: CupertinoIcons.share,
+                  onTap: () {}, // Empty callback, handled by GestureDetector
+                ),
+              ),
             ),
 
+            // Bottom info section
             Align(
               alignment: Alignment.bottomLeft,
               child: Container(
@@ -552,14 +579,15 @@ class _ProfileCard extends StatelessWidget {
                       spacing: 8,
                       runSpacing: 6,
                       children: [
-                        if (profile.newHere) const _Chip("New here"),
-                        if (profile.verified)
-                          const _Chip.icon("Photo verified", CupertinoIcons.checkmark_circle_fill),
+                        if (isPremium)
+                          const _Chip.icon("Premium", CupertinoIcons.checkmark_seal_fill),
+                        if (bio.isNotEmpty && bio != 'No bio yet')
+                          _Chip("${bio.length > 20 ? '${bio.substring(0, 20)}...' : bio}"),
                       ],
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      "${profile.name}, ${profile.age}",
+                      "$name, $age",
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -568,81 +596,43 @@ class _ProfileCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    if (profile.job.isNotEmpty)
-                      _InfoRow(icon: CupertinoIcons.briefcase, text: profile.job),
-                    if (profile.edu.isNotEmpty)
-                      _InfoRow(icon: FontAwesomeIcons.graduationCap, text: profile.edu),
+                    // Bio row - removed job and education
+                    if (bio.isNotEmpty && bio != 'No bio yet')
+                      _InfoRow(icon: CupertinoIcons.text_bubble, text: bio),
                     const SizedBox(height: 10),
+                    // Action buttons - use GestureDetector to stop propagation
                     Row(
                       children: [
-                        _PillBtn(
-                          icon: CupertinoIcons.multiply,
+                        // Cross icon - Pass profile only (no navigation)
+                        GestureDetector(
                           onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text("You passed on ${profile.name}"),
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(milliseconds: 700),
-                              ),
-                            );
+                            // Stop event propagation and call pass function
+                            onPass();
                           },
-                          bg: Colors.white.withOpacity(0.85),
-                          fg: Colors.red.shade600,
+                          child: _PillBtn(
+                            icon: CupertinoIcons.multiply,
+                            onTap: () {}, // Empty callback, handled by GestureDetector
+                            bg: Colors.white.withOpacity(0.85),
+                            fg: Colors.red.shade600,
+                          ),
                         ),
                         const SizedBox(width: 10),
-                        _PillBtn(
-                          icon: CupertinoIcons.heart_fill,
+                        // Heart icon - Like profile only (no navigation)
+                        GestureDetector(
                           onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text("You liked ${profile.name}"),
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(milliseconds: 800),
-                              ),
-                            );
+                            // Stop event propagation and call like function
+                            onLike();
                           },
-                          bg: AppColors.primary,
-                          fg: Colors.white,
+                          child: _PillBtn(
+                            icon: CupertinoIcons.heart_fill,
+                            onTap: () {}, // Empty callback, handled by GestureDetector
+                            bg: AppColors.primary,
+                            fg: Colors.white,
+                          ),
                         ),
                       ],
                     ),
                   ],
-                ),
-              ),
-            ),
-
-            // ⬇️ Tap layer: open detailed ProfileDisplay + hero transition
-            Positioned.fill(
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    final p = profile;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ProfilesListScreen(
-                          name: p.name,
-                          age: p.age,
-                          job: p.job,
-                          edu: p.edu,
-                          image: p.image,
-                          isAsset: p.isAsset,
-                          verified: p.verified,
-                          newHere: p.newHere,
-                          bio: "Intro pending…",
-                          interests: const [
-                            "Music",
-                            "Reading",
-                            "Coffee",
-                            "Hiking",
-                          ],
-                          distanceKm: 3,
-                          location: "Karachi",
-                        ),
-                      ),
-                    );
-                  },
                 ),
               ),
             ),
@@ -654,17 +644,17 @@ class _ProfileCard extends StatelessWidget {
 }
 
 class _ProfileImage extends StatelessWidget {
-  const _ProfileImage({required this.profile});
-  final _Profile profile;
+  const _ProfileImage({required this.imageUrl});
+  final String imageUrl;
 
   @override
   Widget build(BuildContext context) {
     final decoration = BoxDecoration(
       color: Colors.grey.shade200,
       image: DecorationImage(
-        image: profile.isAsset
-            ? AssetImage(profile.image) as ImageProvider
-            : NetworkImage(profile.image),
+        image: imageUrl.isNotEmpty
+            ? NetworkImage(imageUrl) as ImageProvider
+            : const AssetImage('assets/placeholder_avatar.png'),
         fit: BoxFit.cover,
       ),
       boxShadow: const [
@@ -848,14 +838,11 @@ class _PillBtn extends StatelessWidget {
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-        child: Material(
+        child: Container(
           color: bg,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Icon(icon, color: fg, size: 22),
-            ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Icon(icon, color: fg, size: 22),
           ),
         ),
       ),
@@ -870,16 +857,14 @@ class _CircleBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white70,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Icon(icon, size: 18, color: Colors.black87),
-        ),
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white70,
+        shape: BoxShape.circle,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Icon(icon, size: 18, color: Colors.black87),
       ),
     );
   }
@@ -993,65 +978,4 @@ class _BottomNav extends StatelessWidget {
       ),
     );
   }
-}
-
-// ===== Model =====
-class _Profile {
-  final String name;
-  final int age;
-  final String job;
-  final String edu;
-  final String image;
-  final bool isAsset;
-  final bool verified;
-  final bool newHere;
-
-  const _Profile._({
-    required this.name,
-    required this.age,
-    required this.job,
-    required this.edu,
-    required this.image,
-    required this.isAsset,
-    required this.verified,
-    required this.newHere,
-  });
-
-  factory _Profile.net({
-    required String name,
-    required int age,
-    required String job,
-    required String edu,
-    required String url,
-    bool verified = false,
-    bool newHere = false,
-  }) => _Profile._(
-    name: name,
-    age: age,
-    job: job,
-    edu: edu,
-    image: url,
-    isAsset: false,
-    verified: verified,
-    newHere: newHere,
-  );
-
-  factory _Profile.asset({
-    required String name,
-    required int age,
-    required String job,
-    required String edu,
-    required String assetPath,
-    bool verified = false,
-    bool newHere = false,
-  }) => _Profile._(
-    name: name,
-    age: age,
-    job: job,
-    edu: edu,
-    image: assetPath,
-    isAsset: true,
-    verified: verified,
-    newHere: newHere,
-  );
 }

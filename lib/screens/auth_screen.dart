@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
 import '../constants/app_colors.dart';
+import '../db_functions/dummyData.dart';
 import 'sign_up_screen.dart';
 
 class AuthPage extends StatefulWidget {
