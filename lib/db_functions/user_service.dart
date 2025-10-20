@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/post_model.dart';
+import '../models/story_model.dart';
 import '../models/user_model.dart';
+import 'image_service.dart';
 
 class UserService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -30,11 +33,9 @@ class UserService {
 
   // Stream user profile data for real-time updates
   static Stream<UserModel?> getUserProfileStream(String userId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .snapshots()
-        .map((snapshot) {
+    return _firestore.collection('users').doc(userId).snapshots().map((
+      snapshot,
+    ) {
       if (snapshot.exists) {
         final data = snapshot.data() as Map<String, dynamic>;
         return UserModel.fromFirestore(data);
@@ -84,10 +85,7 @@ class UserService {
     try {
       updates['updated_at'] = FieldValue.serverTimestamp();
 
-      await _firestore
-          .collection('users')
-          .doc(userId)
-          .update(updates);
+      await _firestore.collection('users').doc(userId).update(updates);
     } catch (e) {
       print('❌ Error updating user profile: $e');
       throw 'Failed to update profile: $e';
@@ -103,22 +101,16 @@ class UserService {
       final batch = _firestore.batch();
 
       // Add to current user's following
-      batch.update(
-        _firestore.collection('users').doc(currentUserId),
-        {
-          'following': FieldValue.arrayUnion([targetUserId]),
-          'updated_at': FieldValue.serverTimestamp(),
-        },
-      );
+      batch.update(_firestore.collection('users').doc(currentUserId), {
+        'following': FieldValue.arrayUnion([targetUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
 
       // Add to target user's followers
-      batch.update(
-        _firestore.collection('users').doc(targetUserId),
-        {
-          'followers': FieldValue.arrayUnion([currentUserId]),
-          'updated_at': FieldValue.serverTimestamp(),
-        },
-      );
+      batch.update(_firestore.collection('users').doc(targetUserId), {
+        'followers': FieldValue.arrayUnion([currentUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
 
       await batch.commit();
     } catch (e) {
@@ -135,22 +127,16 @@ class UserService {
       final batch = _firestore.batch();
 
       // Remove from current user's following
-      batch.update(
-        _firestore.collection('users').doc(currentUserId),
-        {
-          'following': FieldValue.arrayRemove([targetUserId]),
-          'updated_at': FieldValue.serverTimestamp(),
-        },
-      );
+      batch.update(_firestore.collection('users').doc(currentUserId), {
+        'following': FieldValue.arrayRemove([targetUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
 
       // Remove from target user's followers
-      batch.update(
-        _firestore.collection('users').doc(targetUserId),
-        {
-          'followers': FieldValue.arrayRemove([currentUserId]),
-          'updated_at': FieldValue.serverTimestamp(),
-        },
-      );
+      batch.update(_firestore.collection('users').doc(targetUserId), {
+        'followers': FieldValue.arrayRemove([currentUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
 
       await batch.commit();
     } catch (e) {
@@ -230,7 +216,10 @@ class UserService {
           .get();
 
       return querySnapshot.docs
-          .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
+          .map(
+            (doc) =>
+                UserModel.fromFirestore(doc.data() as Map<String, dynamic>),
+          )
           .toList();
     } catch (e) {
       print('❌ Error fetching users by IDs: $e');
@@ -262,8 +251,18 @@ class UserService {
 
   static String getFormattedJoinDate(UserModel user) {
     final months = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
     ];
     return "${months[user.createdAt.month - 1]} ${user.createdAt.day}, ${user.createdAt.year}";
   }
@@ -286,5 +285,269 @@ class UserService {
 
   static bool isPremium(UserModel user) {
     return user.type == 'premium';
+  }
+
+  // Add these methods to your existing UserService class
+
+  // Create a new post
+  static Future<void> createPost({
+    required String userId,
+    required String caption,
+    required String mediaUrl,
+    required String type,
+  }) async {
+    try {
+      final postRef = _firestore.collection('user_feed').doc();
+
+      final postData = {
+        'ID': postRef.id,
+        'UID': userId,
+        'caption': caption,
+        'type': type,
+        'media_url': mediaUrl,
+        'date_time': FieldValue.serverTimestamp(),
+        'comments': [],
+        'likes': [],
+      };
+
+      await postRef.set(postData);
+      print('✅ Post created successfully: ${postRef.id}');
+    } catch (e) {
+      print('❌ Error creating post: $e');
+      throw 'Failed to create post: $e';
+    }
+  }
+
+  // Get user posts as stream
+  static Stream<List<PostModel>> getUserPostsStream(String userId) {
+    return _firestore
+        .collection('user_feed')
+        .where('UID', isEqualTo: userId)
+        .orderBy('date_time', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map(
+                (doc) => PostModel.fromFirestore(
+                  doc.data() as Map<String, dynamic>,
+                  doc.id,
+                ),
+              )
+              .toList();
+        });
+  }
+
+  // Get single post by ID
+  static Future<PostModel?> getPostById(String postId) async {
+    try {
+      final doc = await _firestore.collection('user_feed').doc(postId).get();
+      if (doc.exists) {
+        return PostModel.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        );
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error getting post: $e');
+      return null;
+    }
+  }
+
+  static Future<void> likePost(String postId, String userId) async {
+    try {
+      final likeData = {
+        'likerUID': userId,
+        'date_time':
+            Timestamp.now(), // Use Timestamp.now() instead of FieldValue.serverTimestamp()
+      };
+
+      await _firestore.collection('user_feed').doc(postId).update({
+        'likes': FieldValue.arrayUnion([likeData]),
+      });
+    } catch (e) {
+      print('❌ Error liking post: $e');
+      throw 'Failed to like post: $e';
+    }
+  }
+
+  static Future<void> unlikePost(String postId, String userId) async {
+    try {
+      final postDoc = await _firestore
+          .collection('user_feed')
+          .doc(postId)
+          .get();
+      if (postDoc.exists) {
+        final data = postDoc.data() as Map<String, dynamic>;
+        final likes = data['likes'] as List<dynamic>? ?? [];
+
+        // Find the like to remove
+        final likeToRemove = likes.firstWhere(
+          (like) => like['likerUID'] == userId,
+          orElse: () => null,
+        );
+
+        if (likeToRemove != null) {
+          await _firestore.collection('user_feed').doc(postId).update({
+            'likes': FieldValue.arrayRemove([likeToRemove]),
+          });
+        }
+      }
+    } catch (e) {
+      print('❌ Error unliking post: $e');
+      throw 'Failed to unlike post: $e';
+    }
+  }
+
+  static Future<void> addComment({
+    required String postId,
+    required String userId,
+    required String text,
+  }) async {
+    try {
+      final commentData = {
+        'commenterUID': userId,
+        'date_time':
+            Timestamp.now(), // Use Timestamp.now() instead of FieldValue.serverTimestamp()
+        'text': text,
+      };
+
+      await _firestore.collection('user_feed').doc(postId).update({
+        'comments': FieldValue.arrayUnion([commentData]),
+      });
+    } catch (e) {
+      print('❌ Error adding comment: $e');
+      throw 'Failed to add comment: $e';
+    }
+  }
+
+  // Create a new story
+  static Future<void> createStory({
+    required String userId,
+    required String mediaUrl,
+    required String mediaType,
+  }) async {
+    try {
+      final storyRef = _firestore.collection('stories').doc();
+      final now = DateTime.now();
+      final expiresAt = now.add(
+        const Duration(hours: 24),
+      ); // 24-hour expiration
+
+      final storyData = {
+        'ID': storyRef.id,
+        'UID': userId,
+        'media_url': mediaUrl,
+        'media_type': mediaType,
+        'created_at': Timestamp.fromDate(now),
+        'expires_at': Timestamp.fromDate(expiresAt),
+        'viewers': [],
+      };
+
+      await storyRef.set(storyData);
+      print('✅ Story created successfully: ${storyRef.id}');
+
+      // Schedule automatic deletion
+      _scheduleStoryDeletion(storyRef.id, mediaUrl, expiresAt);
+    } catch (e) {
+      print('❌ Error creating story: $e');
+      throw 'Failed to create story: $e';
+    }
+  }
+
+  // Get user's active stories
+  static Stream<List<StoryModel>> getUserStoriesStream(String userId) {
+    return _firestore
+        .collection('stories')
+        .where('UID', isEqualTo: userId)
+        .where(
+          'expires_at',
+          isGreaterThan: Timestamp.now(),
+        ) // Only active stories
+        .orderBy('expires_at', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map(
+                (doc) => StoryModel.fromFirestore(
+                  doc.data() as Map<String, dynamic>,
+                  doc.id,
+                ),
+              )
+              .toList();
+        });
+  }
+
+  // Get all active stories from followed users
+  static Stream<List<StoryModel>> getFollowingStoriesStream(
+    List<String> followingIds,
+  ) {
+    if (followingIds.isEmpty) {
+      return Stream.value([]);
+    }
+
+    return _firestore
+        .collection('stories')
+        .where('UID', whereIn: followingIds)
+        .where('expires_at', isGreaterThan: Timestamp.now())
+        .orderBy('UID') // You'll need a composite index for this
+        .orderBy('created_at', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map(
+                (doc) => StoryModel.fromFirestore(
+                  doc.data() as Map<String, dynamic>,
+                  doc.id,
+                ),
+              )
+              .toList();
+        });
+  }
+
+  // Mark story as viewed
+  static Future<void> markStoryAsViewed(String storyId, String userId) async {
+    try {
+      await _firestore.collection('stories').doc(storyId).update({
+        'viewers': FieldValue.arrayUnion([userId]),
+      });
+    } catch (e) {
+      print('❌ Error marking story as viewed: $e');
+    }
+  }
+
+  // Schedule automatic story deletion
+  static void _scheduleStoryDeletion(
+    String storyId,
+    String mediaUrl,
+    DateTime expiresAt,
+  ) {
+    final durationUntilDeletion = expiresAt.difference(DateTime.now());
+
+    if (durationUntilDeletion.inSeconds > 0) {
+      Future.delayed(durationUntilDeletion, () async {
+        try {
+          // Delete from Firestore
+          await _firestore.collection('stories').doc(storyId).delete();
+          // Delete from Storage
+          await ImageService.deleteStoryMedia(mediaUrl);
+          print('✅ Story automatically deleted: $storyId');
+        } catch (e) {
+          print('❌ Error auto-deleting story: $e');
+        }
+      });
+    }
+  }
+
+  // Manual story deletion (if user wants to delete early)
+  static Future<void> deleteStory(String storyId, String mediaUrl) async {
+    try {
+      await _firestore.collection('stories').doc(storyId).delete();
+      await ImageService.deleteStoryMedia(mediaUrl);
+      print('✅ Story deleted manually: $storyId');
+    } catch (e) {
+      print('❌ Error deleting story: $e');
+      throw 'Failed to delete story: $e';
+    }
   }
 }
