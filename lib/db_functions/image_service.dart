@@ -192,4 +192,110 @@ class ImageService {
       // Don't throw, as this is usually for cleanup
     }
   }
+
+  // Upload post image
+  static Future<String> uploadPostImage({
+    required File imageFile,
+    required String userId,
+  }) async {
+    try {
+      print('📤 Uploading post image for user: $userId');
+
+      // Generate unique filename
+      String fileName = '${userId}_post_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
+
+      // Create storage reference in user's posts folder
+      Reference storageRef = _storage.ref().child('users/$userId/posts/$fileName');
+
+      print('📁 Storage path: users/$userId/posts/$fileName');
+
+      // Upload file
+      UploadTask uploadTask = storageRef.putFile(
+        imageFile,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          customMetadata: {
+            'uploadedBy': userId,
+            'uploadedAt': DateTime.now().toIso8601String(),
+            'type': 'post',
+          },
+        ),
+      );
+
+      // Wait for completion
+      TaskSnapshot snapshot = await uploadTask;
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      print('✅ Post image uploaded successfully');
+      return downloadUrl;
+    } catch (e) {
+      print('❌ Error uploading post image: $e');
+      throw 'Failed to upload post image: $e';
+    }
+  }
+
+  // Upload story media
+  static Future<String> uploadStoryMedia({
+    required File mediaFile,
+    required String userId,
+    required String mediaType, // 'image' or 'video'
+  }) async {
+    try {
+      print('📤 Uploading story media for user: $userId');
+
+      // Generate unique filename
+      String fileExtension = path.extension(mediaFile.path);
+      String fileName = '${userId}_story_${DateTime.now().millisecondsSinceEpoch}$fileExtension';
+
+      // Create storage reference in user's stories folder
+      Reference storageRef = _storage.ref().child('users/$userId/stories/$fileName');
+
+      print('📁 Storage path: users/$userId/stories/$fileName');
+
+      // Upload file
+      UploadTask uploadTask = storageRef.putFile(
+        mediaFile,
+        SettableMetadata(
+          contentType: mediaType == 'video' ? 'video/mp4' : 'image/jpeg',
+          customMetadata: {
+            'uploadedBy': userId,
+            'uploadedAt': DateTime.now().toIso8601String(),
+            'type': 'story',
+            'mediaType': mediaType,
+          },
+        ),
+      );
+
+      // Monitor upload progress
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        double progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        print('📤 Story upload progress: ${progress.toStringAsFixed(1)}%');
+      });
+
+      // Wait for completion
+      TaskSnapshot snapshot = await uploadTask;
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      print('✅ Story media uploaded successfully');
+      return downloadUrl;
+    } catch (e) {
+      print('❌ Error uploading story media: $e');
+      throw 'Failed to upload story: $e';
+    }
+  }
+
+// Delete story media from storage
+  static Future<void> deleteStoryMedia(String mediaUrl) async {
+    try {
+      if (mediaUrl.isNotEmpty && mediaUrl.startsWith('http')) {
+        Reference storageRef = _storage.refFromURL(mediaUrl);
+        await storageRef.delete();
+        print('✅ Story media deleted successfully');
+      }
+    } catch (e) {
+      print('❌ Error deleting story media: $e');
+      // Don't throw, as this is for cleanup
+    }
+  }
+
 }
