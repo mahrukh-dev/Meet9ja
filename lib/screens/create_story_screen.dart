@@ -109,6 +109,8 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
     }
   }
 
+  // In CreateStoryScreen, update the _createStory method:
+
   Future<void> _createStory() async {
     if (_selectedMedia == null) {
       _showErrorDialog('Please select media for your story');
@@ -127,6 +129,8 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
         mediaType: _mediaType,
       );
 
+      print('✅ Media uploaded: $mediaUrl');
+
       // Create story in Firestore
       await UserService.createStory(
         userId: widget.userId,
@@ -134,16 +138,24 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
         mediaType: _mediaType,
       );
 
+      print('✅ Story created in Firestore');
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Story created successfully!'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
+
+        // Add a small delay to ensure the story is properly saved
+        await Future.delayed(const Duration(milliseconds: 500));
+
         Navigator.pop(context, true);
       }
     } catch (e) {
+      print('❌ Error creating story: $e');
       if (mounted) {
         _showErrorDialog('Failed to create story: $e');
       }

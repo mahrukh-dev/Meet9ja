@@ -455,27 +455,36 @@ class UserService {
     }
   }
 
-  // Get user's active stories
+  // In UserService class, update the getUserStoriesStream method:
   static Stream<List<StoryModel>> getUserStoriesStream(String userId) {
-    return _firestore
-        .collection('stories')
-        .where('UID', isEqualTo: userId)
-        .where(
-          'expires_at',
-          isGreaterThan: Timestamp.now(),
-        ) // Only active stories
-        .orderBy('expires_at', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map(
-                (doc) => StoryModel.fromFirestore(
-                  doc.data() as Map<String, dynamic>,
-                  doc.id,
-                ),
-              )
-              .toList();
-        });
+    try {
+      return _firestore
+          .collection('stories')
+          .where('UID', isEqualTo: userId)
+          .where('expires_at', isGreaterThan: Timestamp.now())
+          .orderBy('expires_at', descending: true)
+          .snapshots()
+          .handleError((error) {
+        print('❌ Error in stories stream: $error');
+        // Return an empty list on error to prevent stream from closing
+        return [];
+      })
+          .map((snapshot) {
+        final stories = snapshot.docs
+            .map((doc) => StoryModel.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        ))
+            .toList();
+
+        print('📱 Stories stream updated: ${stories.length} stories');
+        return stories;
+      });
+    } catch (e) {
+      print('❌ Error creating stories stream: $e');
+      // Return a stream that emits an empty list
+      return Stream.value([]);
+    }
   }
 
   // Get all active stories from followed users

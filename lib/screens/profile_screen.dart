@@ -779,8 +779,15 @@ class _ClipsTab extends StatefulWidget {
 }
 
 class _ClipsTabState extends State<_ClipsTab> {
-  // Add a key to force rebuild the entire section
-  late UniqueKey _storiesKey = UniqueKey();
+  late Stream<List<StoryModel>> _storiesStream;
+  late UniqueKey _storiesKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _storiesKey = UniqueKey();
+    _storiesStream = UserService.getUserStoriesStream(widget.userId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -788,7 +795,7 @@ class _ClipsTabState extends State<_ClipsTab> {
       children: [
         // Stories Section - Fixed height
         _buildStoriesSection(),
-        SizedBox(height: 20),
+        const SizedBox(height: 20),
         // Posts Grid - Takes remaining space
         Expanded(
           child: _buildPostsGrid(),
@@ -799,16 +806,25 @@ class _ClipsTabState extends State<_ClipsTab> {
 
   Widget _buildStoriesSection() {
     return StreamBuilder<List<StoryModel>>(
-      stream: UserService.getUserStoriesStream(widget.userId),
+      stream: _storiesStream,
       builder: (context, snapshot) {
-
-        // ADD DEBUG PRINT
-        print('StreamBuilder updated - Has data: ${snapshot.hasData}, Connection state: ${snapshot.connectionState}');
+        // Debug logging
+        print('Stories StreamBuilder - Connection: ${snapshot.connectionState}');
+        print('Stories StreamBuilder - Has data: ${snapshot.hasData}');
         if (snapshot.hasData) {
-        print('Stories count: ${snapshot.data!.length}');
-        snapshot.data!.forEach((story) {
-        print('Story: ${story.id} - ${story.mediaUrl}');
-        });
+          print('Stories count: ${snapshot.data!.length}');
+        }
+        if (snapshot.hasError) {
+          print('Stories error: ${snapshot.error}');
+        }
+
+        // Handle different states
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildStoriesLoading();
+        }
+
+        if (snapshot.hasError) {
+          return _buildStoriesError(snapshot.error.toString());
         }
 
         final stories = snapshot.data ?? [];
@@ -819,7 +835,7 @@ class _ClipsTabState extends State<_ClipsTab> {
         }
 
         return Container(
-          key: _storiesKey, // Add key here to force rebuild
+          key: _storiesKey,
           height: 140,
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
@@ -844,7 +860,7 @@ class _ClipsTabState extends State<_ClipsTab> {
                     // User's Stories with unique keys
                     ...stories.map((story) => _buildStoryCircle(
                       story,
-                      key: ValueKey('story_${story.id}'),
+                      key: ValueKey('story_${story.id}_${story.createdAt.millisecondsSinceEpoch}'),
                     )),
                   ],
                 ),
@@ -853,6 +869,119 @@ class _ClipsTabState extends State<_ClipsTab> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildStoriesLoading() {
+    return Container(
+      height: 140,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Stories',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              children: [
+                if (widget.isMyProfile)
+                  _buildAddStoryButtonSkeleton(),
+                // Add skeleton loading for stories
+                _buildStoryCircleSkeleton(),
+                _buildStoryCircleSkeleton(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoriesError(String error) {
+    return Container(
+      height: 140,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Stories',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Center(
+              child: Text(
+                'Error loading stories',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddStoryButtonSkeleton() {
+    return Container(
+      width: 70,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey[300],
+            ),
+            child: Icon(Icons.add, size: 30, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Your Story',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoryCircleSkeleton() {
+    return Container(
+      width: 70,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey[300],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: 40,
+            height: 12,
+            color: Colors.grey[300],
+          ),
+        ],
+      ),
     );
   }
 
