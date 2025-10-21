@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:meet9ja/screens/selfie_onboarding_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_colors.dart';
@@ -26,6 +27,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _usernameCtrl = TextEditingController(text: "john_doe");
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
+  bool _acceptedTerms = false;
 
   bool _isCheckingUsername = false;
   bool _isUsernameAvailable = false;
@@ -48,6 +50,31 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _usernameCtrl.dispose();
     _usernameDebounceTimer?.cancel();
     super.dispose();
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_step == 0) return true;
+
+    final shouldExit = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Exit Registration?'),
+        content: const Text('Your progress will be lost. Are you sure you want to exit?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
+
+    return shouldExit ?? false;
   }
 
   void _checkUsernameAvailability(String username) {
@@ -103,10 +130,46 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return usernameRegex.hasMatch(username);
   }
 
-  // Photo handling methods - UPDATED VERSION
+  // Password strength validation
+  String? _validatePassword(String password) {
+    if (password.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    if (!password.contains(RegExp(r'[A-Z]'))) {
+      return 'Include at least one uppercase letter';
+    }
+    if (!password.contains(RegExp(r'[0-9]'))) {
+      return 'Include at least one number';
+    }
+    return null;
+  }
+
+  // Photo quality validation
+  Future<bool> _validatePhotoQuality(File imageFile) async {
+    try {
+      final fileSize = await imageFile.length();
+      final sizeInMB = fileSize / (1024 * 1024);
+
+      if (sizeInMB > 10) { // 10MB limit
+        _showErrorDialog('Photo is too large (${sizeInMB.toStringAsFixed(1)}MB). Maximum size is 10MB.');
+        return false;
+      }
+
+      if (sizeInMB < 0.01) { // 10KB minimum
+        _showErrorDialog('Photo is too small. Please choose a higher quality image.');
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      print('Error validating photo: $e');
+      return true; // Continue anyway if validation fails
+    }
+  }
+
+  // Photo handling methods
   Future<void> _pickAndAddPhoto() async {
     try {
-      // Show loading indicator
       _showLoadingDialog('Opening gallery...');
 
       File? imageFile = await ImageService.pickImageFromGallery();
@@ -116,6 +179,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
       }
 
       if (imageFile != null && mounted) {
+        // Validate photo quality
+        final isValid = await _validatePhotoQuality(imageFile);
+        if (!isValid) return;
+
         if (_selectedPhotos.length < 4) {
           setState(() {
             _selectedPhotos.add(imageFile);
@@ -160,6 +227,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
       }
 
       if (imageFiles.isNotEmpty && mounted) {
+        // Validate all photos first
+        for (final imageFile in imageFiles) {
+          final isValid = await _validatePhotoQuality(imageFile);
+          if (!isValid) return;
+        }
+
         int remainingSlots = 4 - _selectedPhotos.length;
 
         if (remainingSlots > 0) {
@@ -220,7 +293,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // UPDATED Permission Dialog
   void _showPermissionDialog(String errorMessage) {
     showDialog(
       context: context,
@@ -274,12 +346,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // Check permission after returning from settings
   Future<void> _checkPermissionAndRetry() async {
     try {
       print('🔍 Checking permission status after settings...');
-      // You can add a retry logic here if needed
-      // For now, we'll just show a message that user can try again
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please try selecting photos again after granting permission'),
@@ -352,15 +421,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    // Validate password length
-    if (_passwordCtrl.text.length < 6) {
-      _showErrorDialog('Password must be at least 6 characters long');
+    // Validate password
+    final passwordError = _validatePassword(_passwordCtrl.text);
+    if (passwordError != null) {
+      _showErrorDialog(passwordError);
       return;
     }
 
     // Validate photos
     if (_selectedPhotos.length < 2) {
       _showErrorDialog('Please add at least 2 photos');
+      return;
+    }
+
+    // Validate terms acceptance
+    if (!_acceptedTerms) {
+      _showErrorDialog('Please accept the Terms of Service and Privacy Policy');
       return;
     }
 
@@ -386,14 +462,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
         photoFiles: _selectedPhotos,
       );
 
-      // Navigate to next screen
+      // Send email verification
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && !user.emailVerified) {
+        await user.sendEmailVerification();
+        print('✅ Verification email sent to ${user.email}');
+      }
+
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
         print('✅ Registration successful, navigating to next screen');
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
-        );
+
+        // Show email verification reminder
+        _showVerificationReminder();
       }
     } catch (e) {
       if (mounted) {
@@ -403,6 +484,64 @@ class _SignUpScreenState extends State<SignUpScreen> {
       }
     } finally {
       setState(() => _isUploadingPhotos = false);
+    }
+  }
+
+  void _showVerificationReminder() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Verify Your Email'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('We\'ve sent a verification email to:'),
+            Text(
+              _emailCtrl.text.trim(),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            const Text('Please check your inbox and verify your email to complete registration.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
+              );
+            },
+            child: const Text('Continue'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _resendVerificationEmail();
+            },
+            child: const Text('Resend Email'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _resendVerificationEmail() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.sendEmailVerification();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Verification email sent to ${user.email}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      _showErrorDialog('Failed to resend verification email: $e');
     }
   }
 
@@ -477,68 +616,71 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        color: Colors.white,
-        child: SafeArea(
-          child: Stack(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: kSide),
-                    child: _ProgressLine(
-                      progress: (_step + 1) / 4.0,
-                      trackColor: Colors.black12,
-                      barColor: AppColors.primary,
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        body: Container(
+          color: Colors.white,
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: kSide),
+                      child: _ProgressLine(
+                        progress: (_step + 1) / 4.0,
+                        trackColor: Colors.black12,
+                        barColor: AppColors.primary,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    Expanded(
+                      child: PageView(
+                        controller: _page,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          _buildNameStep(),
+                          _buildPhotosStep(),
+                          _buildModeStep(),
+                          _buildTravelWithStep(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (_step > 0)
+                  Positioned(
+                    left: 6,
+                    top: 6,
+                    child: IconButton(
+                      onPressed: _back,
+                      icon: const Icon(
+                        CupertinoIcons.back,
+                        color: Colors.black87,
+                      ),
                     ),
                   ),
 
-                  const SizedBox(height: 24),
-
-                  Expanded(
-                    child: PageView(
-                      controller: _page,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        _buildNameStep(),
-                        _buildPhotosStep(),
-                        _buildModeStep(),
-                        _buildTravelWithStep(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              if (_step > 0)
                 Positioned(
-                  left: 6,
-                  top: 6,
-                  child: IconButton(
-                    onPressed: _back,
-                    icon: const Icon(
-                      CupertinoIcons.back,
-                      color: Colors.black87,
-                    ),
+                  right: 20,
+                  bottom: 24,
+                  child: FloatingActionButton(
+                    onPressed: _next,
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 2,
+                    shape: const CircleBorder(),
+                    child: const Icon(CupertinoIcons.arrow_right, size: 30),
                   ),
                 ),
-
-              Positioned(
-                right: 20,
-                bottom: 24,
-                child: FloatingActionButton(
-                  onPressed: _next,
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 2,
-                  shape: const CircleBorder(),
-                  child: const Icon(CupertinoIcons.arrow_right, size: 30),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -598,6 +740,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
               hint: "Create a password",
               obscureText: true,
             ),
+            if (_passwordCtrl.text.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                _validatePassword(_passwordCtrl.text) ?? 'Password strength: Good',
+                style: TextStyle(
+                  color: _validatePassword(_passwordCtrl.text) == null ? Colors.green : Colors.red,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
 
             // Age
@@ -608,6 +760,43 @@ class _SignUpScreenState extends State<SignUpScreen> {
               hint: "Enter your age",
               keyboardType: TextInputType.number,
             ),
+            const SizedBox(height: 20),
+
+            // Terms of Service
+            Row(
+              children: [
+                Checkbox(
+                  value: _acceptedTerms,
+                  onChanged: (value) => setState(() => _acceptedTerms = value ?? false),
+                ),
+                Expanded(
+                  child: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(color: Colors.black87, fontSize: 12),
+                      children: [
+                        const TextSpan(text: 'I agree to the '),
+                        TextSpan(
+                          text: 'Terms of Service',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const TextSpan(text: ' and '),
+                        TextSpan(
+                          text: 'Privacy Policy',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
             const SizedBox(height: 40),
           ],
         ),
@@ -924,7 +1113,6 @@ class _PhotoTile extends StatelessWidget {
   }
 
   factory _PhotoTile.image({required File imageFile, VoidCallback? onTap}) {
-    // Provide a placeholder child; build() uses imageFile to show the image when provided
     return _PhotoTile(
       const SizedBox.shrink(),
       onTap: onTap,
