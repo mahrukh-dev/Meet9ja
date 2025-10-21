@@ -1,9 +1,8 @@
-// lib/messages.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/constants/app_colors.dart';
-import 'package:meet9ja/screens/update_profile_screen.dart';
+import 'package:meet9ja/screens/profile_screen.dart';
 import 'discover_screen.dart';
 import 'chat_screen.dart';
 import 'home_screen.dart'; // <<< Font Awesome Import
@@ -413,7 +412,7 @@ class _BottomNav extends StatelessWidget {
                 if (i == 0 && current != 0) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => UpdateProfileScreen()),
+                    MaterialPageRoute(builder: (_) => ProfileScreen()),
                   );
                   return;
                 }

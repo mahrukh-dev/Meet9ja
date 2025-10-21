@@ -135,6 +135,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           title: data['title'] ?? 'Live Story',
           viewers: (data['viewers'] ?? 0).toInt(),
           thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1080&auto=format&fit=crop',
+          type: 'story',
+          postId: doc.id,
+          userId: data['UID'] ?? '',
+          userPhoto: '',
+          timestamp: data['created_at'] as Timestamp?,
+          likes: [],
+          comments: [],
         );
       }).toList();
     } catch (e) {
@@ -143,28 +150,84 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-  // Get clips reels from Firebase
+  // Get clips reels from Firebase - includes stories, posts, and live replays
   Future<List<_ReelItem>> _getClipsReels() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('live_history')
-          .where('status', isEqualTo: 'ended')
-          .orderBy('end_time', descending: true)
-          .limit(10)
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return [];
+
+      // Get stories (active within last 24 hours)
+      final storiesSnapshot = await FirebaseFirestore.instance
+          .collection('user_feed')
+          .where('type', whereIn: ['story', 'post', 'live_replay'])
+          .where('date_time', isGreaterThan: Timestamp.fromDate(
+          DateTime.now().subtract(const Duration(days: 1))))
+          .orderBy('date_time', descending: true)
+          .limit(20)
           .get();
 
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return _ReelItem(
-          user: data['hostName'] ?? 'Streamer',
-          title: data['title'] ?? 'Live Replay',
-          viewers: (data['viewer_count'] ?? 0).toInt(),
-          thumb: data['thumbnail_url'] ?? 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop',
-        );
-      }).toList();
+      if (storiesSnapshot.docs.isEmpty) return [];
+
+      // Get user details for each post/story
+      final reels = await Future.wait(
+        storiesSnapshot.docs.map((doc) async {
+          final data = doc.data() as Map<String, dynamic>;
+          final userId = data['UID'] as String?;
+
+          if (userId == null) return null;
+
+          // Get user details
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .get();
+
+          if (!userDoc.exists) return null;
+
+          final userData = userDoc.data() as Map<String, dynamic>?;
+
+          return _ReelItem(
+            user: userData?['username'] ?? 'User',
+            title: data['caption'] ?? _getDefaultTitle(data['type']),
+            viewers: (data['likes']?.length ?? 0) + (data['comments']?.length ?? 0),
+            thumb: data['media_url'] ?? _getDefaultThumbnail(data['type']),
+            type: data['type'] ?? 'post',
+            postId: doc.id,
+            userId: userId,
+            userPhoto: userData?['photo_url'] ?? '',
+            timestamp: data['date_time'] as Timestamp?,
+            likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
+            comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
+          );
+        }),
+      );
+
+      return reels.whereType<_ReelItem>().toList();
     } catch (e) {
       print('Error getting clips reels: $e');
       return [];
+    }
+  }
+
+  String _getDefaultTitle(String type) {
+    switch (type) {
+      case 'story':
+        return 'New Story';
+      case 'live_replay':
+        return 'Live Replay';
+      default:
+        return 'New Post';
+    }
+  }
+
+  String _getDefaultThumbnail(String type) {
+    switch (type) {
+      case 'story':
+        return 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop';
+      case 'live_replay':
+        return 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1080&auto=format&fit=crop';
+      default:
+        return 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop';
     }
   }
 
@@ -729,7 +792,19 @@ class _ReelsFeed extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return items.isEmpty
-        ? Center(
+        ? _buildEmptyState()
+        : PageView.builder(
+      scrollDirection: Axis.vertical,
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final it = items[i];
+        return _ReelContent(item: it);
+      },
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -741,120 +816,231 @@ class _ReelsFeed extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Follow users to see their stories',
+            'Follow users to see their posts and stories',
             style: TextStyle(color: Colors.white54),
           ),
         ],
       ),
-    )
-        : PageView.builder(
-      scrollDirection: Axis.vertical,
-      itemCount: items.length,
-      itemBuilder: (_, i) {
-        final it = items[i];
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.network(it.thumb, fit: BoxFit.cover),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.center,
-                    colors: [Colors.black.withOpacity(.75), Colors.transparent],
-                  ),
-                ),
+    );
+  }
+}
+
+class _ReelContent extends StatelessWidget {
+  final _ReelItem item;
+
+  const _ReelContent({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Background Image/Video
+        Image.network(item.thumb, fit: BoxFit.cover),
+
+        // Gradient Overlay
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.center,
+                colors: [Colors.black.withOpacity(.75), Colors.transparent],
               ),
             ),
-            Positioned(
-              right: 12,
-              bottom: 110,
-              child: Column(
-                children: [
-                  _CircleIcon(icon: FontAwesomeIcons.heart, onTap: () {}),
-                  const SizedBox(height: 16),
-                  _CircleIcon(icon: FontAwesomeIcons.comment, onTap: () {}),
-                  const SizedBox(height: 16),
-                  _CircleIcon(icon: FontAwesomeIcons.share, onTap: () {}),
-                ],
+          ),
+        ),
+
+        // Content Type Badge
+        Positioned(
+          top: 40,
+          left: 12,
+          child: _ContentTypeBadge(type: item.type),
+        ),
+
+        // Right Action Buttons
+        Positioned(
+          right: 12,
+          bottom: 110,
+          child: Column(
+            children: [
+              _CircleIcon(
+                icon: FontAwesomeIcons.heart,
+                onTap: () => _likePost(item),
+                count: item.likes.length,
               ),
-            ),
-            Positioned(
-              left: 12,
-              right: 80,
-              bottom: 20,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 16),
+              _CircleIcon(
+                icon: FontAwesomeIcons.comment,
+                onTap: () => _showComments(context, item),
+                count: item.comments.length,
+              ),
+              const SizedBox(height: 16),
+              _CircleIcon(icon: FontAwesomeIcons.share, onTap: () => _sharePost(item)),
+              const SizedBox(height: 16),
+              _CircleIcon(icon: FontAwesomeIcons.bookmark, onTap: () => _savePost(item)),
+            ],
+          ),
+        ),
+
+        // Bottom Content Info
+        Positioned(
+          left: 12,
+          right: 80,
+          bottom: 20,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // User Info Row
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      const Icon(FontAwesomeIcons.solidCircleCheck,
-                          color: Colors.white, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        it.user,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
+                  // User Avatar
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      image: DecorationImage(
+                        image: NetworkImage(item.userPhoto.isNotEmpty
+                            ? item.userPhoto
+                            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop'),
+                        fit: BoxFit.cover,
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          "LIVE",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    it.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(
-                        FontAwesomeIcons.eye,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _formatViewers(it.viewers),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w800,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.user,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
                         ),
-                      ),
-                    ],
+                        if (item.timestamp != null)
+                          Text(
+                            _formatTimestamp(item.timestamp!),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        );
-      },
+              const SizedBox(height: 12),
+
+              // Content Title
+              Text(
+                item.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Engagement Stats
+              Row(
+                children: [
+                  const Icon(
+                    FontAwesomeIcons.eye,
+                    color: Colors.white70,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _formatViewers(item.viewers),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Icon(
+                    FontAwesomeIcons.heart,
+                    color: Colors.white70,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${item.likes.length}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Icon(
+                    FontAwesomeIcons.comment,
+                    color: Colors.white70,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${item.comments.length}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
+  }
+
+  String _formatTimestamp(Timestamp timestamp) {
+    final now = DateTime.now();
+    final postTime = timestamp.toDate();
+    final difference = now.difference(postTime);
+
+    if (difference.inMinutes < 1) return 'Just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+    if (difference.inHours < 24) return '${difference.inHours}h ago';
+    if (difference.inDays < 7) return '${difference.inDays}d ago';
+
+    return '${postTime.day}/${postTime.month}/${postTime.year}';
+  }
+
+  void _likePost(_ReelItem item) {
+    // Implement like functionality
+    print('Liked post: ${item.postId}');
+  }
+
+  void _showComments(BuildContext context, _ReelItem item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _CommentsBottomSheet(item: item),
+    );
+  }
+
+  void _sharePost(_ReelItem item) {
+    // Implement share functionality
+    print('Shared post: ${item.postId}');
+  }
+
+  void _savePost(_ReelItem item) {
+    // Implement save functionality
+    print('Saved post: ${item.postId}');
   }
 
   String _formatViewers(int v) {
@@ -864,17 +1050,318 @@ class _ReelsFeed extends StatelessWidget {
   }
 }
 
+// Content Type Badge Widget
+class _ContentTypeBadge extends StatelessWidget {
+  final String type;
+
+  const _ContentTypeBadge({required this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    Color badgeColor;
+    String badgeText;
+    IconData badgeIcon;
+
+    switch (type) {
+      case 'story':
+        badgeColor = Colors.purpleAccent;
+        badgeText = 'STORY';
+        badgeIcon = FontAwesomeIcons.circlePlay;
+      case 'live_replay':
+        badgeColor = Colors.redAccent;
+        badgeText = 'REPLAY';
+        badgeIcon = FontAwesomeIcons.video;
+      default:
+        badgeColor = Colors.blueAccent;
+        badgeText = 'POST';
+        badgeIcon = FontAwesomeIcons.image;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: badgeColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(badgeIcon, size: 12, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            badgeText,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Updated Circle Icon with Count
+class _CircleIcon extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final int count;
+
+  const _CircleIcon({
+    required this.icon,
+    required this.onTap,
+    this.count = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        InkResponse(
+          onTap: onTap,
+          radius: 28,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(.35),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
+          ),
+        ),
+        if (count > 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            _formatCount(count),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) return "${(count / 1000000).toStringAsFixed(1)}M";
+    if (count >= 1000) return "${(count / 1000).toStringAsFixed(1)}K";
+    return count.toString();
+  }
+}
+
+// Comments Bottom Sheet
+class _CommentsBottomSheet extends StatelessWidget {
+  final _ReelItem item;
+
+  const _CommentsBottomSheet({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: const BoxDecoration(
+        color: Color(0xFF333333),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.3),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                const Text(
+                  'Comments',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '(${item.comments.length})',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(FontAwesomeIcons.xmark, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+
+          // Comments List
+          Expanded(
+            child: item.comments.isEmpty
+                ? const Center(
+              child: Text(
+                'No comments yet',
+                style: TextStyle(color: Colors.white54),
+              ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: item.comments.length,
+              itemBuilder: (context, index) {
+                final comment = item.comments[index];
+                return _CommentTile(comment: comment);
+              },
+            ),
+          ),
+
+          // Add Comment Input
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.black.withOpacity(0.3),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Add a comment...',
+                      hintStyle: const TextStyle(color: Colors.white54),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(25),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.1),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(FontAwesomeIcons.paperPlane, color: AppColors.primary),
+                  onPressed: () {
+                    // Implement add comment
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentTile extends StatelessWidget {
+  final Map<String, dynamic> comment;
+
+  const _CommentTile({required this.comment});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // User Avatar
+          CircleAvatar(
+            radius: 20,
+            backgroundImage: NetworkImage(
+              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop',
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  comment['commenterUID'] ?? 'User',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  comment['text'] ?? '',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _formatCommentTime(comment['date_time']),
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(FontAwesomeIcons.heart, size: 16, color: Colors.white54),
+            onPressed: () {},
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatCommentTime(dynamic timestamp) {
+    if (timestamp is Timestamp) {
+      final time = timestamp.toDate();
+      final now = DateTime.now();
+      final difference = now.difference(time);
+
+      if (difference.inMinutes < 1) return 'Just now';
+      if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+      if (difference.inHours < 24) return '${difference.inHours}h ago';
+      return '${difference.inDays}d ago';
+    }
+    return '';
+  }
+}
+
 /* ----------------------- MODELS ----------------------- */
 class _ReelItem {
   final String user;
   final String title;
   final int viewers;
   final String thumb;
+  final String type; // 'post', 'story', 'live_replay'
+  final String postId;
+  final String userId;
+  final String userPhoto;
+  final Timestamp? timestamp;
+  final List<Map<String, dynamic>> likes;
+  final List<Map<String, dynamic>> comments;
+
   const _ReelItem({
     required this.user,
     required this.title,
     required this.viewers,
     required this.thumb,
+    required this.type,
+    required this.postId,
+    required this.userId,
+    required this.userPhoto,
+    this.timestamp,
+    required this.likes,
+    required this.comments,
   });
 }
 
@@ -953,30 +1440,6 @@ class _BottomCreateButton extends StatelessWidget {
           ],
         ),
         child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
-      ),
-    );
-  }
-}
-
-class _CircleIcon extends StatelessWidget {
-  const _CircleIcon({required this.icon, required this.onTap});
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkResponse(
-      onTap: onTap,
-      radius: 28,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(.35),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white24),
-        ),
-        child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
   }
