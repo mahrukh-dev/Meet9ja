@@ -417,6 +417,32 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
 
     defaultHandle();
   }
+  // Add upload progress tracking
+  Future<void> _uploadWithProgress(String s3Url, Uint8List data) async {
+    try {
+      final request = http.MultipartRequest('PUT', Uri.parse(s3Url));
+      request.headers['Content-Type'] = 'video/mp4';
+
+      final multipartFile = http.MultipartFile.fromBytes(
+        'file',
+        data,
+        filename: 'recording.mp4',
+      );
+
+      request.files.add(multipartFile);
+
+      final streamedResponse = await request.send();
+
+      if (streamedResponse.statusCode == 200) {
+        print('✅ Upload completed successfully');
+      } else {
+        throw Exception('Upload failed with status: ${streamedResponse.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Upload error: $e');
+      rethrow;
+    }
+  }
 
   Future<void> _uploadRecordingAndEndLive() async {
     if (!widget.isHost) return;
@@ -489,6 +515,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
 
     print('📤 Uploading video (${videoBytes.length} bytes) to S3...');
 
+
     final String s3Url = await uploadToS3Improved(
       fileBytes: videoBytes,
       accessKey: _awsAccessKey,
@@ -498,6 +525,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
       objectKey: fileName,
       contentType: 'video/mp4',
     );
+
 
     await videoFile.delete();
     print('🧹 Local file cleaned up');
@@ -895,3 +923,5 @@ class _GiftItem extends StatelessWidget {
     );
   }
 }
+
+
