@@ -109,15 +109,22 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   // Get ALL stories from ALL users except current user
   Future<List<_ReelItem>> _getAllStories() async {
     try {
-      // Get ALL active stories from ALL users
+      print('🔍 Fetching stories from Firebase...');
+
+      // Get ALL active stories from ALL users from the 'stories' collection
       final snapshot = await FirebaseFirestore.instance
           .collection('stories')
           .where('expires_at', isGreaterThan: Timestamp.now())
-          .orderBy('created_at', descending: true)
+          .orderBy('expires_at', descending: true)
           .limit(50) // Limit to 50 most recent stories
           .get();
 
-      if (snapshot.docs.isEmpty) return [];
+      print('📱 Found ${snapshot.docs.length} stories in database');
+
+      if (snapshot.docs.isEmpty) {
+        print('❌ No stories found in database');
+        return [];
+      }
 
       // Get user details for each story and filter out current user's stories
       final reels = await Future.wait(
@@ -125,38 +132,59 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           final data = doc.data() as Map<String, dynamic>;
           final userId = data['UID'] as String?;
 
-          if (userId == null || userId == _currentUserId) return null;
+          print('👤 Processing story from user: $userId, Current user: $_currentUserId');
 
-          // Get user details
-          final userDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .get();
+          // Filter out current user's stories
+          if (userId == null || userId == _currentUserId) {
+            print('🚫 Filtered out current user\'s story');
+            return null;
+          }
 
-          if (!userDoc.exists) return null;
+          try {
+            // Get user details
+            final userDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
+                .get();
 
-          final userData = userDoc.data() as Map<String, dynamic>?;
+            if (!userDoc.exists) {
+              print('❌ User document not found for userId: $userId');
+              return null;
+            }
 
-          return _ReelItem(
-            user: userData?['username'] ?? 'User',
-            title: 'New Story', // Default title for stories
-            viewers: (data['viewers']?.length ?? 0),
-            thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop',
-            type: 'story',
-            postId: doc.id,
-            userId: userId,
-            userPhoto: userData?['photo_url'] ?? '',
-            timestamp: data['created_at'] as Timestamp?,
-            likes: [],
-            comments: [],
-            mediaType: data['media_type'] ?? 'image',
-          );
+            final userData = userDoc.data() as Map<String, dynamic>?;
+            final username = userData?['username'] ?? 'User';
+            final userPhoto = userData?['photo_url'] ?? '';
+
+            print('✅ Loaded user data: $username');
+
+            return _ReelItem(
+              user: username,
+              title: 'New Story', // Default title for stories
+              viewers: (data['viewers']?.length ?? 0),
+              thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop',
+              type: 'story',
+              postId: doc.id,
+              userId: userId,
+              userPhoto: userPhoto,
+              timestamp: data['created_at'] as Timestamp?,
+              likes: [],
+              comments: [],
+              mediaType: data['media_type'] ?? 'image',
+            );
+          } catch (e) {
+            print('❌ Error loading user data for $userId: $e');
+            return null;
+          }
         }),
       );
 
-      return reels.whereType<_ReelItem>().toList();
+      final filteredReels = reels.whereType<_ReelItem>().toList();
+      print('🎯 Final stories count after filtering: ${filteredReels.length}');
+
+      return filteredReels;
     } catch (e) {
-      print('Error getting all stories: $e');
+      print('❌ Error getting all stories: $e');
       return [];
     }
   }
