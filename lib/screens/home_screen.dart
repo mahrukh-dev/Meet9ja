@@ -68,6 +68,13 @@ class _HomeScreenState extends State<HomeScreen> {
           _profiles = profiles;
           _isLoading = false;
         });
+
+        // Auto-refresh if no profiles found
+        if (profiles.isEmpty) {
+          print('🔄 No profiles found, scheduling refresh...');
+          Future.delayed(const Duration(seconds: 3), _loadProfiles);
+        }
+
         print('✅ Profiles state updated: ${_profiles.length} profiles');
       }
     } catch (e) {
@@ -79,6 +86,36 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+  }
+
+  // Dummy data fallback
+  void _loadDummyData() {
+    setState(() {
+      _isLoading = false;
+      _errorMessage = '';
+      _profiles = [
+        {
+          'uid': 'demo_1',
+          'name': 'Sarah Johnson',
+          'age': 26,
+          'bio': 'Passionate traveler and foodie. Love exploring new cultures!',
+          'first_photos': {'photo1url': 'https://i.pravatar.cc/300?img=1'},
+          'type': 'premium',
+          'location': 'New York',
+          'interests': ['Travel', 'Food', 'Photography'],
+        },
+        {
+          'uid': 'demo_2',
+          'name': 'Mike Chen',
+          'age': 29,
+          'bio': 'Digital nomad and adventure seeker. Always planning my next trip!',
+          'first_photos': {'photo1url': 'https://i.pravatar.cc/300?img=5'},
+          'type': 'nonpremium',
+          'location': 'San Francisco',
+          'interests': ['Technology', 'Travel', 'Coffee'],
+        },
+      ];
+    });
   }
 
   void _goNext() {
@@ -295,13 +332,23 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _loadProfiles,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Try Again'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: _loadProfiles,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Try Again'),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton(
+                  onPressed: _loadDummyData,
+                  child: const Text('Use Demo Data'),
+                ),
+              ],
             ),
           ],
         ),
@@ -355,39 +402,43 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildProfilesList() {
-    return NotificationListener<ScrollNotification>(
-      onNotification: (n) {
-        if (n.metrics is PageMetrics) {
-          final m = n.metrics as PageMetrics;
-          setState(() {
-            _currentPage = m.page ?? _index.toDouble();
-          });
-        }
-        return false;
-      },
-      child: PageView.builder(
-        controller: _pageCtrl,
-        onPageChanged: (i) => setState(() => _index = i),
-        itemCount: _profiles.length,
-        itemBuilder: (context, i) {
-          final profile = _profiles[i];
-          final t = (_currentPage - i).abs().clamp(0.0, 1.0);
-          final scale = lerpDouble(1.0, 0.94, t)!;
-          final translateY = lerpDouble(0, 14, t)!;
-
-          return Transform.translate(
-            offset: Offset(0, translateY),
-            child: Transform.scale(
-              scale: scale,
-              child: _SwipeCard(
-                profile: profile,
-                onLike: () => _likeProfile(profile), // Only like action
-                onPass: () => _passProfile(profile), // Only pass action
-                onViewDetails: () => _navigateToProfileDetails(profile), // Only navigation action
-              ),
-            ),
-          );
+    return RefreshIndicator(
+      onRefresh: _loadProfiles,
+      color: AppColors.primary,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          if (n.metrics is PageMetrics) {
+            final m = n.metrics as PageMetrics;
+            setState(() {
+              _currentPage = m.page ?? _index.toDouble();
+            });
+          }
+          return false;
         },
+        child: PageView.builder(
+          controller: _pageCtrl,
+          onPageChanged: (i) => setState(() => _index = i),
+          itemCount: _profiles.length,
+          itemBuilder: (context, i) {
+            final profile = _profiles[i];
+            final t = (_currentPage - i).abs().clamp(0.0, 1.0);
+            final scale = lerpDouble(1.0, 0.94, t)!;
+            final translateY = lerpDouble(0, 14, t)!;
+
+            return Transform.translate(
+              offset: Offset(0, translateY),
+              child: Transform.scale(
+                scale: scale,
+                child: _SwipeCard(
+                  profile: profile,
+                  onLike: () => _likeProfile(profile),
+                  onPass: () => _passProfile(profile),
+                  onViewDetails: () => _navigateToProfileDetails(profile),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -451,12 +502,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   onPressed: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Watch Live Stream"),
-                        behavior: SnackBarBehavior.floating,
-                        duration: Duration(milliseconds: 900),
-                      ),
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
                     );
                   },
                   label: const Text(
@@ -491,9 +539,9 @@ class _SwipeCard extends StatelessWidget {
   });
 
   final Map<String, dynamic> profile;
-  final VoidCallback onLike; // Only like action
-  final VoidCallback onPass; // Only pass action
-  final VoidCallback onViewDetails; // Only navigation action
+  final VoidCallback onLike;
+  final VoidCallback onPass;
+  final VoidCallback onViewDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -530,7 +578,7 @@ class _ProfileCard extends StatelessWidget {
     final bio = getUserBio(profile);
 
     return GestureDetector(
-      onTap: onViewDetails, // Card tap navigates to profile details
+      onTap: onViewDetails,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
         child: Stack(
@@ -547,10 +595,10 @@ class _ProfileCard extends StatelessWidget {
               right: 10,
               top: 10,
               child: GestureDetector(
-                onTap: onViewDetails, // Share icon also navigates
+                onTap: onViewDetails,
                 child: _CircleBtn(
                   icon: CupertinoIcons.share,
-                  onTap: () {}, // Empty callback, handled by GestureDetector
+                  onTap: () {},
                 ),
               ),
             ),
@@ -605,13 +653,10 @@ class _ProfileCard extends StatelessWidget {
                       children: [
                         // Cross icon - Pass profile only (no navigation)
                         GestureDetector(
-                          onTap: () {
-                            // Stop event propagation and call pass function
-                            onPass();
-                          },
+                          onTap: onPass,
                           child: _PillBtn(
                             icon: CupertinoIcons.multiply,
-                            onTap: () {}, // Empty callback, handled by GestureDetector
+                            onTap: () {},
                             bg: Colors.white.withOpacity(0.85),
                             fg: Colors.red.shade600,
                           ),
@@ -619,13 +664,10 @@ class _ProfileCard extends StatelessWidget {
                         const SizedBox(width: 10),
                         // Heart icon - Like profile only (no navigation)
                         GestureDetector(
-                          onTap: () {
-                            // Stop event propagation and call like function
-                            onLike();
-                          },
+                          onTap: onLike,
                           child: _PillBtn(
                             icon: CupertinoIcons.heart_fill,
-                            onTap: () {}, // Empty callback, handled by GestureDetector
+                            onTap: () {},
                             bg: AppColors.primary,
                             fg: Colors.white,
                           ),
@@ -649,19 +691,45 @@ class _ProfileImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final decoration = BoxDecoration(
-      color: Colors.grey.shade200,
-      image: DecorationImage(
-        image: imageUrl.isNotEmpty
-            ? NetworkImage(imageUrl) as ImageProvider
-            : const AssetImage('assets/placeholder_avatar.png'),
-        fit: BoxFit.cover,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, 6)),
+        ],
       ),
-      boxShadow: const [
-        BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, 6)),
-      ],
+      child: imageUrl.isNotEmpty
+          ? Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return _buildPlaceholder();
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                  : null,
+              color: AppColors.primary,
+            ),
+          );
+        },
+      )
+          : _buildPlaceholder(),
     );
-    return Container(decoration: decoration);
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      color: Colors.grey.shade300,
+      child: const Icon(
+        CupertinoIcons.person_crop_circle,
+        size: 80,
+        color: Colors.grey,
+      ),
+    );
   }
 }
 
@@ -873,7 +941,7 @@ class _CircleBtn extends StatelessWidget {
 // --------- Bottom Nav ----------
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
-  final int current; // 0..4
+  final int current;
   final ValueChanged<int>? onTap;
 
   @override
@@ -934,7 +1002,6 @@ class _BottomNav extends StatelessWidget {
                   );
                   return;
                 }
-                // 2 current; 3 placeholder
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
