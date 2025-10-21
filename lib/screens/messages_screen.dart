@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'package:zego_zimkit/zego_zimkit.dart';
-
 import 'package:meet9ja/constants/app_colors.dart';
 import 'discover_screen.dart';
 import 'chat_screen.dart';
