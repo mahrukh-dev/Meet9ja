@@ -414,7 +414,9 @@ class _SliverHeader extends StatelessWidget {
         if (isMyProfile)
           IconButton(
             icon: const Icon(FontAwesomeIcons.gear, size: 20),
-            onPressed: () {},
+            onPressed: () {
+
+            },
           )
         else
           IconButton(

@@ -1,13 +1,17 @@
 // lib/messages.dart
-import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
+import 'package:zego_zimkit/zego_zimkit.dart';
+
 import 'package:meet9ja/constants/app_colors.dart';
 import 'package:meet9ja/screens/update_profile_screen.dart';
 import 'discover_screen.dart';
 import 'chat_screen.dart';
-import 'home_screen.dart'; // <<< Font Awesome Import
-
+import 'home_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -20,62 +24,303 @@ class _MessagesScreenState extends State<MessagesScreen> {
   // --- Search State ---
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
-  // --------------------
 
-  // ---- Stories (top) ----
-  final List<_Story> stories = const [
-    _Story("You", "https://i.pravatar.cc/150?img=1"),
-    _Story("Ayesha", "https://i.pravatar.cc/150?img=22"),
-    _Story("Sara", "https://i.pravatar.cc/150?img=24"),
-    _Story("Noor", "https://i.pravatar.cc/150?img=26"),
-    _Story("Huda", "https://i.pravatar.cc/150?img=28"),
-    _Story("Rida", "https://i.pravatar.cc/150?img=30"),
-  ];
+  // --- Real Data State ---
+  List<_Conversation> _chats = [];
+  List<_Conversation> _filteredChats = [];
+  List<_Story> _stories = [];
+  bool _isLoading = true;
+  StreamSubscription<QuerySnapshot>? _chatSubscription;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // ---- Conversations (list) ----
-  final List<_Conversation> chats = [
-    _Conversation(
-      name: "Ayesha",
-      avatar: "https://i.pravatar.cc/200?img=22",
-      lastMessage: "Haha yes, let's do Saturday 🎬",
-      time: "2:21 PM",
-      unread: 2,
-      messages: const [
-        _Msg(other: true, text: "You free this weekend?"),
-        _Msg(other: false, text: "Maybe! Movie night?"),
-        _Msg(other: true, text: "Haha yes, let's do Saturday 🎬"),
-      ],
-    ),
-    _Conversation(
-      name: "Rumi",
-      avatar: "https://i.pravatar.cc/200?img=25",
-      lastMessage: "Coffee spot near your office works?",
-      time: "11:04 AM",
-      unread: 0,
-      messages: const [
-        _Msg(other: true, text: "I found a cute cafe ☕"),
-        _Msg(other: false, text: "Send location!"),
-        _Msg(other: true, text: "Coffee spot near your office works?"),
-      ],
-    ),
-    _Conversation(
-      name: "Hafsa",
-      avatar: "https://i.pravatar.cc/200?img=28",
-      lastMessage: "Nice meeting you yesterday 👋",
-      time: "Mon",
-      unread: 0,
-      messages: const [
-        _Msg(other: true, text: "Nice meeting you yesterday 👋"),
-      ],
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_performSearch);
+    _loadChatsAndStories();
+    _initializeZegoCloud();
+  }
 
   @override
   void dispose() {
+    _chatSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
+  // Initialize ZegoCloud ZIMKit
+  Future<void> _initializeZegoCloud() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      // Initialize ZIMKit with your ZegoCloud credentials
+      await ZIMKit().init(
+        appID: 51745598, // Your ZegoCloud App ID
+        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4', // Your App Sign
+      );
+
+      // Connect user to ZegoCloud IM
+      await ZIMKit().connectUser(
+        id: user.uid,
+        name: user.displayName ?? 'User',
+      );
+
+      print('✅ ZegoCloud ZIMKit initialized and user connected');
+    } catch (e) {
+      print('❌ ZegoCloud ZIMKit initialization error: $e');
+    }
+  }
+
+  // Load real chat data from Firestore
+  Future<void> _loadChatsAndStories() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      print('🔄 Loading chats for user: ${user.uid}');
+
+      // Listen to real-time chat updates
+      _chatSubscription = _firestore
+          .collection('chat_conversations')
+          .where('participants', arrayContains: user.uid)
+          .orderBy('lastMessageTime', descending: true)
+          .snapshots()
+          .listen((snapshot) {
+        if (mounted) {
+          setState(() {
+            _chats = snapshot.docs.map((doc) {
+              return _Conversation.fromFirestore(doc.id, doc.data() as Map<String, dynamic>);
+            }).toList();
+
+            _filteredChats = List.from(_chats);
+            _isLoading = false;
+          });
+          print('✅ Loaded ${_chats.length} conversations');
+        }
+      }, onError: (e) {
+        print('❌ Chat subscription error: $e');
+        setState(() => _isLoading = false);
+      });
+
+      // Load stories
+      await _loadStories();
+
+    } catch (e) {
+      print('❌ Error loading chats: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Load stories from followed users
+  Future<void> _loadStories() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      // Get user's following list
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final userData = userDoc.data() as Map<String, dynamic>?;
+      final following = List<String>.from(userData?['following'] ?? []);
+
+      // Add "Your Story" at the beginning
+      _stories = [_createYourStory()];
+
+      if (following.isNotEmpty) {
+        // Get active stories from followed users
+        final storiesSnapshot = await _firestore
+            .collection('stories')
+            .where('UID', whereIn: following)
+            .where('expires_at', isGreaterThan: Timestamp.now())
+            .get();
+
+        final followedStories = await Future.wait(
+          storiesSnapshot.docs.map((doc) async {
+            final storyData = doc.data() as Map<String, dynamic>;
+            final userDoc = await _firestore.collection('users').doc(storyData['UID']).get();
+            final userData = userDoc.data() as Map<String, dynamic>?;
+
+            return _Story(
+              name: userData?['name'] ?? 'User',
+              avatar: userData?['photo_url'] ??
+                  _getFirstPhotoUrl(userData?['first_photos']) ??
+                  'https://i.pravatar.cc/150?img=1',
+              userId: storyData['UID'],
+              hasActiveStory: true,
+              storyId: doc.id,
+            );
+          }),
+        );
+
+        setState(() {
+          _stories.addAll(followedStories);
+        });
+      }
+
+      print('✅ Loaded ${_stories.length} stories');
+
+    } catch (e) {
+      print('❌ Error loading stories: $e');
+      setState(() => _stories = [_createYourStory()]);
+    }
+  }
+
+  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty) {
+        return photoUrl;
+      }
+    }
+    return null;
+  }
+
+  _Story _createYourStory() {
+    final user = _auth.currentUser;
+    return _Story(
+      name: "You",
+      avatar: user?.photoURL ?? "https://i.pravatar.cc/150?img=1",
+      userId: user?.uid ?? '',
+      hasActiveStory: false,
+      storyId: '',
+    );
+  }
+
+  // Search functionality
+  void _performSearch() {
+    final query = _searchController.text.toLowerCase().trim();
+
+    if (query.isEmpty) {
+      setState(() {
+        _filteredChats = List.from(_chats);
+      });
+    } else {
+      setState(() {
+        _filteredChats = _chats.where((chat) =>
+            chat.name.toLowerCase().contains(query)
+        ).toList();
+      });
+    }
+  }
+
+  // Open Zego conversation list (main chat screen)
+  void _openZegoConversationList() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => WillPopScope(
+          onWillPop: () async => false,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Conversations'),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            body: ZIMKitConversationListView(
+              onPressed: (context, conversation, defaultAction) {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) {
+                    return ZIMKitMessageListPage(
+                      conversationID: conversation.id,
+                      conversationType: conversation.type,
+                    );
+                  },
+                ));
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Open specific chat with user
+  void _openSpecificChat(_Conversation chat) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      // Mark conversation as read
+      await _markConversationAsRead(chat.id);
+
+      // Get the other user's ID
+      final otherUserId = chat.participants.firstWhere(
+            (id) => id != user.uid,
+        orElse: () => '',
+      );
+
+      if (otherUserId.isNotEmpty) {
+        // Navigate directly to chat with specific user
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ZIMKitMessageListPage(
+              conversationID: otherUserId,
+              conversationType: ZIMConversationType.peer,
+            ),
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('❌ Error opening specific chat: $e');
+      // Fallback to custom chat screen
+      _openCustomChat(chat);
+    }
+  }
+
+  // Alternative: Use your custom chat screen as fallback
+  void _openCustomChat(_Conversation chat) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          conversationId: 'conversation_123',
+          otherUserId: 'user_456',
+          otherUserName: 'John Doe',
+          otherUserAvatar: 'https://example.com/avatar.jpg',
+        ),
+      ),
+    );
+  }
+
+  // Mark conversation as read
+  Future<void> _markConversationAsRead(String conversationId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      await _firestore.collection('chat_conversations').doc(conversationId).update({
+        'unreadCount.${user.uid}': 0,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('❌ Error marking conversation as read: $e');
+    }
+  }
+
+  // Create new story
+  void _createNewStory() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Story creation would open here')),
+    );
+  }
+
+  // View user story
+  void _viewUserStory(_Story story) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Viewing ${story.name}\'s story')),
+    );
+  }
 
   Widget _buildTitleBar(BuildContext context) {
     if (_isSearching) {
@@ -101,13 +346,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 icon: Icon(FontAwesomeIcons.multiply, color: AppColors.primary),
                 onPressed: () {
                   _searchController.clear();
-                  // Optionally filter results here
+                  setState(() => _isSearching = false);
                 },
               ),
             ),
-            onSubmitted: (value) {
-              // Handle search submission
-            },
           ),
         ),
       );
@@ -130,24 +372,22 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Body now has a plain white background
       body: Container(
         color: Colors.white,
         child: SafeArea(
           child: Column(
             children: [
-              // Top Bar (now dynamic)
+              // Top Bar (dynamic)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
                 child: Row(
                   children: [
                     if (_isSearching)
-                      IconButton( // Back arrow when searching
-                        // CHANGED TO FONT AWESOME ICON
+                      IconButton(
                         icon: const FaIcon(
                           FontAwesomeIcons.arrowLeft,
                           color: Colors.black87,
-                          size: 20, // Match the search icon size
+                          size: 20,
                         ),
                         onPressed: () {
                           setState(() {
@@ -157,13 +397,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         },
                       )
                     else
-                      const SizedBox(width: 48), // balance for right icon
+                      const SizedBox(width: 48),
 
-                    _buildTitleBar(context), // Dynamic title/search input
+                    _buildTitleBar(context),
 
-                    if (!_isSearching) // Only show search icon when not searching
+                    if (!_isSearching)
                       IconButton(
-                        // Search icon is already FA
                         icon: const FaIcon(
                           FontAwesomeIcons.magnifyingGlass,
                           color: AppColors.primary,
@@ -179,67 +418,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 ),
               ),
 
-              // Content as a single scroll view (always shown for now)
+              // Content Area
               Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-                  children: [
-                    // Stories strip
-                    const _SectionHeader("Stories"),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 92,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: stories.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
-                        itemBuilder: (_, i) => _StoryCircle(story: stories[i]),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const _SectionHeader("Conversations"),
-                    const SizedBox(height: 10),
-                    ...List.generate(
-                      chats.length,
-                          (i) => Column(
-                        children: [
-                          _ChatTile(
-                            chat: chats[i],
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ChatScreen(
-                                    name: chats[i].name,
-                                    avatar: chats[i].avatar,
-                                    messages: chats[i].messages
-                                        .map(
-                                          (m) => {
-                                        'other': m.other,
-                                        'text': m.text,
-                                      },
-                                    )
-                                        .toList(),
-                                  ),
-                                ),
-                              ).then((_) {
-                                // Mark read when returning
-                                setState(
-                                      () => chats[i] = chats[i].copyWith(unread: 0),
-                                );
-                              });
-                            },
-                          ),
-
-                          const Divider(height: 0),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                child: _isLoading
+                    ? _buildLoadingState()
+                    : _buildContent(),
               ),
 
-              // Bottom nav — Chats selected (index 4)
+              // Bottom nav
               const Padding(
                 padding: EdgeInsets.fromLTRB(12, 8, 12, 14),
                 child: _BottomNav(current: 4),
@@ -248,51 +434,170 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
         ),
       ),
+
+      // Floating Action Button for Zego Conversation List
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openZegoConversationList,
+        backgroundColor: AppColors.primary,
+        child: const Icon(Icons.chat, color: Colors.white),
+      ),
     );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppColors.primary),
+          SizedBox(height: 16),
+          Text(
+            'Loading conversations...',
+            style: TextStyle(color: Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      children: [
+        // Stories strip
+        const _SectionHeader("Stories"),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 92,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _stories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) => _StoryCircle(
+              story: _stories[i],
+              onCreateStory: _createNewStory,
+              onViewStory: _viewUserStory,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Conversations section
+        const _SectionHeader("Conversations"),
+        const SizedBox(height: 10),
+
+        // FIXED: Replaced spread operator with proper list concatenation
+        if (_filteredChats.isEmpty) _buildEmptyChatsState(),
+        if (_filteredChats.isNotEmpty) ..._buildChatList(),
+      ],
+    );
+  }
+
+  Widget _buildEmptyChatsState() {
+    return Container(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        children: [
+          Icon(FontAwesomeIcons.comments, size: 64, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          const Text(
+            'No conversations yet',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Start chatting with your matches',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _openZegoConversationList,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Open Chat'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // FIXED: Return type explicitly defined
+  List<Widget> _buildChatList() {
+    return _filteredChats.map((chat) => Column(
+      children: [
+        _ChatTile(
+          chat: chat,
+          onTap: () => _openSpecificChat(chat), // Use specific chat for direct conversation
+        ),
+        const Divider(height: 0),
+      ],
+    )).toList();
   }
 }
 
 // ---------- Stories ----------
 class _StoryCircle extends StatelessWidget {
-  const _StoryCircle({required this.story});
+  const _StoryCircle({
+    required this.story,
+    required this.onCreateStory,
+    required this.onViewStory,
+  });
+
   final _Story story;
+  final VoidCallback onCreateStory;
+  final Function(_Story) onViewStory;
 
   @override
   Widget build(BuildContext context) {
     final isYou = story.name == "You";
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: isYou
-                  ? [AppColors.primary.withOpacity(0.35), Colors.white]
-                  : [AppColors.primary, const Color(0xFFFFC107)],
+
+    return GestureDetector(
+      onTap: () {
+        if (isYou) {
+          onCreateStory();
+        } else {
+          onViewStory(story);
+        }
+      },
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: (story.hasActiveStory && !isYou)
+                  ? const LinearGradient(
+                colors: [AppColors.primary, Color(0xFFFFC107)],
+              )
+                  : LinearGradient(
+                colors: [AppColors.primary.withOpacity(0.35), Colors.white],
+              ),
             ),
-          ),
-          child: CircleAvatar(
-            radius: 30,
-            backgroundColor: Colors.white,
             child: CircleAvatar(
-              radius: 28,
-              backgroundImage: NetworkImage(story.avatar),
+              radius: 30,
+              backgroundColor: Colors.white,
+              child: CircleAvatar(
+                radius: 28,
+                backgroundImage: NetworkImage(story.avatar),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: 72,
-          child: Text(
-            story.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w700),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: 72,
+            child: Text(
+              story.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -357,7 +662,6 @@ class _ChatTile extends StatelessWidget {
           fontWeight: chat.unread > 0 ? FontWeight.w800 : FontWeight.w500,
         ),
       ),
-      // UPDATED TO FA ICON
       trailing: const FaIcon(
         FontAwesomeIcons.chevronRight,
         color: Colors.black26,
@@ -366,21 +670,21 @@ class _ChatTile extends StatelessWidget {
     );
   }
 }
-// ---------- Bottom Nav (same style; Chats selected when current==4) ----------
+
+// ---------- Bottom Nav ----------
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
-  final int current; // 0..4
+  final int current;
   final ValueChanged<int>? onTap;
 
   @override
   Widget build(BuildContext context) {
-    // UPDATED ICONS TO FAICONS
     final icons = const [
-      FontAwesomeIcons.solidUser, // Profile
-      FontAwesomeIcons.compass, // Discover
-      FontAwesomeIcons.solidCircleUser, // People
-      FontAwesomeIcons.solidHeart, // Liked You
-      FontAwesomeIcons.solidCommentDots, // Chats
+      FontAwesomeIcons.solidUser,
+      FontAwesomeIcons.compass,
+      FontAwesomeIcons.solidCircleUser,
+      FontAwesomeIcons.solidHeart,
+      FontAwesomeIcons.solidCommentDots,
     ];
     final labels = const [
       "Profile",
@@ -409,7 +713,6 @@ class _BottomNav extends StatelessWidget {
                   onTap!(i);
                   return;
                 }
-                // Navigation mapping
                 if (i == 0 && current != 0) {
                   Navigator.pushReplacement(
                     context,
@@ -431,8 +734,6 @@ class _BottomNav extends StatelessWidget {
                   );
                   return;
                 }
-                // 3 (Liked You) – Add your route when ready
-                // 4 (Chats) – already here
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
@@ -446,7 +747,6 @@ class _BottomNav extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // UPDATED TO FA ICON
                     FaIcon(
                       icons[i],
                       size: selected ? 26 : 24,
@@ -460,12 +760,8 @@ class _BottomNav extends StatelessWidget {
                       style: TextStyle(
                         height: 1.0,
                         fontSize: 12,
-                        fontWeight: selected
-                            ? FontWeight.w800
-                            : FontWeight.w600,
-                        color: selected
-                            ? AppColors.primary
-                            : Colors.black54,
+                        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                        color: selected ? AppColors.primary : Colors.black54,
                       ),
                     ),
                   ],
@@ -479,7 +775,7 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-// ---------- Shared bits ----------
+// ---------- Shared Components ----------
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.text);
   final String text;
@@ -493,59 +789,87 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _BackgroundLines extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFB388EB).withOpacity(0.22)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    const step = 140.0;
-    for (double r = step; r < size.width * 1.5; r += step) {
-      canvas.drawCircle(Offset(size.width * 0.2, size.height * 0.3), r, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
 // ---------- Models ----------
 class _Story {
   final String name;
   final String avatar;
-  const _Story(this.name, this.avatar);
+  final String userId;
+  final bool hasActiveStory;
+  final String storyId;
+
+  const _Story({
+    required this.name,
+    required this.avatar,
+    required this.userId,
+    required this.hasActiveStory,
+    required this.storyId,
+  });
 }
 
 class _Conversation {
+  final String id;
   final String name;
   final String avatar;
   final String lastMessage;
   final String time;
   final int unread;
-  final List<_Msg> messages;
+  final String otherUserId;
+  final List<String> participants;
 
   const _Conversation({
+    required this.id,
     required this.name,
     required this.avatar,
     required this.lastMessage,
     required this.time,
     required this.unread,
-    required this.messages,
+    required this.otherUserId,
+    required this.participants,
   });
 
-  _Conversation copyWith({int? unread}) => _Conversation(
-    name: name,
-    avatar: avatar,
-    lastMessage: lastMessage,
-    time: time,
-    unread: unread ?? this.unread,
-    messages: messages,
-  );
-}
+  factory _Conversation.fromFirestore(String id, Map<String, dynamic> data) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw Exception('User not authenticated');
+    }
 
-class _Msg {
-  final bool other; // true => from other person
-  final String text;
-  const _Msg({required this.other, required this.text});
+    final participants = List<String>.from(data['participants'] ?? []);
+    final otherUser = participants.firstWhere(
+          (uid) => uid != currentUser.uid,
+      orElse: () => '',
+    );
+
+    // Get unread count for current user
+    final unreadCount = (data['unreadCount'] as Map<String, dynamic>?)?[currentUser.uid] ?? 0;
+
+    return _Conversation(
+      id: id,
+      name: data['otherUserName'] ?? 'User',
+      avatar: data['otherUserAvatar'] ?? 'https://i.pravatar.cc/200',
+      lastMessage: data['lastMessage'] ?? 'Start a conversation',
+      time: _formatTime(data['lastMessageTime']),
+      unread: (unreadCount is int) ? unreadCount : 0,
+      otherUserId: otherUser,
+      participants: participants,
+    );
+  }
+
+  static String _formatTime(dynamic timestamp) {
+    if (timestamp == null) return 'Now';
+
+    try {
+      final messageTime = (timestamp as Timestamp).toDate();
+      final now = DateTime.now();
+      final difference = now.difference(messageTime);
+
+      if (difference.inMinutes < 1) return 'Now';
+      if (difference.inHours < 1) return '${difference.inMinutes}m';
+      if (difference.inDays < 1) return '${difference.inHours}h';
+      if (difference.inDays < 7) return '${difference.inDays}d';
+
+      return '${messageTime.month}/${messageTime.day}';
+    } catch (e) {
+      return 'Now';
+    }
+  }
 }
