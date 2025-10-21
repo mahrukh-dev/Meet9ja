@@ -1,8 +1,10 @@
 // lib/splash_screen.dart
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'home_screen.dart';
 import 'onboarding_screen.dart'; // <-- make sure this exists
 
 class SplashScreen extends StatefulWidget {
@@ -13,17 +15,33 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+
   @override
   void initState() {
     super.initState();
 
-    // 5 seconds delay then navigate
-    Future.delayed(const Duration(seconds: 5), () {
+    Future.delayed(const Duration(seconds: 3), () {
       if (!mounted) return;
+
+      // Check if user is already authenticated
+      _checkAuthStatus();
+    });
+  }
+
+  void _checkAuthStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user != null) {
+      // User is logged in - go to main app
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } else {
+      // User not logged in - go to onboarding
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const OnboardingPage()),
       );
-    });
+    }
   }
 
   @override
