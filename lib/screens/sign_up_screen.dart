@@ -481,6 +481,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
         Navigator.pop(context); // Close loading dialog
         print('❌ Registration error in UI: $e');
         _showErrorDialog('Registration failed: $e');
+
+        // Show email verification reminder
+        _showVerificationReminder();
       }
     } finally {
       setState(() => _isUploadingPhotos = false);
