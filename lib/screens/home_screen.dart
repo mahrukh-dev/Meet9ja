@@ -3,9 +3,8 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-
 import 'package:meet9ja/screens/explore_live_screen.dart';
-import 'package:meet9ja/screens/update_profile_screen.dart';
+import 'package:meet9ja/screens/profile_screen.dart';
 import '../constants/app_colors.dart';
 import '../db_functions/getDiscoveryProfiles.dart';
 import '../db_functions/getUserAge.dart';
@@ -984,7 +983,7 @@ class _BottomNav extends StatelessWidget {
                 if (i == 0 && current != 0) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => UpdateProfileScreen()),
+                    MaterialPageRoute(builder: (_) => ProfileScreen()),
                   );
                   return;
                 }
