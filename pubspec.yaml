@@ -55,6 +55,7 @@ dependencies:
   image: ^4.5.4
   crypto: ^3.0.6
   collection: ^1.18.0
+  path_provider: ^2.1.1
 #  zego_uikit_prebuilt_live_streaming: ^3.14.6
 
 

@@ -6,6 +6,9 @@ import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_stre
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class LiveStreamScreen extends StatefulWidget {
   final String liveId;
@@ -34,10 +37,134 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   final String _awsAccessKey = 'AKIAZ44G2F7RDNUFZT6U';
   final String _awsSecretKey = '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';
 
+  // Camera recording state
+  CameraController? _cameraController;
+  bool _isRecording = false;
+  String? _recordingFilePath;
+  bool _isCameraInitialized = false;
+  bool _isUploading = false;
+  bool _permissionsChecked = false;
+
+  // Performance optimization
+  ResolutionPreset _resolutionPreset = ResolutionPreset.medium;
+
   @override
   void initState() {
     super.initState();
     _updateViewerCount();
+    if (widget.isHost) {
+      Future.delayed(const Duration(seconds: 2), () {
+        _initializeCamera();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _cameraController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      // Check permissions first without requesting
+      final hasPermissions = await _checkPermissions();
+
+      if (!hasPermissions) {
+        print('⚠️ Camera permissions not granted, skipping recording');
+        return;
+      }
+
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        print('❌ No cameras available');
+        return;
+      }
+
+      final frontCamera = cameras.firstWhere(
+            (camera) => camera.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+
+      _cameraController = CameraController(
+        frontCamera,
+        _resolutionPreset,
+        enableAudio: true,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+
+      await _cameraController!.initialize().then((_) {
+        setState(() {
+          _isCameraInitialized = true;
+        });
+        print('✅ Camera initialized with ${_resolutionPreset.name}');
+
+        Future.delayed(const Duration(seconds: 1), _startRecording);
+      }).catchError((e) {
+        print('❌ Camera initialization failed: $e');
+        _tryLowerResolution();
+      });
+
+    } catch (e) {
+      print('❌ Error initializing camera: $e');
+      _tryLowerResolution();
+    }
+  }
+
+  Future<bool> _checkPermissions() async {
+    try {
+      // Check current permission status without requesting
+      final cameraStatus = await Permission.camera.status;
+      final microphoneStatus = await Permission.microphone.status;
+      final storageStatus = await Permission.storage.status;
+
+      print('🔍 Permission Status - Camera: $cameraStatus, Microphone: $microphoneStatus, Storage: $storageStatus');
+
+      // If permissions are permanently denied, don't proceed
+      if (cameraStatus.isPermanentlyDenied || microphoneStatus.isPermanentlyDenied) {
+        print('❌ Camera or microphone permissions permanently denied');
+        return false;
+      }
+
+      // If permissions are denied (but not permanently), request them
+      if (!cameraStatus.isGranted || !microphoneStatus.isGranted) {
+        print('🔄 Requesting camera and microphone permissions...');
+        final cameraResult = await Permission.camera.request();
+        final microphoneResult = await Permission.microphone.request();
+
+        if (!cameraResult.isGranted || !microphoneResult.isGranted) {
+          print('❌ Camera or microphone permission not granted after request');
+          return false;
+        }
+      }
+
+      // Storage permission is less critical, but nice to have
+      if (!storageStatus.isGranted && !storageStatus.isPermanentlyDenied) {
+        await Permission.storage.request();
+      }
+
+      setState(() {
+        _permissionsChecked = true;
+      });
+
+      return cameraStatus.isGranted && microphoneStatus.isGranted;
+
+    } catch (e) {
+      print('❌ Error checking permissions: $e');
+      return false;
+    }
+  }
+
+  Future<void> _tryLowerResolution() async {
+    try {
+      if (_resolutionPreset != ResolutionPreset.low) {
+        _resolutionPreset = ResolutionPreset.low;
+        print('🔄 Trying lower resolution: ${_resolutionPreset.name}');
+        await _initializeCamera();
+      }
+    } catch (e) {
+      print('❌ Failed to initialize with low resolution: $e');
+    }
   }
 
   void _updateViewerCount() async {
@@ -55,11 +182,68 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     }
   }
 
+  Future<void> _startRecording() async {
+    if (!widget.isHost || !_isCameraInitialized || _isRecording) return;
+
+    try {
+      final directory = await getTemporaryDirectory();
+      final fileName = '${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
+      _recordingFilePath = '${directory.path}/$fileName';
+
+      print('🎥 Starting recording: $_recordingFilePath');
+
+      await _cameraController!.startVideoRecording();
+
+      setState(() {
+        _isRecording = true;
+      });
+
+      print('✅ Recording started successfully');
+
+    } catch (e) {
+      print('❌ Error starting recording: $e');
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_isRecording) return;
+
+    try {
+      print('🛑 Stopping recording...');
+
+      final XFile videoFile = await _cameraController!.stopVideoRecording();
+
+      // Copy file to desired location
+      final File originalFile = File(videoFile.path);
+      final File destinationFile = File(_recordingFilePath!);
+
+      await originalFile.copy(destinationFile.path);
+      await originalFile.delete();
+
+      setState(() {
+        _isRecording = false;
+      });
+
+      final fileSize = await destinationFile.length();
+
+      print('✅ Recording stopped');
+      print('📁 File: ${destinationFile.path}');
+      print('📊 Size: $fileSize bytes');
+
+    } catch (e) {
+      print('❌ Error stopping recording: $e');
+      setState(() {
+        _isRecording = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
+          // Zego UI Kit
           ZegoUIKitPrebuiltLiveStreaming(
             appID: 51745598,
             appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
@@ -76,6 +260,25 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
             ),
           ),
 
+          // Hidden camera preview
+          if (widget.isHost && _isCameraInitialized)
+            Positioned(
+              top: -1000,
+              left: -1000,
+              child: Opacity(
+                opacity: 0.0,
+                child: SizedBox(
+                  width: 1,
+                  height: 1,
+                  child: CameraPreview(_cameraController!),
+                ),
+              ),
+            ),
+
+          // Status indicators
+          if (widget.isHost) _buildStatusIndicators(),
+
+          // Gift overlay for audience
           if (!widget.isHost)
             _GiftOverlay(
               liveId: widget.liveId,
@@ -84,6 +287,115 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildStatusIndicators() {
+    return Positioned(
+      top: 50,
+      left: 20,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Recording indicator
+          if (_isRecording)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'REC',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 8),
+
+          // Camera status
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: _getStatusText(),
+          ),
+
+          // Upload status
+          if (_isUploading)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Uploading...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Text _getStatusText() {
+    if (!_permissionsChecked) {
+      return const Text(
+        'Checking permissions...',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+        ),
+      );
+    } else if (_isRecording) {
+      return const Text(
+        'Recording...',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+        ),
+      );
+    } else if (_isCameraInitialized) {
+      return const Text(
+        'Camera Ready',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+        ),
+      );
+    } else {
+      return const Text(
+        'Camera Unavailable',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+        ),
+      );
+    }
   }
 
   Future<void> _onLeaveLiveStreaming(VoidCallback defaultHandle) async {
@@ -99,15 +411,134 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         print('Error decrementing viewer count: $e');
       }
     } else {
-      await _endLiveStream();
+      await _stopRecording();
+      await _uploadRecordingAndEndLive();
     }
 
     defaultHandle();
   }
 
-  Future<void> _endLiveStream() async {
+  Future<void> _uploadRecordingAndEndLive() async {
+    if (!widget.isHost) return;
+
+    setState(() {
+      _isUploading = true;
+    });
+
     try {
-      // First update live stream status
+      String s3Url = 'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/fallback_${widget.liveId}.mp4';
+      String uploadStatus = 'failed';
+      String recordingType = 'metadata_only';
+
+      // Try to upload actual video
+      if (_recordingFilePath != null && File(_recordingFilePath!).existsSync()) {
+        try {
+          s3Url = await _uploadVideoRecordingToS3();
+          uploadStatus = 'success';
+          recordingType = 'video';
+        } catch (e) {
+          print('⚠️ Video upload failed: $e');
+          // Fallback to metadata
+          try {
+            s3Url = await _createAndUploadRecordingMetadata();
+            uploadStatus = 'partial_success';
+            recordingType = 'metadata_fallback';
+          } catch (e2) {
+            print('⚠️ Metadata upload failed: $e2');
+          }
+        }
+      } else {
+        // Upload metadata only
+        try {
+          s3Url = await _createAndUploadRecordingMetadata();
+          uploadStatus = 'success';
+          recordingType = 'metadata_only';
+        } catch (e) {
+          print('⚠️ Metadata upload failed: $e');
+        }
+      }
+
+      await _endLiveStream(s3Url, uploadStatus, recordingType);
+
+    } catch (e) {
+      print('❌ Error in upload process: $e');
+      await _endLiveStream(
+          'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/error_${widget.liveId}.txt',
+          'error',
+          'error'
+      );
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
+    }
+  }
+
+  Future<String> _uploadVideoRecordingToS3() async {
+    if (_recordingFilePath == null) {
+      throw Exception('No recording file path');
+    }
+
+    final File videoFile = File(_recordingFilePath!);
+    if (!await videoFile.exists()) {
+      throw Exception('Recording file not found');
+    }
+
+    final String fileName = 'videos/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
+    final Uint8List videoBytes = await videoFile.readAsBytes();
+
+    print('📤 Uploading video (${videoBytes.length} bytes) to S3...');
+
+    final String s3Url = await uploadToS3Improved(
+      fileBytes: videoBytes,
+      accessKey: _awsAccessKey,
+      secretKey: _awsSecretKey,
+      bucket: _awsBucketName,
+      region: _awsRegion,
+      objectKey: fileName,
+      contentType: 'video/mp4',
+    );
+
+    await videoFile.delete();
+    print('🧹 Local file cleaned up');
+
+    return s3Url;
+  }
+
+  Future<String> _createAndUploadRecordingMetadata() async {
+    final String recordingContent = '''
+LIVE_STREAM_METADATA
+Live ID: ${widget.liveId}
+Host: ${widget.userName}
+Host ID: ${widget.userId}
+Start Time: ${DateTime.now().toIso8601String()}
+End Time: ${DateTime.now().toIso8601String()}
+Viewers: ${await _getCurrentViewerCount()}
+Status: COMPLETED
+Recording Type: CAMERA_RECORDING
+Total Gifts Value: ${await _getTotalGiftValue()}
+Duration: ${_calculateDuration(await _getStartTime())} seconds
+Note: Camera recording completed
+METADATA_END
+''';
+
+    final String fileName = 'metadata/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.txt';
+
+    final String s3Url = await uploadToS3Improved(
+      content: recordingContent,
+      accessKey: _awsAccessKey,
+      secretKey: _awsSecretKey,
+      bucket: _awsBucketName,
+      region: _awsRegion,
+      objectKey: fileName,
+      contentType: 'text/plain',
+    );
+
+    return s3Url;
+  }
+
+  Future<void> _endLiveStream(String s3Url, String uploadStatus, String recordingType) async {
+    try {
       await FirebaseFirestore.instance
           .collection('liveStreams')
           .doc(widget.liveId)
@@ -117,18 +548,6 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         'status': 'ended',
       });
 
-      // Try to upload recording to S3, but don't fail the whole process if it fails
-      String s3Url = 'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/fallback_${widget.liveId}.txt';
-
-      try {
-        s3Url = await _createAndUploadRecording();
-        print('✅ Recording uploaded to S3: $s3Url');
-      } catch (e) {
-        print('⚠️ S3 upload failed, using fallback URL: $e');
-        // Continue with fallback URL
-      }
-
-      // Create live history record
       final liveDoc = await FirebaseFirestore.instance
           .collection('liveStreams')
           .doc(widget.liveId)
@@ -142,6 +561,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
           .set({
         'live_id': widget.liveId,
         'UID': widget.userId,
+        'host_name': widget.userName,
         'start_time': liveData?['startedAt'],
         'end_time': FieldValue.serverTimestamp(),
         'title': liveData?['title'] ?? 'Live Stream',
@@ -152,46 +572,21 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         'storage_bucket': _awsBucketName,
         'storage_region': _awsRegion,
         'uploaded_at': FieldValue.serverTimestamp(),
-        'upload_status': s3Url.contains('fallback') ? 'failed' : 'success',
+        'upload_status': uploadStatus,
+        'recording_type': recordingType,
+        'duration_seconds': _calculateDuration(liveData?['startedAt']),
       });
 
-      print('✅ Live stream ended successfully');
+      print('✅ Live ended - Status: $uploadStatus, Type: $recordingType');
+
     } catch (e) {
       print('❌ Error ending live stream: $e');
     }
   }
 
-  // 🆕 Improved recording upload with better error handling
-  Future<String> _createAndUploadRecording() async {
-    try {
-      // Create a simple recording metadata
-      final String recordingContent = '''
-Live Stream Recording Metadata
-Live ID: ${widget.liveId}
-Host: ${widget.userName} (${widget.userId})
-Date: ${DateTime.now().toIso8601String()}
-Viewers: ${await _getCurrentViewerCount()}
-Status: Completed
-''';
-
-      final String fileName = 'recordings/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.txt';
-
-      // Use the improved S3 upload function
-      final String s3Url = await uploadToS3Improved(
-        content: recordingContent,
-        accessKey: _awsAccessKey,
-        secretKey: _awsSecretKey,
-        bucket: _awsBucketName,
-        region: _awsRegion,
-        objectKey: fileName,
-        contentType: 'text/plain',
-      );
-
-      return s3Url;
-    } catch (e) {
-      print('❌ Error in createAndUploadRecording: $e');
-      rethrow;
-    }
+  int _calculateDuration(Timestamp? startTime) {
+    if (startTime == null) return 0;
+    return DateTime.now().difference(startTime.toDate()).inSeconds;
   }
 
   Future<int> _getCurrentViewerCount() async {
@@ -205,11 +600,39 @@ Status: Completed
       return 0;
     }
   }
+
+  Future<int> _getTotalGiftValue() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('liveStreams')
+          .doc(widget.liveId)
+          .get();
+      return (doc.data()?['total_gift_value'] as int?) ?? 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<Timestamp?> _getStartTime() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('liveStreams')
+          .doc(widget.liveId)
+          .get();
+      return doc.data()?['startedAt'] as Timestamp?;
+    } catch (e) {
+      return null;
+    }
+  }
+
+
+// Keep the existing AWS S3 upload functions and gift overlay widgets...
 }
 
-// 🆕 IMPROVED AWS S3 UPLOAD FUNCTION
+// AWS S3 Upload Function (keep the same as before)
 Future<String> uploadToS3Improved({
-  required String content,
+  String? content,
+  Uint8List? fileBytes,
   required String accessKey,
   required String secretKey,
   required String bucket,
@@ -220,7 +643,9 @@ Future<String> uploadToS3Improved({
   try {
     final host = '$bucket.s3.$region.amazonaws.com';
     final url = Uri.https(host, objectKey);
-    final payload = utf8.encode(content);
+
+    // Determine payload based on input
+    final Uint8List payload = fileBytes ?? Uint8List.fromList(utf8.encode(content!));
 
     final date = DateTime.now().toUtc();
     final isoDate = _formatAmzDate(date);
@@ -229,12 +654,12 @@ Future<String> uploadToS3Improved({
     print('🔧 S3 Upload Debug:');
     print('  - Host: $host');
     print('  - Object Key: $objectKey');
-    print('  - Date: $isoDate');
+    print('  - Content Type: $contentType');
+    print('  - File Size: ${payload.length} bytes');
+    print('  - Upload Type: ${fileBytes != null ? 'Binary' : 'Text'}');
 
     // --- Create AWS signature (V4 signing) ---
     final credentialScope = '$dateStamp/$region/s3/aws4_request';
-
-    // Use actual payload hash instead of UNSIGNED-PAYLOAD for better security
     final payloadHash = sha256.convert(payload).toString();
 
     final canonicalHeaders = 'host:$host\nx-amz-content-sha256:$payloadHash\nx-amz-date:$isoDate\n';
@@ -270,7 +695,6 @@ $canonicalRequestHash''';
     final authorization = 'AWS4-HMAC-SHA256 Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
 
     print('  - Signature: ${signature.substring(0, 16)}...');
-    print('  - Authorization: ${authorization.substring(0, 50)}...');
 
     // --- Send the request ---
     final response = await http.put(
@@ -336,36 +760,7 @@ bool _isUnreserved(String char) {
       char == '~';
 }
 
-// 🆕 Test function to verify S3 credentials and permissions
-Future<void> testS3Connection() async {
-  final accessKey = 'AKIAZ44G2F7RDNUFZT6U';
-  final secretKey = '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';
-  final bucket = 'meet9ja-recordings';
-  final region = 'eu-north-1';
-
-  try {
-    print('🧪 Testing S3 connection...');
-
-    final testContent = 'S3 Connection Test - ${DateTime.now().toIso8601String()}';
-    final testKey = 'test-connection-${DateTime.now().millisecondsSinceEpoch}.txt';
-
-    final result = await uploadToS3Improved(
-      content: testContent,
-      accessKey: accessKey,
-      secretKey: secretKey,
-      bucket: bucket,
-      region: region,
-      objectKey: testKey,
-      contentType: 'text/plain',
-    );
-
-    print('✅ S3 Connection Test PASSED: $result');
-  } catch (e) {
-    print('❌ S3 Connection Test FAILED: $e');
-  }
-}
-
-// Gift Overlay Widget (unchanged)
+// Gift Overlay Widget (keep the same as before)
 class _GiftOverlay extends StatelessWidget {
   final String liveId;
   final String userId;
