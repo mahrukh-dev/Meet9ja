@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_colors.dart';
 import 'home_screen.dart';
 
@@ -107,32 +108,157 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
     }
   }
 
+  Future<void> _completeUserProfile() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'profile_completed': true,
+        'onboarding_completed': true,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ User profile marked as complete');
+    } catch (e) {
+      print('❌ Error completing user profile: $e');
+    }
+  }
+
+  void _showCameraPermissionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Camera Access Required'),
+        content: const Text('Meet9ja needs camera access to take your profile selfie.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _validateSelfie(File imageFile) async {
+    try {
+      final fileSize = await imageFile.length();
+      final sizeInMB = fileSize / (1024 * 1024);
+
+      if (sizeInMB > 5) {
+        _showErrorDialog('Selfie is too large (${sizeInMB.toStringAsFixed(1)}MB). Please take a smaller photo.');
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      print('Error validating selfie: $e');
+      return true;
+    }
+  }
+
   Future<void> _takeSelfie() async {
     await _tapCtrl.forward();
     await _tapCtrl.reverse();
 
-    final pickedFile = await _picker.pickImage(source: ImageSource.camera);
-    if (pickedFile == null) return;
+    try {
+      final permissionStatus = await Permission.camera.status;
+      if (!permissionStatus.isGranted) {
+        final requestedStatus = await Permission.camera.request();
+        if (!requestedStatus.isGranted) {
+          _showCameraPermissionDialog();
+          return;
+        }
+      }
 
-    setState(() => _isUploading = true);
+      final pickedFile = await _picker.pickImage(source: ImageSource.camera);
+      if (pickedFile == null) return;
 
-    final file = File(pickedFile.path);
-    final url = await _uploadImageToFirebase(file);
+      final file = File(pickedFile.path);
 
-    setState(() => _isUploading = false);
+      final isValid = await _validateSelfie(file);
+      if (!isValid) {
+        return;
+      }
 
-    if (url != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selfie uploaded successfully!')),
-      );
+      setState(() => _isUploading = true);
+
+      final url = await _uploadImageToFirebase(file);
+
+      setState(() => _isUploading = false);
+
+      if (url != null && mounted) {
+        await _completeUserProfile();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selfie uploaded successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to upload image'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isUploading = false);
+      _showErrorDialog('Camera error: $e');
+    }
+  }
+
+  void _skipSelfie() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+          'selfie_skipped': true,
+          'onboarding_completed': true,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+      }
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
-    } else {
-      ScaffoldMessenger.of(
+    } catch (e) {
+      print('Error skipping selfie: $e');
+      Navigator.pushReplacement(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Failed to upload image')));
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
     }
   }
 
@@ -154,14 +280,7 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
                     children: [
                       const Spacer(),
                       GestureDetector(
-                        onTap: () {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const HomeScreen(),
-                            ),
-                          );
-                        },
+                        onTap: _skipSelfie,
                         child: const Text(
                           "Skip",
                           style: TextStyle(
@@ -233,21 +352,21 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
                         onPressed: _isUploading ? null : _takeSelfie,
                         child: _isUploading
                             ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
                             : const Text(
-                                "Take a selfie",
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.2,
-                                ),
-                              ),
+                          "Take a selfie",
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -256,7 +375,7 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
                 const Padding(
                   padding: EdgeInsets.only(bottom: 22.0),
                   child: Text(
-                    "Don’t worry, we won’t share it with anyone",
+                    "Don't worry, we won't share it with anyone",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.black54,
@@ -327,12 +446,12 @@ class _Dot extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: active
             ? [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.45),
-                  blurRadius: 10,
-                  spreadRadius: 1.5,
-                ),
-              ]
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.45),
+            blurRadius: 10,
+            spreadRadius: 1.5,
+          ),
+        ]
             : null,
       ),
     );
