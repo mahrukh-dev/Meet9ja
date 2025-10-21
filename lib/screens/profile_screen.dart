@@ -3,9 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
+import 'package:meet9ja/screens/signin_screen.dart';
 import 'package:meet9ja/screens/story_view_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_colors.dart';
+import '../db_functions/firebase_service.dart';
 import '../db_functions/user_service.dart';
 import '../models/post_model.dart';
 import '../models/story_model.dart';
@@ -415,8 +417,11 @@ class _SliverHeader extends StatelessWidget {
           IconButton(
             icon: const Icon(FontAwesomeIcons.gear, size: 20),
             onPressed: () {
-
-            },
+              FirebaseService.signOut();
+              Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => Signinscreen()),
+              );
+              },
           )
         else
           IconButton(
@@ -798,12 +803,67 @@ class _ClipsTabState extends State<_ClipsTab> {
         // Stories Section - Fixed height
         _buildStoriesSection(),
         const SizedBox(height: 20),
+        // Add Post Button (only for my profile)
+        if (widget.isMyProfile) _buildAddPostButton(),
+
+        const SizedBox(height: 16),
         // Posts Grid - Takes remaining space
         Expanded(
           child: _buildPostsGrid(),
         ),
       ],
     );
+  }
+
+  // Add this new method for the Add Post button
+  Widget _buildAddPostButton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _createNewPost,
+          icon: const Icon(FontAwesomeIcons.plus, size: 16),
+          label: const Text(
+            'Create New Post',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Add this method to handle post creation
+  void _createNewPost() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreatePostScreen(userId: widget.userId),
+      ),
+    );
+
+    if (result == true && mounted) {
+      // Refresh the posts grid
+      setState(() {});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Post created successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   Widget _buildStoriesSection() {

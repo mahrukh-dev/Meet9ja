@@ -31,11 +31,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   List<_LiveCard> _liveRooms = [];
   bool _isLoading = true;
   StreamSubscription<QuerySnapshot>? _liveStreamSubscription;
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this, initialIndex: 1);
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _loadLiveData();
     _setupLiveStreamListener();
   }
@@ -55,11 +57,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       // Load active live streams
       final liveStreams = await _getActiveLiveStreams();
 
-      // Load following reels (stories from followed users)
-      final followingReels = await _getFollowingReels();
+      // Load ALL stories from ALL users except current user
+      final followingReels = await _getAllStories();
 
-      // Load clips (saved live replays)
-      final clipsReels = await _getClipsReels();
+      // Load ALL posts from ALL users except current user
+      final clipsReels = await _getAllPosts();
 
       if (mounted) {
         setState(() {
@@ -104,77 +106,26 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-  // Get following reels from Firebase
-  Future<List<_ReelItem>> _getFollowingReels() async {
+  // Get ALL stories from ALL users except current user
+  Future<List<_ReelItem>> _getAllStories() async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return [];
-
-      // Get user's following list
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      final following = List<String>.from(userDoc.data()?['following'] ?? []);
-
-      if (following.isEmpty) return [];
-
-      // Get active stories from followed users
+      // Get ALL active stories from ALL users
       final snapshot = await FirebaseFirestore.instance
           .collection('stories')
-          .where('UID', whereIn: following)
           .where('expires_at', isGreaterThan: Timestamp.now())
           .orderBy('created_at', descending: true)
+          .limit(50) // Limit to 50 most recent stories
           .get();
 
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return _ReelItem(
-          user: data['hostName'] ?? 'User',
-          title: data['title'] ?? 'Live Story',
-          viewers: (data['viewers'] ?? 0).toInt(),
-          thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1080&auto=format&fit=crop',
-          type: 'story',
-          postId: doc.id,
-          userId: data['UID'] ?? '',
-          userPhoto: '',
-          timestamp: data['created_at'] as Timestamp?,
-          likes: [],
-          comments: [],
-        );
-      }).toList();
-    } catch (e) {
-      print('Error getting following reels: $e');
-      return [];
-    }
-  }
+      if (snapshot.docs.isEmpty) return [];
 
-  // Get clips reels from Firebase - includes stories, posts, and live replays
-  Future<List<_ReelItem>> _getClipsReels() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return [];
-
-      // Get stories (active within last 24 hours)
-      final storiesSnapshot = await FirebaseFirestore.instance
-          .collection('user_feed')
-          .where('type', whereIn: ['story', 'post', 'live_replay'])
-          .where('date_time', isGreaterThan: Timestamp.fromDate(
-          DateTime.now().subtract(const Duration(days: 1))))
-          .orderBy('date_time', descending: true)
-          .limit(20)
-          .get();
-
-      if (storiesSnapshot.docs.isEmpty) return [];
-
-      // Get user details for each post/story
+      // Get user details for each story and filter out current user's stories
       final reels = await Future.wait(
-        storiesSnapshot.docs.map((doc) async {
+        snapshot.docs.map((doc) async {
           final data = doc.data() as Map<String, dynamic>;
           final userId = data['UID'] as String?;
 
-          if (userId == null) return null;
+          if (userId == null || userId == _currentUserId) return null;
 
           // Get user details
           final userDoc = await FirebaseFirestore.instance
@@ -188,9 +139,64 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
           return _ReelItem(
             user: userData?['username'] ?? 'User',
-            title: data['caption'] ?? _getDefaultTitle(data['type']),
+            title: 'New Story', // Default title for stories
+            viewers: (data['viewers']?.length ?? 0),
+            thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop',
+            type: 'story',
+            postId: doc.id,
+            userId: userId,
+            userPhoto: userData?['photo_url'] ?? '',
+            timestamp: data['created_at'] as Timestamp?,
+            likes: [],
+            comments: [],
+            mediaType: data['media_type'] ?? 'image',
+          );
+        }),
+      );
+
+      return reels.whereType<_ReelItem>().toList();
+    } catch (e) {
+      print('Error getting all stories: $e');
+      return [];
+    }
+  }
+
+  // Get ALL posts from ALL users except current user
+  Future<List<_ReelItem>> _getAllPosts() async {
+    try {
+      // Get ALL posts from ALL users
+      final snapshot = await FirebaseFirestore.instance
+          .collection('user_feed')
+          .orderBy('date_time', descending: true)
+          .limit(50) // Limit to 50 most recent posts
+          .get();
+
+      if (snapshot.docs.isEmpty) return [];
+
+      // Get user details for each post and filter out current user's posts
+      final reels = await Future.wait(
+        snapshot.docs.map((doc) async {
+          final data = doc.data() as Map<String, dynamic>;
+          final userId = data['UID'] as String?;
+
+          // Filter out current user's posts
+          if (userId == null || userId == _currentUserId) return null;
+
+          // Get user details
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .get();
+
+          if (!userDoc.exists) return null;
+
+          final userData = userDoc.data() as Map<String, dynamic>?;
+
+          return _ReelItem(
+            user: userData?['username'] ?? 'User',
+            title: data['caption'] ?? 'New Post',
             viewers: (data['likes']?.length ?? 0) + (data['comments']?.length ?? 0),
-            thumb: data['media_url'] ?? _getDefaultThumbnail(data['type']),
+            thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
             type: data['type'] ?? 'post',
             postId: doc.id,
             userId: userId,
@@ -198,36 +204,15 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
             timestamp: data['date_time'] as Timestamp?,
             likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
             comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
+            mediaType: data['type'] == 'video' ? 'video' : 'image',
           );
         }),
       );
 
       return reels.whereType<_ReelItem>().toList();
     } catch (e) {
-      print('Error getting clips reels: $e');
+      print('Error getting all posts: $e');
       return [];
-    }
-  }
-
-  String _getDefaultTitle(String type) {
-    switch (type) {
-      case 'story':
-        return 'New Story';
-      case 'live_replay':
-        return 'Live Replay';
-      default:
-        return 'New Post';
-    }
-  }
-
-  String _getDefaultThumbnail(String type) {
-    switch (type) {
-      case 'story':
-        return 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop';
-      case 'live_replay':
-        return 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1080&auto=format&fit=crop';
-      default:
-        return 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop';
     }
   }
 
@@ -353,7 +338,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
             liveId: liveId,
             userId: user.uid,
             userName: userData?['name'] ?? 'Host',
-            isHost: true, hostId: '',
+            isHost: true,
+            hostId: '',
           ),
         ),
       );
@@ -407,7 +393,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🌸 Custom Tabs (Following, Live, Clips)
+            // 🌸 Custom Tabs (Stories, Live, Clips)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
@@ -441,9 +427,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                 padding: const EdgeInsets.all(6),
                 labelPadding: const EdgeInsets.symmetric(horizontal: 10),
                 tabs: const [
-                  Tab(text: "Following"),
+                  Tab(text: "Stories"),
                   Tab(text: "Live"),
-                  Tab(text: "Clips"),
+                  Tab(text: "Posts"),
                 ],
               ),
             ),
@@ -459,7 +445,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
             : TabBarView(
           controller: _tab,
           children: [
-            _ReelsFeed(items: _followingReels),
+            // Stories Tab - Shows ALL stories from other users
+            _ReelsFeed(items: _followingReels, showStories: true),
+
+            // Live Tab - Shows live streams
             Column(
               children: [
                 const SizedBox(height: 8),
@@ -500,7 +489,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                 ),
               ],
             ),
-            _ReelsFeed(items: _clipsReels),
+
+            // Posts Tab - Shows ALL posts from other users
+            _ReelsFeed(items: _clipsReels, showStories: false),
           ],
         ),
       ),
@@ -538,7 +529,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           CircularProgressIndicator(color: Colors.white),
           SizedBox(height: 16),
           Text(
-            'Loading live streams...',
+            'Loading content...',
             style: TextStyle(color: Colors.white),
           ),
         ],
@@ -570,6 +561,27 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               foregroundColor: Colors.white,
             ),
             child: const Text('Go Live Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyContentState(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(FontAwesomeIcons.film, size: 64, color: Colors.white54),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: const TextStyle(color: Colors.white, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Content from other users will appear here',
+            style: TextStyle(color: Colors.white54),
           ),
         ],
       ),
@@ -786,8 +798,9 @@ class _LiveTile extends StatelessWidget {
 
 /* ----------------------- REELS FEED ----------------------- */
 class _ReelsFeed extends StatelessWidget {
-  const _ReelsFeed({required this.items});
+  const _ReelsFeed({required this.items, this.showStories = false});
   final List<_ReelItem> items;
+  final bool showStories;
 
   @override
   Widget build(BuildContext context) {
@@ -798,7 +811,7 @@ class _ReelsFeed extends StatelessWidget {
       itemCount: items.length,
       itemBuilder: (_, i) {
         final it = items[i];
-        return _ReelContent(item: it);
+        return _ReelContent(item: it, showStories: showStories);
       },
     );
   }
@@ -811,12 +824,12 @@ class _ReelsFeed extends StatelessWidget {
           const Icon(FontAwesomeIcons.film, size: 64, color: Colors.white54),
           const SizedBox(height: 16),
           const Text(
-            'No content available',
+            'No content from other users',
             style: TextStyle(color: Colors.white, fontSize: 18),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Follow users to see their posts and stories',
+            'Check back later for new content from other users',
             style: TextStyle(color: Colors.white54),
           ),
         ],
@@ -827,8 +840,9 @@ class _ReelsFeed extends StatelessWidget {
 
 class _ReelContent extends StatelessWidget {
   final _ReelItem item;
+  final bool showStories;
 
-  const _ReelContent({required this.item});
+  const _ReelContent({required this.item, this.showStories = false});
 
   @override
   Widget build(BuildContext context) {
@@ -857,6 +871,14 @@ class _ReelContent extends StatelessWidget {
           left: 12,
           child: _ContentTypeBadge(type: item.type),
         ),
+
+        // Story Time Remaining (only for stories)
+        if (showStories && item.type == 'story')
+          Positioned(
+            top: 40,
+            right: 12,
+            child: _StoryTimeBadge(timestamp: item.timestamp),
+          ),
 
         // Right Action Buttons
         Positioned(
@@ -915,7 +937,7 @@ class _ReelContent extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          item.user,
+                          '@${item.user}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w900,
@@ -1050,6 +1072,52 @@ class _ReelContent extends StatelessWidget {
   }
 }
 
+// Story Time Badge Widget
+class _StoryTimeBadge extends StatelessWidget {
+  final Timestamp? timestamp;
+
+  const _StoryTimeBadge({this.timestamp});
+
+  @override
+  Widget build(BuildContext context) {
+    if (timestamp == null) return const SizedBox();
+
+    final storyTime = timestamp!.toDate();
+    final expiresAt = storyTime.add(const Duration(hours: 24));
+    final remaining = expiresAt.difference(DateTime.now());
+
+    String timeText;
+    Color badgeColor;
+
+    if (remaining.inHours > 0) {
+      timeText = '${remaining.inHours}h';
+      badgeColor = Colors.green;
+    } else if (remaining.inMinutes > 0) {
+      timeText = '${remaining.inMinutes}m';
+      badgeColor = Colors.orange;
+    } else {
+      timeText = 'Ending';
+      badgeColor = Colors.red;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: badgeColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        timeText,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
 // Content Type Badge Widget
 class _ContentTypeBadge extends StatelessWidget {
   final String type;
@@ -1070,6 +1138,10 @@ class _ContentTypeBadge extends StatelessWidget {
       case 'live_replay':
         badgeColor = Colors.redAccent;
         badgeText = 'REPLAY';
+        badgeIcon = FontAwesomeIcons.video;
+      case 'video':
+        badgeColor = Colors.blueAccent;
+        badgeText = 'VIDEO';
         badgeIcon = FontAwesomeIcons.video;
       default:
         badgeColor = Colors.blueAccent;
@@ -1342,13 +1414,14 @@ class _ReelItem {
   final String title;
   final int viewers;
   final String thumb;
-  final String type; // 'post', 'story', 'live_replay'
+  final String type; // 'post', 'story', 'live_replay', 'video'
   final String postId;
   final String userId;
   final String userPhoto;
   final Timestamp? timestamp;
   final List<Map<String, dynamic>> likes;
   final List<Map<String, dynamic>> comments;
+  final String mediaType; // 'image' or 'video'
 
   const _ReelItem({
     required this.user,
@@ -1362,6 +1435,7 @@ class _ReelItem {
     this.timestamp,
     required this.likes,
     required this.comments,
+    this.mediaType = 'image',
   });
 }
 

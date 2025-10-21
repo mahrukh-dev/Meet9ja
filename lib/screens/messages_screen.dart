@@ -4,11 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'package:zego_zimkit/zego_zimkit.dart';
-
 import 'package:meet9ja/constants/app_colors.dart';
-import 'package:meet9ja/screens/update_profile_screen.dart';
 import 'discover_screen.dart';
 import 'chat_screen.dart';
 import 'home_screen.dart';
@@ -716,7 +715,7 @@ class _BottomNav extends StatelessWidget {
                 if (i == 0 && current != 0) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => UpdateProfileScreen()),
+                    MaterialPageRoute(builder: (_) => ProfileScreen()),
                   );
                   return;
                 }
