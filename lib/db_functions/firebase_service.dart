@@ -145,6 +145,8 @@ class FirebaseService {
         throw 'No photos were successfully uploaded';
       }
 
+      await user.sendEmailVerification();
+
       // Step 3: Save user profile with photo URLs
       print('💾 Saving user profile to Firestore...');
       await saveUserProfile(
@@ -178,6 +180,21 @@ class FirebaseService {
 
       // Re-throw with more context
       throw 'Registration failed: $e';
+    }
+  }
+
+  // Add to lib/db_functions/firebase_service.dart
+  static Future<void> signOut() async {
+    try {
+      await _auth.signOut();
+      print('✅ User signed out successfully');
+
+      // Optional: Clear any local data/cache
+      // await _clearLocalData();
+
+    } catch (e) {
+      print('❌ Error signing out: $e');
+      throw 'Failed to sign out: $e';
     }
   }
 
@@ -231,4 +248,46 @@ class FirebaseService {
         return 'Registration/Authentication failed: ${e.message}';
     }
   }
+
+  // Add these methods to your lib/db_functions/firebase_service.dart
+  static Future<void> sendEmailVerification() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null && !user.emailVerified) {
+        await user.sendEmailVerification();
+        print('✅ Verification email sent to ${user.email}');
+      }
+    } catch (e) {
+      print('❌ Error sending verification email: $e');
+      throw 'Failed to send verification email: $e';
+    }
+  }
+
+  static Future<bool> checkEmailVerified() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        // Reload user to get latest email verification status
+        await user.reload();
+        final updatedUser = _auth.currentUser;
+        return updatedUser?.emailVerified ?? false;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error checking email verification: $e');
+      return false;
+    }
+  }
+
+// Password reset method
+  static Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+      print('✅ Password reset email sent to $email');
+    } catch (e) {
+      print('❌ Error sending password reset email: $e');
+      throw _handleAuthError(e as FirebaseAuthException);
+    }
+  }
+
 }

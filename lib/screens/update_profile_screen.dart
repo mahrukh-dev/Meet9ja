@@ -2,6 +2,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // ⭐ Added Font Awesome
+import 'package:meet9ja/db_functions/firebase_service.dart';
+import 'package:meet9ja/screens/signin_screen.dart';
 import '../constants/app_colors.dart';
 import 'home_screen.dart'; // DiscoverPage   (swipe cards)
 import 'profile_screen.dart'; // ⬅️
@@ -41,7 +43,13 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                     ),
                     IconButton(
                       icon: const Icon(FontAwesomeIcons.qrcode, size: 20), // ⭐ Replaced Icons.qr_code_2_outlined
-                      onPressed: () {},
+                      onPressed: () {
+                        FirebaseService.signOut();
+                        // 🎯 SUCCESS: Navigate to the main application page
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (_) => Signinscreen()),
+                        );
+                      },
                     ),
                     IconButton(
                       icon: const Icon(FontAwesomeIcons.gear, size: 20), // ⭐ Replaced Icons.settings_outlined
