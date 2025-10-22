@@ -11,6 +11,19 @@ import 'discover_screen.dart';
 import 'chat_screen.dart';
 import 'home_screen.dart';
 
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:meet9ja/screens/profile_screen.dart';
+import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
+import 'package:zego_zimkit/zego_zimkit.dart';
+import 'package:meet9ja/constants/app_colors.dart';
+import 'discover_screen.dart';
+import 'chat_screen.dart';
+import 'home_screen.dart';
+
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
 
@@ -27,9 +40,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
   List<_Conversation> _chats = [];
   List<_Conversation> _filteredChats = [];
   List<_Story> _stories = [];
-  List<_User> _allUsers = []; // New: List of all users for messaging
+  List<_User> _allUsers = [];
   bool _isLoading = true;
-  bool _showNewChatOptions = false; // New: Toggle for new chat UI
+  bool _showNewChatOptions = false;
   StreamSubscription<QuerySnapshot>? _chatSubscription;
   StreamSubscription<QuerySnapshot>? _usersSubscription;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -40,7 +53,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.initState();
     _searchController.addListener(_performSearch);
     _loadChatsAndStories();
-    _loadAllUsers(); // New: Load all users
+    _loadAllUsers();
     _initializeZegoCloud();
   }
 
@@ -58,13 +71,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // Initialize ZIMKit with your ZegoCloud credentials
       await ZIMKit().init(
-        appID: 51745598, // Your ZegoCloud App ID
-        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4', // Your App Sign
+        appID: 51745598,
+        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
       );
 
-      // Connect user to ZegoCloud IM
       await ZIMKit().connectUser(
         id: user.uid,
         name: user.displayName ?? 'User',
@@ -84,7 +95,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       _usersSubscription = _firestore
           .collection('users')
-          .where('UID', isNotEqualTo: user.uid) // Exclude current user
+          .where('UID', isNotEqualTo: user.uid)
           .snapshots()
           .listen((snapshot) {
         if (mounted) {
@@ -94,7 +105,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               return _User(
                 id: data['UID'] ?? doc.id,
                 name: data['name'] ?? 'User',
-                avatar: data['photo_url'] ?? 'https://i.pravatar.cc/200',
+                avatar: _getFirstPhotoUrl(data['first_photos']) ?? 'https://i.pravatar.cc/200',
                 isOnline: data['is_online'] ?? false,
               );
             }).toList();
@@ -105,6 +116,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
     } catch (e) {
       print('❌ Error loading users: $e');
     }
+  }
+
+  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
   }
 
   // Load real chat data from Firestore
@@ -118,19 +140,27 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       print('🔄 Loading chats for user: ${user.uid}');
 
-      // Listen to real-time chat updates
       _chatSubscription = _firestore
           .collection('chat_conversations')
           .where('participants', arrayContains: user.uid)
           .orderBy('lastMessageTime', descending: true)
           .snapshots()
-          .listen((snapshot) {
+          .listen((snapshot) async {
         if (mounted) {
-          setState(() {
-            _chats = snapshot.docs.map((doc) {
-              return _Conversation.fromFirestore(doc.id, doc.data() as Map<String, dynamic>);
-            }).toList();
+          // Process conversations to get correct user data
+          List<_Conversation> conversations = [];
 
+          for (var doc in snapshot.docs) {
+            try {
+              final conversation = await _Conversation.fromFirestoreWithUserData(doc.id, doc.data() as Map<String, dynamic>);
+              conversations.add(conversation);
+            } catch (e) {
+              print('❌ Error processing conversation ${doc.id}: $e');
+            }
+          }
+
+          setState(() {
+            _chats = conversations;
             _filteredChats = List.from(_chats);
             _isLoading = false;
           });
@@ -141,9 +171,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         setState(() => _isLoading = false);
       });
 
-      // Load stories
       await _loadStories();
-
     } catch (e) {
       print('❌ Error loading chats: $e');
       setState(() => _isLoading = false);
@@ -156,16 +184,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // Get user's following list
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDoc.data() as Map<String, dynamic>?;
       final following = List<String>.from(userData?['following'] ?? []);
 
-      // Add "Your Story" at the beginning
       _stories = [_createYourStory()];
 
       if (following.isNotEmpty) {
-        // Get active stories from followed users
         final storiesSnapshot = await _firestore
             .collection('stories')
             .where('UID', whereIn: following)
@@ -180,9 +205,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
             return _Story(
               name: userData?['name'] ?? 'User',
-              avatar: userData?['photo_url'] ??
-                  _getFirstPhotoUrl(userData?['first_photos']) ??
-                  'https://i.pravatar.cc/150?img=1',
+              avatar: _getFirstPhotoUrl(userData?['first_photos']) ?? 'https://i.pravatar.cc/150?img=1',
               userId: storyData['UID'],
               hasActiveStory: true,
               storyId: doc.id,
@@ -196,29 +219,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
       }
 
       print('✅ Loaded ${_stories.length} stories');
-
     } catch (e) {
       print('❌ Error loading stories: $e');
       setState(() => _stories = [_createYourStory()]);
     }
   }
 
-  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
-    if (firstPhotos == null) return null;
-    for (var i = 1; i <= 4; i++) {
-      final photoUrl = firstPhotos['photo${i}url']?.toString();
-      if (photoUrl != null && photoUrl.isNotEmpty) {
-        return photoUrl;
-      }
-    }
-    return null;
-  }
-
   _Story _createYourStory() {
     final user = _auth.currentUser;
+    final userAvatar = user?.photoURL ?? "https://i.pravatar.cc/150?img=1";
     return _Story(
       name: "You",
-      avatar: user?.photoURL ?? "https://i.pravatar.cc/150?img=1",
+      avatar: userAvatar,
       userId: user?.uid ?? '',
       hasActiveStory: false,
       storyId: '',
@@ -258,13 +270,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return;
 
-      // Create or get conversation ID
       final conversationId = _getConversationId(currentUser.uid, user.id);
-
-      // Ensure conversation exists in Firestore
       await _ensureConversationExists(conversationId, currentUser.uid, user);
 
-      // Navigate to chat screen
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -277,7 +285,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ),
       );
 
-      // Reset new chat view
       setState(() {
         _showNewChatOptions = false;
       });
@@ -302,15 +309,21 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final conversationDoc = await _firestore.collection('chat_conversations').doc(conversationId).get();
 
       if (!conversationDoc.exists) {
-        // Create new conversation
+        // Get current user data from Firestore
+        final currentUserDoc = await _firestore.collection('users').doc(currentUserId).get();
+        final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
+
+        final currentUserName = currentUserData?['name'] ?? 'You';
+        final currentUserAvatar = _getFirstPhotoUrl(currentUserData?['first_photos']) ?? 'https://i.pravatar.cc/200';
+
         await _firestore.collection('chat_conversations').doc(conversationId).set({
           'participants': [currentUserId, otherUser.id],
           'participantNames': {
-            currentUserId: _auth.currentUser?.displayName ?? 'You',
+            currentUserId: currentUserName,
             otherUser.id: otherUser.name,
           },
           'participantAvatars': {
-            currentUserId: _auth.currentUser?.photoURL ?? 'https://i.pravatar.cc/200',
+            currentUserId: currentUserAvatar,
             otherUser.id: otherUser.avatar,
           },
           'lastMessage': 'Start a conversation',
@@ -339,10 +352,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // Mark conversation as read
       await _markConversationAsRead(chat.id);
 
-      // Navigate to chat screen
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -394,7 +405,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   Widget _buildTitleBar(BuildContext context) {
     if (_isSearching) {
-      // Search Bar View
       return Expanded(
         child: Padding(
           padding: const EdgeInsets.only(left: 8.0, right: 8.0),
@@ -424,7 +434,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ),
       );
     } else {
-      // Default Title View
       return const Expanded(
         child: Center(
           child: Text(
@@ -447,7 +456,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Top Bar (dynamic)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
                 child: Row(
@@ -500,7 +508,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 ),
               ),
 
-              // Content Area
               Expanded(
                 child: _isLoading
                     ? _buildLoadingState()
@@ -509,7 +516,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     : _buildExistingChatsView(),
               ),
 
-              // Bottom nav
               const Padding(
                 padding: EdgeInsets.fromLTRB(12, 8, 12, 14),
                 child: _BottomNav(current: 4),
@@ -541,7 +547,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
       children: [
-        // Stories strip
         const _SectionHeader("Stories"),
         const SizedBox(height: 8),
         SizedBox(
@@ -559,7 +564,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Conversations section
         Row(
           children: [
             const _SectionHeader("Conversations"),
@@ -583,7 +587,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ),
         const SizedBox(height: 10),
 
-        // Chat list
         if (_filteredChats.isEmpty) _buildEmptyChatsState(),
         if (_filteredChats.isNotEmpty) ..._buildChatList(),
       ],
@@ -593,7 +596,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Widget _buildNewChatView() {
     return Column(
       children: [
-        // Header
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -611,7 +613,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
         ),
 
-        // Search bar for users
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: TextField(
@@ -631,7 +632,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
         ),
 
-        // Users list
         Expanded(
           child: _allUsers.isEmpty
               ? const Center(
@@ -705,6 +705,107 @@ class _MessagesScreenState extends State<MessagesScreen> {
         const Divider(height: 0),
       ],
     )).toList();
+  }
+}
+
+// ... (Keep all the same widget classes: _UserTile, _StoryCircle, _ChatTile, _BottomNav, _SectionHeader, _Story, _User)
+
+// ---------- Updated Conversation Model ----------
+class _Conversation {
+  final String id;
+  final String name;
+  final String avatar;
+  final String lastMessage;
+  final String time;
+  final int unread;
+  final String otherUserId;
+  final List<String> participants;
+
+  const _Conversation({
+    required this.id,
+    required this.name,
+    required this.avatar,
+    required this.lastMessage,
+    required this.time,
+    required this.unread,
+    required this.otherUserId,
+    required this.participants,
+  });
+
+  // Factory method that fetches user data from Firestore
+  static Future<_Conversation> fromFirestoreWithUserData(String id, Map<String, dynamic> data) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final participants = List<String>.from(data['participants'] ?? []);
+    final otherUserId = participants.firstWhere(
+          (uid) => uid != currentUser.uid,
+      orElse: () => '',
+    );
+
+    // If we have the other user's data in conversation, use it
+    String otherUserName = data['otherUserName'] ?? 'User';
+    String otherUserAvatar = data['otherUserAvatar'] ?? 'https://i.pravatar.cc/200';
+
+    // If data is missing or we need to refresh, fetch from users collection
+    if (otherUserId.isNotEmpty && (otherUserName == 'User' || otherUserAvatar.contains('pravatar'))) {
+      try {
+        final otherUserDoc = await FirebaseFirestore.instance.collection('users').doc(otherUserId).get();
+        if (otherUserDoc.exists) {
+          final otherUserData = otherUserDoc.data() as Map<String, dynamic>?;
+          otherUserName = otherUserData?['name'] ?? 'User';
+          otherUserAvatar = _getFirstPhotoUrl(otherUserData?['first_photos']) ?? 'https://i.pravatar.cc/200';
+        }
+      } catch (e) {
+        print('❌ Error fetching user data for $otherUserId: $e');
+      }
+    }
+
+    // Get unread count for current user
+    final unreadCount = (data['unreadCount'] as Map<String, dynamic>?)?[currentUser.uid] ?? 0;
+
+    return _Conversation(
+      id: id,
+      name: otherUserName,
+      avatar: otherUserAvatar,
+      lastMessage: data['lastMessage'] ?? 'Start a conversation',
+      time: _formatTime(data['lastMessageTime']),
+      unread: (unreadCount is int) ? unreadCount : 0,
+      otherUserId: otherUserId,
+      participants: participants,
+    );
+  }
+
+  static String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
+  }
+
+  static String _formatTime(dynamic timestamp) {
+    if (timestamp == null) return 'Now';
+
+    try {
+      final messageTime = (timestamp as Timestamp).toDate();
+      final now = DateTime.now();
+      final difference = now.difference(messageTime);
+
+      if (difference.inMinutes < 1) return 'Now';
+      if (difference.inHours < 1) return '${difference.inMinutes}m';
+      if (difference.inDays < 1) return '${difference.inHours}h';
+      if (difference.inDays < 7) return '${difference.inDays}d';
+
+      return '${messageTime.month}/${messageTime.day}';
+    } catch (e) {
+      return 'Now';
+    }
   }
 }
 
@@ -1034,75 +1135,6 @@ class _Story {
     required this.storyId,
   });
 }
-
-class _Conversation {
-  final String id;
-  final String name;
-  final String avatar;
-  final String lastMessage;
-  final String time;
-  final int unread;
-  final String otherUserId;
-  final List<String> participants;
-
-  const _Conversation({
-    required this.id,
-    required this.name,
-    required this.avatar,
-    required this.lastMessage,
-    required this.time,
-    required this.unread,
-    required this.otherUserId,
-    required this.participants,
-  });
-
-  factory _Conversation.fromFirestore(String id, Map<String, dynamic> data) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      throw Exception('User not authenticated');
-    }
-
-    final participants = List<String>.from(data['participants'] ?? []);
-    final otherUser = participants.firstWhere(
-          (uid) => uid != currentUser.uid,
-      orElse: () => '',
-    );
-
-    // Get unread count for current user
-    final unreadCount = (data['unreadCount'] as Map<String, dynamic>?)?[currentUser.uid] ?? 0;
-
-    return _Conversation(
-      id: id,
-      name: data['otherUserName'] ?? 'User',
-      avatar: data['otherUserAvatar'] ?? 'https://i.pravatar.cc/200',
-      lastMessage: data['lastMessage'] ?? 'Start a conversation',
-      time: _formatTime(data['lastMessageTime']),
-      unread: (unreadCount is int) ? unreadCount : 0,
-      otherUserId: otherUser,
-      participants: participants,
-    );
-  }
-
-  static String _formatTime(dynamic timestamp) {
-    if (timestamp == null) return 'Now';
-
-    try {
-      final messageTime = (timestamp as Timestamp).toDate();
-      final now = DateTime.now();
-      final difference = now.difference(messageTime);
-
-      if (difference.inMinutes < 1) return 'Now';
-      if (difference.inHours < 1) return '${difference.inMinutes}m';
-      if (difference.inDays < 1) return '${difference.inHours}h';
-      if (difference.inDays < 7) return '${difference.inDays}d';
-
-      return '${messageTime.month}/${messageTime.day}';
-    } catch (e) {
-      return 'Now';
-    }
-  }
-}
-
 // ---------- New User Model ----------
 class _User {
   final String id;

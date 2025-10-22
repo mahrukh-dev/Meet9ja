@@ -1,17 +1,22 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:zego_uikit/zego_uikit.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'package:zego_zimkit/zego_zimkit.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../constants/app_colors.dart';
+import '../db_functions/firebaseStorageService.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -38,15 +43,24 @@ class _ChatScreenState extends State<ChatScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // Audio recording
+  late FlutterSoundRecorder _audioRecorder;
+  bool _isRecorderReady = false;
+
   bool _isRecording = false;
   bool _isPlayingVoiceNote = false;
   String? _currentPlayingVoiceNote;
   List<Map<String, dynamic>> _messages = [];
   StreamSubscription<QuerySnapshot>? _messagesSubscription;
+  Timer? _recordingTimer;
+  int _recordingDuration = 0;
+  String? _recordingPath;
 
   @override
   void initState() {
     super.initState();
+    _audioRecorder = FlutterSoundRecorder();
+    _initRecorder();
     _loadMessages();
     _markMessagesAsRead();
   }
@@ -56,7 +70,37 @@ class _ChatScreenState extends State<ChatScreen> {
     _messagesSubscription?.cancel();
     _textController.dispose();
     _audioPlayer.dispose();
+    _recordingTimer?.cancel();
+    _stopRecording();
+    _audioRecorder.closeRecorder();
     super.dispose();
+  }
+
+  // Initialize audio recorder
+  Future<void> _initRecorder() async {
+    try {
+      // Request microphone permission
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        print('❌ Microphone permission denied');
+        return;
+      }
+
+      // Open the recorder
+      await _audioRecorder.openRecorder();
+
+      // Set recorder to ready state
+      setState(() {
+        _isRecorderReady = true;
+      });
+
+      print('✅ Audio recorder initialized successfully');
+    } catch (e) {
+      print('❌ Error initializing audio recorder: $e');
+      setState(() {
+        _isRecorderReady = false;
+      });
+    }
   }
 
   // Load messages from Firestore
@@ -74,10 +118,10 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         setState(() {
           _messages = snapshot.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
+            final data = doc.data();
             return {
               'id': doc.id,
-              'senderId': data['senderId'],
+              'senderId': data['senderId'] ?? '',
               'text': data['text'] ?? '',
               'type': data['type'] ?? 'text',
               'mediaUrl': data['mediaUrl'] ?? '',
@@ -87,7 +131,13 @@ class _ChatScreenState extends State<ChatScreen> {
             };
           }).toList();
         });
+        print('✅ Loaded ${_messages.length} messages');
       }
+    }, onError: (e) {
+      print('❌ Error loading messages: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load messages: $e')),
+      );
     });
   }
 
@@ -109,7 +159,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Send text message - Simplified without ZIMKit for now
+  // Send text message
   void _sendTextMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
@@ -118,7 +168,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (user == null) return;
 
     try {
-      // Save to Firestore
       await _saveMessageToFirestore(
         type: 'text',
         text: text,
@@ -126,8 +175,9 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       _textController.clear();
+      print('✅ Text message sent: $text');
     } catch (e) {
-      print('Error sending text message: $e');
+      print('❌ Error sending text message: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send message: $e')),
       );
@@ -140,18 +190,30 @@ class _ChatScreenState extends State<ChatScreen> {
     if (user == null) return;
 
     try {
-      // In a real app, you would upload the image to your storage first
-      final imageUrl = 'https://via.placeholder.com/400x300.png?text=Image';
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Uploading image...')),
+      );
 
-      // Save to Firestore
+      final imageUrl = await FirebaseStorageService.uploadImage(
+          imageFile,
+          user.uid,
+          widget.conversationId
+      );
+
       await _saveMessageToFirestore(
         type: 'image',
-        text: 'Sent an image',
+        text: '📷 Photo',
         mediaUrl: imageUrl,
         senderId: user.uid,
       );
+
+      print('✅ Image message sent: $imageUrl');
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image sent!')),
+      );
     } catch (e) {
-      print('Error sending image message: $e');
+      print('❌ Error sending image message: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send image: $e')),
       );
@@ -159,27 +221,59 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // Send voice message
-  void _sendVoiceMessage(String audioPath, int duration) async {
+  void _sendVoiceMessage() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    try {
-      // In a real app, you would upload the audio file to your storage first
-      final audioUrl = 'voice_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    if (_recordingPath == null || _recordingDuration == 0) {
+      print('❌ No recording to send');
+      return;
+    }
 
-      // Save to Firestore
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Uploading voice message...')),
+      );
+
+      // Upload actual audio file to Firebase Storage
+      final audioFile = File(_recordingPath!);
+      final audioUrl = await FirebaseStorageService.uploadVoiceNote(
+          audioFile,
+          user.uid,
+          widget.conversationId
+      );
+
       await _saveMessageToFirestore(
         type: 'voice',
-        text: _formatDuration(duration),
+        text: _formatDuration(_recordingDuration),
         mediaUrl: audioUrl,
         senderId: user.uid,
-        duration: duration,
+        duration: _recordingDuration,
       );
+
+      print('✅ Voice message sent: $audioUrl, duration: $_recordingDuration seconds');
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Voice message sent!')),
+      );
+
     } catch (e) {
-      print('Error sending voice message: $e');
+      print('❌ Error sending voice message: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send voice message: $e')),
       );
+    } finally {
+      // Clean up temporary file
+      if (_recordingPath != null) {
+        try {
+          final file = File(_recordingPath!);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          print('⚠️ Could not delete temp audio file: $e');
+        }
+      }
     }
   }
 
@@ -192,31 +286,38 @@ class _ChatScreenState extends State<ChatScreen> {
     int duration = 0,
   }) async {
     try {
-      await _firestore
-          .collection('chat_conversations')
-          .doc(widget.conversationId)
-          .collection('messages')
-          .add({
+      final messageData = {
         'senderId': senderId,
         'text': text,
         'type': type,
         'mediaUrl': mediaUrl,
         'duration': duration,
         'timestamp': FieldValue.serverTimestamp(),
-      });
+      };
 
-      // Update conversation last message
       await _firestore
           .collection('chat_conversations')
           .doc(widget.conversationId)
-          .update({
+          .collection('messages')
+          .add(messageData);
+
+      // Update conversation
+      final conversationData = {
         'lastMessage': text,
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageType': type,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      await _firestore
+          .collection('chat_conversations')
+          .doc(widget.conversationId)
+          .set(conversationData, SetOptions(merge: true));
+
+      print('✅ Message saved successfully: $text');
     } catch (e) {
-      print('Error saving message to Firestore: $e');
+      print('❌ Error saving message to Firestore: $e');
+      throw e;
     }
   }
 
@@ -232,7 +333,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _sendImageMessage(File(image.path));
       }
     } catch (e) {
-      print('Error picking image: $e');
+      print('❌ Error picking image: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to pick image: $e')),
       );
@@ -251,46 +352,155 @@ class _ChatScreenState extends State<ChatScreen> {
         _sendImageMessage(File(image.path));
       }
     } catch (e) {
-      print('Error taking photo: $e');
+      print('❌ Error taking photo: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to take photo: $e')),
       );
     }
   }
 
-  // Start voice recording
-  void _startVoiceRecording() {
-    setState(() {
-      _isRecording = true;
-    });
-    print('Voice recording started...');
+  // Start voice recording - FIXED VERSION
+  void _startVoiceRecording() async {
+    try {
+      // Check if recorder is ready
+      if (!_isRecorderReady) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Audio recorder not ready. Please wait...')),
+        );
+        return;
+      }
+
+      // Check microphone permission again
+      if (!await Permission.microphone.isGranted) {
+        final status = await Permission.microphone.request();
+        if (status != PermissionStatus.granted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission is required for voice recording')),
+          );
+          return;
+        }
+      }
+
+      // Create temporary file path
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      _recordingPath = '${tempDir.path}/$fileName';
+
+      // Start recording with simpler configuration
+      await _audioRecorder.startRecorder(
+        toFile: _recordingPath!,
+        codec: Codec.aacMP4,
+        sampleRate: 44100,
+        numChannels: 1,
+      );
+
+      setState(() {
+        _isRecording = true;
+        _recordingDuration = 0;
+      });
+
+      // Start timer to track recording duration
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          _recordingDuration = timer.tick;
+        });
+      });
+
+      print('🎤 Voice recording started: $_recordingPath');
+
+    } catch (e) {
+      print('❌ Error starting voice recording: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start recording: $e')),
+      );
+    }
+  }
+
+  // Stop voice recording
+  Future<void> _stopRecording() async {
+    _recordingTimer?.cancel();
+
+    if (_isRecording && _isRecorderReady) {
+      try {
+        await _audioRecorder.stopRecorder();
+        setState(() {
+          _isRecording = false;
+        });
+        print('⏹️ Recording stopped');
+      } catch (e) {
+        print('❌ Error stopping recording: $e');
+      }
+    }
   }
 
   // Stop voice recording and send
   void _stopVoiceRecording() async {
+    await _stopRecording();
+
+    if (_recordingDuration > 1) { // Minimum 1 second recording
+      _sendVoiceMessage();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Recording too short')),
+      );
+      // Clean up short recording
+      if (_recordingPath != null) {
+        try {
+          final file = File(_recordingPath!);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          print('⚠️ Could not delete temp audio file: $e');
+        }
+      }
+    }
+
     setState(() {
-      _isRecording = false;
+      _recordingDuration = 0;
+      _recordingPath = null;
     });
-
-    // Mock: Simulate recording and sending
-    final mockDuration = 5; // seconds
-    final mockAudioPath = 'temp_audio.m4a';
-
-    _sendVoiceMessage(mockAudioPath, mockDuration);
   }
 
-  // Play voice note
+  // Cancel voice recording
+  void _cancelVoiceRecording() async {
+    await _stopRecording();
+
+    // Delete the recording file
+    if (_recordingPath != null) {
+      try {
+        final file = File(_recordingPath!);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        print('⚠️ Could not delete temp audio file: $e');
+      }
+    }
+
+    setState(() {
+      _isRecording = false;
+      _recordingDuration = 0;
+      _recordingPath = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Recording cancelled')),
+    );
+  }
+
+  // Play voice note - Using AudioPlayer for simplicity
   void _playVoiceNote(String messageId, String mediaUrl, int duration) async {
     try {
       if (_isPlayingVoiceNote && _currentPlayingVoiceNote == messageId) {
-        // Stop if already playing
+        // Stop playing
         await _audioPlayer.stop();
         setState(() {
           _isPlayingVoiceNote = false;
           _currentPlayingVoiceNote = null;
         });
       } else {
-        // Start playing
+        // Stop any currently playing audio
         if (_currentPlayingVoiceNote != null) {
           await _audioPlayer.stop();
         }
@@ -300,8 +510,11 @@ class _ChatScreenState extends State<ChatScreen> {
           _currentPlayingVoiceNote = messageId;
         });
 
-        // Simulate playback completion after duration
-        Timer(Duration(seconds: duration), () {
+        // Play the actual audio from Firebase Storage using AudioPlayer
+        await _audioPlayer.play(UrlSource(mediaUrl));
+
+        // Listen for completion
+        _audioPlayer.onPlayerComplete.listen((event) {
           if (mounted) {
             setState(() {
               _isPlayingVoiceNote = false;
@@ -309,71 +522,105 @@ class _ChatScreenState extends State<ChatScreen> {
             });
           }
         });
+
+        print('▶️ Playing voice note: $mediaUrl');
       }
     } catch (e) {
-      print('Error playing voice note: $e');
+      print('❌ Error playing voice note: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to play voice note: $e')),
       );
+      setState(() {
+        _isPlayingVoiceNote = false;
+        _currentPlayingVoiceNote = null;
+      });
     }
   }
 
   // Start voice call
-  void _startVoiceCall() {
+  void _startVoiceCall() async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to make calls')),
+      );
+      return;
+    }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ZegoUIKitPrebuiltCall(
-          appID: 51745598, // Your Zego app ID
-          appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4', // Your app sign
-          callID: 'voice_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}',
-          userID: user.uid,
-          userName: user.displayName ?? 'User',
-          config: ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall()
-            ..avatarBuilder = (BuildContext context, Size size, ZegoUIKitUser? user, Map extraInfo) {
-              return CircleAvatar(
-                backgroundImage: NetworkImage(widget.otherUserAvatar),
-                radius: size.width / 2,
-              );
-            },
+    try {
+      await ZegoUIKit().init(
+        appID: 51745598,
+        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+      );
+
+      final callID = 'voice_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ZegoUIKitPrebuiltCall(
+            appID: 51745598,
+            appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+            callID: callID,
+            userID: user.uid,
+            userName: user.displayName ?? 'User',
+            config: ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall()
+              // ..onOnlySelfInRoom = (context) => Navigator.of(context).pop(),
+          ),
         ),
-      ),
-    );
+      );
 
-    // Save call history
-    _saveCallHistory('voice');
+      await _saveCallHistory('voice');
+      print('✅ Voice call started');
+    } catch (e) {
+      print('❌ Error starting voice call: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start call: $e')),
+      );
+    }
   }
 
   // Start video call
-  void _startVideoCall() {
+  void _startVideoCall() async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to make calls')),
+      );
+      return;
+    }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ZegoUIKitPrebuiltCall(
-          appID: 51745598, // Your Zego app ID
-          appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4', // Your app sign
-          callID: 'video_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}',
-          userID: user.uid,
-          userName: user.displayName ?? 'User',
-          config: ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-            ..avatarBuilder = (BuildContext context, Size size, ZegoUIKitUser? user, Map extraInfo) {
-              return CircleAvatar(
-                backgroundImage: NetworkImage(widget.otherUserAvatar),
-                radius: size.width / 2,
-              );
-            },
+    try {
+      await ZegoUIKit().init(
+        appID: 51745598,
+        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+      );
+
+      final callID = 'video_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ZegoUIKitPrebuiltCall(
+            appID: 51745598,
+            appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+            callID: callID,
+            userID: user.uid,
+            userName: user.displayName ?? 'User',
+            config: ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
+              // ..onOnlySelfInRoom = (context) => Navigator.of(context).pop(),
+          ),
         ),
-      ),
-    );
+      );
 
-    // Save call history
-    _saveCallHistory('video');
+      await _saveCallHistory('video');
+      print('✅ Video call started');
+    } catch (e) {
+      print('❌ Error starting video call: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start call: $e')),
+      );
+    }
   }
 
   // Save call history to Firestore
@@ -392,8 +639,9 @@ class _ChatScreenState extends State<ChatScreen> {
         },
         'created_at': FieldValue.serverTimestamp(),
       });
+      print('✅ Call history saved: $callType');
     } catch (e) {
-      print('Error saving call history: $e');
+      print('❌ Error saving call history: $e');
     }
   }
 
@@ -401,28 +649,126 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showMediaOptions() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(CupertinoIcons.camera_fill, color: AppColors.primary),
-                title: const Text('Take Photo'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _takePhotoWithCamera();
-                },
-              ),
-              ListTile(
-                leading: const Icon(CupertinoIcons.photo_fill, color: AppColors.primary),
-                title: const Text('Photo Library'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImageFromGallery();
-                },
+        return Container(
+          margin: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                spreadRadius: 2,
               ),
             ],
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey.shade200),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.attach_file, color: AppColors.primary, size: 24),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Send Media',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.photo_library, color: AppColors.primary),
+                  ),
+                  title: const Text('Photo Library'),
+                  subtitle: const Text('Choose from your gallery'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickImageFromGallery();
+                  },
+                ),
+
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.camera_alt, color: AppColors.primary),
+                  ),
+                  title: const Text('Take Photo'),
+                  subtitle: const Text('Use your camera'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _takePhotoWithCamera();
+                  },
+                ),
+
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.mic, color: AppColors.primary),
+                  ),
+                  title: const Text('Voice Message'),
+                  subtitle: const Text('Hold to record'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _startVoiceRecording();
+                  },
+                ),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.grey.shade100,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -442,47 +788,113 @@ class _ChatScreenState extends State<ChatScreen> {
 
     switch (message['type']) {
       case 'image':
-        return GestureDetector(
-          onTap: () {
-            // Show image in full screen
-            showDialog(
-              context: context,
-              builder: (context) => Dialog(
-                child: InteractiveViewer(
-                  child: Image.network(
-                    message['mediaUrl'] ?? 'https://via.placeholder.com/400x300.png?text=Image',
-                    fit: BoxFit.contain,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    child: Stack(
+                      children: [
+                        InteractiveViewer(
+                          child: Image.network(
+                            message['mediaUrl'],
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                width: 300,
+                                height: 300,
+                                color: Colors.grey[300],
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.error, color: Colors.grey, size: 40),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Failed to load image',
+                                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: IconButton(
+                            icon: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close, color: Colors.white),
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                );
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  message['mediaUrl'],
+                  width: 200,
+                  height: 150,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      width: 200,
+                      height: 150,
+                      color: Colors.grey[300],
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: 200,
+                      height: 150,
+                      color: Colors.grey[300],
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error, color: Colors.grey, size: 40),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Failed to load image',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
-            );
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.network(
-              message['mediaUrl'] ?? 'https://via.placeholder.com/200x150.png?text=Image',
-              width: 200,
-              height: 150,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Container(
-                  width: 200,
-                  height: 150,
-                  color: Colors.grey[300],
-                  child: const Center(child: CircularProgressIndicator()),
-                );
-              },
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  width: 200,
-                  height: 150,
-                  color: Colors.grey[300],
-                  child: const Icon(CupertinoIcons.photo, size: 40),
-                );
-              },
             ),
-          ),
+            const SizedBox(height: 4),
+            Text(
+              '📷 Photo',
+              style: TextStyle(
+                color: contentColor,
+                fontSize: 12,
+              ),
+            ),
+          ],
         );
 
       case 'voice':
@@ -503,7 +915,7 @@ class _ChatScreenState extends State<ChatScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+                  isPlaying ? Icons.stop : Icons.play_arrow,
                   color: contentColor,
                   size: 20,
                 ),
@@ -515,12 +927,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 4),
-                // Waveform visualization
+                const SizedBox(width: 8),
                 Container(
-                  width: 80,
+                  width: 60,
                   height: 20,
-                  margin: const EdgeInsets.only(left: 8),
                   child: CustomPaint(
                     painter: _WaveformPainter(
                       isPlaying: isPlaying,
@@ -543,6 +953,206 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
     }
+  }
+
+  // Build the bottom input bar
+  Widget _buildInputBar() {
+    if (_isRecording) {
+      return _buildRecordingUI();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              onPressed: _showMediaOptions,
+              icon: Icon(Icons.add, color: AppColors.primary, size: 24),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(25),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _textController,
+                      decoration: const InputDecoration(
+                        hintText: "Type message...",
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        hintStyle: TextStyle(color: Colors.grey),
+                      ),
+                      maxLines: 5,
+                      minLines: 1,
+                      onSubmitted: (_) => _sendTextMessage(),
+                    ),
+                  ),
+
+                  GestureDetector(
+                    onLongPressStart: (_) => _startVoiceRecording(),
+                    onLongPressEnd: (_) => _stopVoiceRecording(),
+                    child: Container(
+                      margin: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.mic,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          Container(
+            decoration: BoxDecoration(
+              color: _textController.text.trim().isNotEmpty
+                  ? AppColors.primary
+                  : Colors.grey[300],
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              onPressed: _textController.text.trim().isNotEmpty
+                  ? _sendTextMessage
+                  : null,
+              icon: Icon(
+                Icons.send,
+                color: _textController.text.trim().isNotEmpty
+                    ? Colors.white
+                    : Colors.grey,
+                size: 20,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build recording UI
+  Widget _buildRecordingUI() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.05),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                onPressed: _cancelVoiceRecording,
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              Column(
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.mic, color: Colors.red, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Recording...',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatDuration(_recordingDuration),
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+
+              TextButton(
+                onPressed: _stopVoiceRecording,
+                child: const Text(
+                  'Send',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Container(
+            height: 4,
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            child: _buildRecordingWaveform(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build recording waveform animation
+  Widget _buildRecordingWaveform() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return CustomPaint(
+          size: Size(constraints.maxWidth, 4),
+          painter: _RecordingWaveformPainter(
+            duration: _recordingDuration,
+            isRecording: _isRecording,
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -569,18 +1179,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.otherUserName.substring(1, 1),
+                    widget.otherUserName,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Text(
-                    "Online",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.green,
-                    ),
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: _firestore.collection('users').doc(widget.otherUserId).snapshots(),
+                    builder: (context, snapshot) {
+                      final isOnline = snapshot.data?['is_online'] ?? false;
+                      return Text(
+                        isOnline ? "Online" : "Offline",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isOnline ? Colors.green : Colors.grey,
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -600,7 +1216,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          // Messages List
           Expanded(
             child: _messages.isEmpty
                 ? const Center(
@@ -647,77 +1262,46 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Input Bar
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                // Media Button
-                IconButton(
-                  onPressed: _showMediaOptions,
-                  icon: const Icon(CupertinoIcons.plus_circle_fill, color: AppColors.primary),
-                ),
-
-                // Text Input
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    decoration: InputDecoration(
-                      hintText: _isRecording ? "Recording..." : "Type a message...",
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    ),
-                    onSubmitted: (_) => _sendTextMessage(),
-                  ),
-                ),
-
-                const SizedBox(width: 8),
-
-                // Send/Voice Record Button
-                GestureDetector(
-                  onLongPress: _startVoiceRecording,
-                  onLongPressUp: _stopVoiceRecording,
-                  onTap: _textController.text.isNotEmpty ? _sendTextMessage : null,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _isRecording
-                          ? CupertinoIcons.mic_fill
-                          : (_textController.text.isNotEmpty
-                          ? CupertinoIcons.arrow_up_circle_fill
-                          : CupertinoIcons.mic_fill),
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildInputBar(),
         ],
       ),
     );
   }
+}
+
+// Custom painter for recording waveform
+class _RecordingWaveformPainter extends CustomPainter {
+  final int duration;
+  final bool isRecording;
+
+  const _RecordingWaveformPainter({required this.duration, required this.isRecording});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.fill;
+
+    final waveCount = 20;
+    final waveWidth = size.width / waveCount;
+    final maxHeight = size.height;
+
+    for (var i = 0; i < waveCount; i++) {
+      final timeFactor = (duration % 2 == 0) ? 0.5 : 1.0;
+      final positionFactor = (i / waveCount);
+      final animation = isRecording ? (DateTime.now().millisecond / 1000) : 0.0;
+
+      final height = maxHeight * (0.3 + 0.7 *
+          ((positionFactor + animation * timeFactor) % 1.0));
+
+      final x = i * waveWidth;
+      final rect = Rect.fromLTWH(x, (maxHeight - height) / 2, waveWidth - 1, height);
+      canvas.drawRect(rect, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 // Custom painter for voice note waveform
@@ -725,7 +1309,7 @@ class _WaveformPainter extends CustomPainter {
   final bool isPlaying;
   final Color color;
 
-  _WaveformPainter({required this.isPlaying, required this.color});
+  const _WaveformPainter({required this.isPlaying, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -733,7 +1317,7 @@ class _WaveformPainter extends CustomPainter {
       ..color = color.withOpacity(0.6)
       ..style = PaintingStyle.fill;
 
-    final waveCount = 20;
+    final waveCount = 8;
     final waveWidth = size.width / waveCount;
     final maxHeight = size.height;
 
@@ -743,7 +1327,7 @@ class _WaveformPainter extends CustomPainter {
           : maxHeight * (0.2 + 0.3 * ((i % 3 + 1) / 3));
 
       final x = i * waveWidth;
-      final rect = Rect.fromLTWH(x, (maxHeight - height) / 2, waveWidth - 2, height);
+      final rect = Rect.fromLTWH(x, (maxHeight - height) / 2, waveWidth - 1, height);
       canvas.drawRect(rect, paint);
     }
   }
