@@ -215,13 +215,177 @@ class UserService {
         .snapshots();
   }
 
-  // Search users by username
-  static Stream<QuerySnapshot> searchUsers(String query) {
-    return _firestore
+  // Add these methods to your UserService class
+
+  static Stream<List<UserModel>> getRecommendedUsers() {
+    return FirebaseFirestore.instance
         .collection('users')
-        .where('username', isGreaterThanOrEqualTo: query)
-        .where('username', isLessThan: query + 'z')
-        .snapshots();
+        .where('isVerified', isEqualTo: true)
+        .limit(10)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .toList());
+  }
+
+  static Stream<List<UserModel>> getPopularUsers() {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .orderBy('followersCount', descending: true)
+        .limit(6)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .toList());
+  }
+
+  static Stream<List<PostModel>> getTrendingPosts() {
+    return FirebaseFirestore.instance
+        .collection('posts')
+        .orderBy('likesCount', descending: true)
+        .where('mediaType', isEqualTo: 'video')
+        .limit(4)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => PostModel.fromFirestore(doc.data as Map<String, dynamic>, doc.id as String))
+        .toList());
+  }
+
+  static Stream<List<UserModel>> getSimilarInterestsUsers() {
+    final currentUserId = _auth.currentUser?.uid;
+    // final currentUserId = currentUserId;
+    if (currentUserId == null) {
+      return Stream.value([]);
+    }
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .where('uid', isNotEqualTo: currentUserId)
+        .limit(4)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .toList());
+  }
+
+  static Stream<List<UserModel>> getSameGoalsUsers() {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) {
+      return Stream.value([]);
+    }
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .where('uid', isNotEqualTo: currentUserId)
+        .limit(4)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .toList());
+  }
+
+  static Stream<List<UserModel>> searchUsers(String query) {
+    if (query.isEmpty) {
+      return Stream.value([]);
+    }
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .where('name', isGreaterThanOrEqualTo: query)
+        .where('name', isLessThan: query + 'z')
+        .limit(20)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .toList());
+  }
+
+  static int calculateAge(String dateOfBirth) {
+    try {
+      final birthDate = DateTime.parse(dateOfBirth);
+      final now = DateTime.now();
+      int age = now.year - birthDate.year;
+      if (now.month < birthDate.month ||
+          (now.month == birthDate.month && now.day < birthDate.day)) {
+        age--;
+      }
+      return age;
+    } catch (e) {
+      return 25; // Default age if parsing fails
+    }
+  }
+
+  // Search users by username
+  // static Future<Stream<QuerySnapshot<Object?>>> searchUsers(String query) async {
+  //   return _firestore
+  //       .collection('users')
+  //       .where('username', isGreaterThanOrEqualTo: query)
+  //       .where('username', isLessThan: query + 'z')
+  //       .snapshots();
+  // }
+
+  static Future<void> submitProfileReport({
+    required String reporterId,
+    required String reportedUserId,
+    required String reason,
+    String? details,
+  }) async {
+    try {
+      final reportId = '${reporterId}_${reportedUserId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      final reportData = {
+        'reportId': reportId,
+        'reporterId': reporterId,
+        'reportedUserId': reportedUserId,
+        'reason': reason,
+        'details': details,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('reports')
+          .doc(reportId)
+          .set(reportData);
+
+      print('✅ Profile report submitted: $reportId');
+    } catch (e) {
+      print('❌ Error submitting profile report: $e');
+      throw 'Failed to submit report: $e';
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getUserReports(String userId) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('reports')
+          .where('reportedUserId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) => doc.data()).toList();
+    } catch (e) {
+      print('❌ Error getting user reports: $e');
+      return [];
+    }
+  }
+
+  static Future<bool> hasUserReportedProfile(String reporterId, String reportedUserId) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('reports')
+          .where('reporterId', isEqualTo: reporterId)
+          .where('reportedUserId', isEqualTo: reportedUserId)
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get();
+
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      print('❌ Error checking if user has reported profile: $e');
+      return false;
+    }
   }
 
   // Get multiple users by IDs

@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:meet9ja/screens/MatchedUserScreen.dart';
 import 'package:meet9ja/screens/messages_screen.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
@@ -19,11 +18,12 @@ import '../models/live_history_model.dart';
 import '../models/post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
+import 'MatchedUserScreen.dart';
 import 'create_post_screen.dart';
 import 'create_story_screen.dart';
 import 'edit_profile_screen.dart';
 import 'package:intl/intl.dart';
-import 'livestream_screen.dart';// Add this import for the matched users screen
+import 'livestream_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
@@ -50,14 +50,14 @@ class _ProfileScreenState extends State<ProfileScreen>
   Map<String, int> _userStats = {
     'followers': 0,
     'following': 0,
-    'matches': 0, // Changed from 'subscribers' to 'matches'
+    'matches': 0,
   };
   bool _isFollowing = false;
   bool _isMatched = false;
 
   List<String> get _tabLabels {
     if (widget.isMyProfile) {
-      return ["Home", "Clips", "Wallet", "About", "Schedules"];
+      return ["Home", "Clips", "Wallet", "About"];
     } else {
       return ["Home", "Clips", "About"];
     }
@@ -333,7 +333,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Navigate to matched users screen
   void _navigateToMatchedUsers() {
     Navigator.push(
       context,
@@ -341,6 +340,169 @@ class _ProfileScreenState extends State<ProfileScreen>
         builder: (context) => MatchedUsersScreen(userId: _userProfile!.uid),
       ),
     );
+  }
+
+  // Report functionality
+  void _showReportDialog(BuildContext context, UserModel userProfile) {
+    String selectedReason = 'Inappropriate content';
+    final TextEditingController detailsController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text(
+              'Report Profile',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Why are you reporting this profile?',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _ReportReasonTile(
+                    value: 'Inappropriate content',
+                    groupValue: selectedReason,
+                    onChanged: (value) => setState(() => selectedReason = value!),
+                    title: 'Inappropriate content',
+                    subtitle: 'Nudity, violence, or explicit material',
+                  ),
+                  _ReportReasonTile(
+                    value: 'Spam or fake profile',
+                    groupValue: selectedReason,
+                    onChanged: (value) => setState(() => selectedReason = value!),
+                    title: 'Spam or fake profile',
+                    subtitle: 'Fake account or promotional content',
+                  ),
+                  _ReportReasonTile(
+                    value: 'Harassment or bullying',
+                    groupValue: selectedReason,
+                    onChanged: (value) => setState(() => selectedReason = value!),
+                    title: 'Harassment or bullying',
+                    subtitle: 'Threatening or abusive behavior',
+                  ),
+                  _ReportReasonTile(
+                    value: 'Underage user',
+                    groupValue: selectedReason,
+                    onChanged: (value) => setState(() => selectedReason = value!),
+                    title: 'Underage user',
+                    subtitle: 'User appears to be under 18 years old',
+                  ),
+                  _ReportReasonTile(
+                    value: 'Other',
+                    groupValue: selectedReason,
+                    onChanged: (value) => setState(() => selectedReason = value!),
+                    title: 'Other',
+                    subtitle: 'Something else',
+                  ),
+
+                  if (selectedReason == 'Other') ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Please provide more details:',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: detailsController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        hintText: 'Describe the issue...',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.all(12),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => _submitReport(
+                  context,
+                  userProfile,
+                  selectedReason,
+                  detailsController.text,
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Submit Report'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _submitReport(
+      BuildContext context,
+      UserModel reportedUser,
+      String reason,
+      String details,
+      ) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in to report profiles')),
+        );
+        return;
+      }
+
+      final reportData = {
+        'reportId': '${currentUser.uid}_${reportedUser.uid}_${DateTime.now().millisecondsSinceEpoch}',
+        'reporterId': currentUser.uid,
+        'reporterName': currentUser.displayName ?? 'Anonymous',
+        'reportedUserId': reportedUser.uid,
+        'reportedUserName': reportedUser.name,
+        'reason': reason,
+        'details': details.isNotEmpty ? details : null,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('reports')
+          .doc(reportData['reportId'] as String?)
+          .set(reportData);
+
+      if (mounted) Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Report submitted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      print('✅ Report submitted for user: ${reportedUser.uid}');
+    } catch (e) {
+      print('❌ Error submitting report: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to submit report: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _launchURL(String url) async {
@@ -534,7 +696,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               onFollowTap: _toggleFollow,
               onMatchTap: _toggleMatch,
               onEditTap: _navigateToEditProfile,
-              onManageMatchesTap: _navigateToMatchedUsers, // New callback
+              onManageMatchesTap: _navigateToMatchedUsers,
+              onReportTap: () => _showReportDialog(context, _userProfile!),
               onInstagramTap: _launchInstagram,
               onTwitterTap: _launchTwitter,
               onFacebookTap: _launchFacebook,
@@ -673,15 +836,11 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     ]);
 
-    if (widget.isMyProfile) {
-      tabs.add(_SchedulesTab(isMyProfile: widget.isMyProfile));
-    }
-
     return tabs;
   }
 }
 
-// Updated Header Widget
+// Header Widget
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
@@ -693,7 +852,8 @@ class _SliverHeader extends StatelessWidget {
     required this.onFollowTap,
     required this.onMatchTap,
     required this.onEditTap,
-    required this.onManageMatchesTap, // New parameter
+    required this.onManageMatchesTap,
+    required this.onReportTap,
     required this.onInstagramTap,
     required this.onTwitterTap,
     required this.onFacebookTap,
@@ -710,7 +870,8 @@ class _SliverHeader extends StatelessWidget {
   final VoidCallback onFollowTap;
   final VoidCallback onMatchTap;
   final VoidCallback onEditTap;
-  final VoidCallback onManageMatchesTap; // New callback
+  final VoidCallback onManageMatchesTap;
+  final VoidCallback onReportTap;
   final VoidCallback onInstagramTap;
   final VoidCallback onTwitterTap;
   final VoidCallback onFacebookTap;
@@ -755,9 +916,25 @@ class _SliverHeader extends StatelessWidget {
             },
           )
         else
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(FontAwesomeIcons.ellipsisVertical, size: 20),
-            onPressed: () {},
+            onSelected: (value) {
+              if (value == 'report') {
+                onReportTap();
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'report',
+                child: Row(
+                  children: [
+                    Icon(FontAwesomeIcons.flag, size: 16, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Report Profile'),
+                  ],
+                ),
+              ),
+            ],
           ),
       ],
 
@@ -861,7 +1038,7 @@ class _SliverHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
 
-                // Stats Row - Updated to show Matches instead of Subs
+                // Stats Row
                 SizedBox(
                   height: 55,
                   child: Row(
@@ -882,7 +1059,7 @@ class _SliverHeader extends StatelessWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: _StatTile(
-                          label: "Matches", // Changed from "Subs" to "Matches"
+                          label: "Matches",
                           value: userStats['matches'] ?? 0,
                         ),
                       ),
@@ -910,13 +1087,12 @@ class _SliverHeader extends StatelessWidget {
   Widget _buildMyProfileActions() {
     return Row(
       children: [
-        // Only one button now - Manage Matches
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: onManageMatchesTap, // Use the new callback
-            icon: const Icon(FontAwesomeIcons.heart, size: 13), // Changed icon to heart
+            onPressed: onManageMatchesTap,
+            icon: const Icon(FontAwesomeIcons.heart, size: 13),
             label: const Text(
-              "Manage Matches", // Changed text
+              "Manage Matches",
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
             ),
             style: OutlinedButton.styleFrom(
@@ -928,7 +1104,6 @@ class _SliverHeader extends StatelessWidget {
             ),
           ),
         ),
-        // Removed the Share button
       ],
     );
   }
@@ -959,7 +1134,6 @@ class _SliverHeader extends StatelessWidget {
             onPressed: onMatchTap,
           ),
         ),
-        
       ],
     );
   }
@@ -1029,7 +1203,7 @@ class _SliverHeader extends StatelessWidget {
   }
 }
 
-// UI Components (keep all the existing UI components the same)
+// UI Components
 class _StatTile extends StatelessWidget {
   final String label;
   final int value;
@@ -1182,7 +1356,46 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-// ... (Keep all the other existing classes: _HomeTab, _LiveHistoryCard, _ClipsTab, _WalletTab, _AboutTab, _SchedulesTab, etc.)
+// Report Reason Tile Widget
+class _ReportReasonTile extends StatelessWidget {
+  final String value;
+  final String groupValue;
+  final ValueChanged<String?> onChanged;
+  final String title;
+  final String subtitle;
+
+  const _ReportReasonTile({
+    required this.value,
+    required this.groupValue,
+    required this.onChanged,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: RadioListTile<String>(
+        value: value,
+        groupValue: groupValue,
+        onChanged: onChanged,
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+      ),
+    );
+  }
+}
+
+// Keep all your existing tab classes (_HomeTab, _ClipsTab, _WalletTab, _AboutTab, etc.)
 // They remain exactly the same as in your original code
 
 // Home Tab with Live Streams
@@ -2091,6 +2304,11 @@ extension UserServiceExtensions on UserService {
   }
 }
 
+// Keep all your other existing classes (_ClipsTab, _WalletTab, _AboutTab, etc.)
+// They should work as-is with the original implementations
+
+// ... (Include all your existing _ClipsTab, _WalletTab, _AboutTab classes here)
+// They remain exactly the same as in your previous code
 // Keep all your other existing classes (_ClipsTab, _WalletTab, _AboutTab, _SchedulesTab)
 // They should work as-is with the original implementations
 class _ClipsTab extends StatefulWidget {
