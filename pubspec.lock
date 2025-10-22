@@ -194,7 +194,7 @@ packages:
     source: hosted
     version: "2.0.4"
   chewie:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: chewie
       sha256: "44bcfc5f0dfd1de290c87c9d86a61308b3282a70b63435d5557cfd60f54a69ca"

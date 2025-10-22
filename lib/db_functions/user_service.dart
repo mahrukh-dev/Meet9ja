@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/live_history_model.dart';
 import '../models/post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
@@ -92,6 +93,24 @@ class UserService {
     }
   }
 
+  static Future<List<LiveHistory>> getUserLiveHistory(String userId) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('live_history')
+          .where('UID', isEqualTo: userId)
+          .orderBy('end_time', descending: true)
+          .limit(20) // Limit to recent 20 streams
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        return LiveHistory.fromFirestore(doc);
+      }).toList();
+    } catch (e) {
+      print('Error getting user live history: $e');
+      return [];
+    }
+  }
+
   // Follow/Unfollow user
   static Future<void> followUser(String targetUserId) async {
     try {
@@ -177,15 +196,15 @@ class UserService {
         .orderBy('date_time', descending: true)
         .snapshots();
   }
-
-  // Get user's live history
-  static Stream<QuerySnapshot> getUserLiveHistory(String userId) {
-    return _firestore
-        .collection('live_history')
-        .where('UID', isEqualTo: userId)
-        .orderBy('start_time', descending: true)
-        .snapshots();
-  }
+  //
+  // // Get user's live history
+  // static Stream<QuerySnapshot> getUserLiveHistory(String userId) {
+  //   return _firestore
+  //       .collection('live_history')
+  //       .where('UID', isEqualTo: userId)
+  //       .orderBy('start_time', descending: true)
+  //       .snapshots();
+  // }
 
   // Get user's matches
   static Stream<QuerySnapshot> getUserMatches(String userId) {

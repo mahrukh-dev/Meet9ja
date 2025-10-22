@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,15 +7,21 @@ import 'package:meet9ja/screens/post_detail_screen.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
 import 'package:meet9ja/screens/story_view_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
+import 'package:flutter/services.dart';
 import '../constants/app_colors.dart';
 import '../db_functions/firebase_service.dart';
 import '../db_functions/user_service.dart';
+import '../models/live_history_model.dart';
 import '../models/post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
 import 'create_post_screen.dart';
 import 'create_story_screen.dart';
 import 'edit_profile_screen.dart';
+import 'package:intl/intl.dart';
+import 'livestream_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
@@ -48,12 +53,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _isFollowing = false;
   bool _isMatched = false;
 
-  // Updated tab labels - remove Schedules and Wallet for other profiles
   List<String> get _tabLabels {
     if (widget.isMyProfile) {
       return ["Home", "Clips", "Wallet", "About", "Schedules"];
     } else {
-      return ["Home", "Clips", "About"]; // Remove Schedules and Wallet for others
+      return ["Home", "Clips", "About"];
     }
   }
 
@@ -83,13 +87,11 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     try {
-      // Load user stats
       final stats = await UserService.getUserStats(userId);
       setState(() {
         _userStats = stats;
       });
 
-      // Load follow status if viewing other profile
       if (!widget.isMyProfile && UserService.currentUserId != null) {
         final following = await UserService.isFollowing(userId);
         setState(() {
@@ -97,7 +99,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
 
-      // Load match status if viewing other profile
       if (!widget.isMyProfile && UserService.currentUserId != null) {
         final matched = await _checkForMatch(userId);
         setState(() {
@@ -105,7 +106,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
 
-      // Subscribe to profile updates
       _profileSubscription = UserService.getUserProfileStream(userId).listen(
             (profile) {
           setState(() {
@@ -129,7 +129,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Check if there's a match between current user and profile user
   Future<bool> _checkForMatch(String targetUserId) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -150,7 +149,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Follow/Unfollow function
   Future<void> _toggleFollow() async {
     if (_userProfile == null || widget.isMyProfile) return;
 
@@ -161,7 +159,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         await UserService.followUser(_userProfile!.uid);
       }
 
-      // Update local state
       setState(() {
         _isFollowing = !_isFollowing;
         _userStats['followers'] =
@@ -180,7 +177,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Match/Unmatch function - similar to HomeScreen logic
   Future<void> _toggleMatch() async {
     if (_userProfile == null || widget.isMyProfile) return;
 
@@ -191,10 +187,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       final targetUserId = _userProfile!.uid;
 
       if (_isMatched) {
-        // Unmatch logic
         await _unmatchProfile(targetUserId);
       } else {
-        // Match logic - similar to HomeScreen
         await _likeProfile(targetUserId);
       }
 
@@ -214,7 +208,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Like profile function - similar to HomeScreen
   Future<void> _likeProfile(String targetUserId) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -222,22 +215,18 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       final batch = FirebaseFirestore.instance.batch();
 
-      // Update current user's liked profiles
       final currentUserRef = FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
       batch.update(currentUserRef, {
         'liked_profiles': FieldValue.arrayUnion([targetUserId]),
         'updated_at': FieldValue.serverTimestamp(),
       });
 
-      // Create match record
       await _createMatchRecord(currentUser.uid, targetUserId, 'like');
 
-      // Check for mutual like (match)
       final targetUserDoc = await FirebaseFirestore.instance.collection('users').doc(targetUserId).get();
       final targetUserLikes = List.from(targetUserDoc.data()?['liked_profiles'] ?? []);
 
       if (targetUserLikes.contains(currentUser.uid)) {
-        // It's a mutual match!
         await _createMutualMatch(currentUser.uid, targetUserId);
       }
 
@@ -250,19 +239,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Unmatch profile function
   Future<void> _unmatchProfile(String targetUserId) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) throw 'User not logged in';
 
-      // Remove from liked profiles
       await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).update({
         'liked_profiles': FieldValue.arrayRemove([targetUserId]),
         'updated_at': FieldValue.serverTimestamp(),
       });
 
-      // Update match record to 'pass' or remove
       await _createMatchRecord(currentUser.uid, targetUserId, 'pass');
 
       print('✅ Unmatched profile: $targetUserId');
@@ -272,7 +258,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Create match record
   Future<void> _createMatchRecord(String user1Id, String user2Id, String status) async {
     try {
       final matchId = '${user1Id}_$user2Id';
@@ -292,7 +277,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Create mutual match
   Future<void> _createMutualMatch(String user1Id, String user2Id) async {
     try {
       final matchId = '${user1Id}_$user2Id';
@@ -309,7 +293,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         'is_mutual': true,
       });
 
-      // Update both users' matches array
       final batch = FirebaseFirestore.instance.batch();
 
       final user1Ref = FirebaseFirestore.instance.collection('users').doc(user1Id);
@@ -343,13 +326,11 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
 
-    // Refresh profile data if changes were made
     if (result == true && mounted) {
-      _loadUserData(); // Reload the user data
+      _loadUserData();
     }
   }
 
-  // Enhanced URL launch methods
   Future<void> _launchURL(String url) async {
     if (url.isEmpty) {
       _showSnackBar('No URL available');
@@ -359,14 +340,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     try {
       final Uri uri = Uri.parse(url);
 
-      // First try external application (browser)
       if (await canLaunchUrl(uri)) {
         await launchUrl(
           uri,
           mode: LaunchMode.externalApplication,
         );
       } else {
-        // Fallback to in-app web view
         await launchUrl(
           uri,
           mode: LaunchMode.inAppWebView,
@@ -379,28 +358,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  Future<bool> _tryLaunchUrl(Uri uri) async {
-    try {
-      // First try with external application
-      final canLaunch = await canLaunchUrl(uri);
-      if (canLaunch) {
-        return await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
-      }
-
-      // Fallback to in-app web view
-      return await launchUrl(
-        uri,
-        mode: LaunchMode.inAppWebView,
-      );
-    } catch (e) {
-      print('Error in _tryLaunchUrl: $e');
-      return false;
-    }
-  }
-// Enhanced social media launch methods that open in browser
   Future<void> _launchInstagram() async {
     if (_userProfile?.instagram?.isEmpty ?? true) {
       _showSnackBar('No Instagram username available');
@@ -460,6 +417,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     await _launchURL(url);
   }
+
   Future<void> _launchEmail() async {
     final email = _userProfile?.email;
     if (email == null || email.isEmpty) {
@@ -499,7 +457,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     try {
-      // Ensure website has proper protocol
       String websiteUrl = website;
       if (!websiteUrl.startsWith('http://') && !websiteUrl.startsWith('https://')) {
         websiteUrl = 'https://$websiteUrl';
@@ -681,7 +638,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   List<Widget> _getTabContent() {
     final tabs = [
-      _HomeTab(userId: _userProfile!.uid),
+      _HomeTab(userId: _userProfile!.uid, isMyProfile: widget.isMyProfile),
       _ClipsTab(userId: _userProfile!.uid, isMyProfile: widget.isMyProfile),
     ];
 
@@ -703,7 +660,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     ]);
 
-    // Only add Schedules tab for my profile
     if (widget.isMyProfile) {
       tabs.add(_SchedulesTab(isMyProfile: widget.isMyProfile));
     }
@@ -712,7 +668,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
-// Updated _SliverHeader with Follow and Match buttons
+// Header Widget
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
@@ -926,7 +882,7 @@ class _SliverHeader extends StatelessWidget {
                 else
                   _buildOtherProfileActions(),
 
-                // Social Media Handles - Only show if user has social media
+                // Social Media Handles
                 if (_hasSocialMedia) _buildSocialMediaHandles(),
               ],
             ),
@@ -981,7 +937,6 @@ class _SliverHeader extends StatelessWidget {
   Widget _buildOtherProfileActions() {
     return Row(
       children: [
-        // Follow Button
         Expanded(
           child: _ActionButton(
             label: isFollowing ? "Following" : "Follow",
@@ -994,8 +949,6 @@ class _SliverHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-
-        // Match Button
         Expanded(
           child: _ActionButton(
             label: isMatched ? "Matched" : "Match",
@@ -1008,8 +961,6 @@ class _SliverHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-
-        // Message Button
         SizedBox(
           width: 75,
           child: _ActionButton(
@@ -1224,11 +1175,7 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;
 
   @override
-  Widget build(
-      BuildContext context,
-      double shrinkOffset,
-      bool overlapsContent,
-      ) {
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(color: Colors.white, child: _tabBar);
   }
 
@@ -1244,61 +1191,914 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-// Tab Content Widgets (Keep your existing implementations)
-class _HomeTab extends StatelessWidget {
+// Home Tab with Live Streams
+class _HomeTab extends StatefulWidget {
   final String userId;
-  const _HomeTab({required this.userId});
+  final bool isMyProfile;
+  const _HomeTab({required this.userId, required this.isMyProfile});
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  List<LiveHistory> _liveHistory = [];
+  bool _isLoading = true;
+  String? _error;
+  Map<String, bool> _currentLiveStatus = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLiveHistory();
+    _subscribeToLiveStatus();
+  }
+
+  Future<void> _loadLiveHistory() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final history = await UserService.getUserLiveHistory(widget.userId);
+
+      setState(() {
+        _liveHistory = history;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load live history: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _subscribeToLiveStatus() {
+    FirebaseFirestore.instance
+        .collection('liveStreams')
+        .where('UID', isEqualTo: widget.userId)
+        .where('isLive', isEqualTo: true)
+        .snapshots()
+        .listen((snapshot) {
+      final liveStatus = <String, bool>{};
+      for (final doc in snapshot.docs) {
+        liveStatus[doc.id] = true;
+      }
+
+      if (mounted) {
+        setState(() {
+          _currentLiveStatus = liveStatus;
+        });
+      }
+    }, onError: (error) {
+      print('Error listening to live status: $error');
+    });
+  }
+
+  bool _isUserCurrentlyLive() {
+    return _currentLiveStatus.isNotEmpty;
+  }
+
+  String _getCurrentLiveId() {
+    return _currentLiveStatus.keys.firstOrNull ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: UserService.getUserFeed(userId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
+    if (_isLoading) {
+      return _buildLoadingState();
+    }
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    if (_error != null) {
+      return _buildErrorState();
+    }
 
-        final posts = snapshot.data?.docs ?? [];
+    final isCurrentlyLive = _isUserCurrentlyLive();
+    final currentLiveId = _getCurrentLiveId();
 
-        if (posts.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(FontAwesomeIcons.video, size: 60, color: Colors.black26),
-                SizedBox(height: 16),
-                Text(
-                  "No posts yet.",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black54,
+    return RefreshIndicator(
+      onRefresh: _loadLiveHistory,
+      child: CustomScrollView(
+        slivers: [
+          if (isCurrentlyLive)
+            _buildCurrentLiveBanner(currentLiveId),
+
+          _buildLiveHistoryHeader(),
+
+          if (_liveHistory.isEmpty)
+            _buildEmptyState()
+          else
+            _buildLiveHistoryList(),
+
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text(
+            'Loading live history...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.black54,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 60,
+            color: Colors.red[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Error loading content',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.black54,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black45,
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _loadLiveHistory,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentLiveBanner(String liveId) {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.red, Colors.orange],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.red.withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'LIVE NOW',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'User is currently live!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => _joinLiveStream(liveId),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.red,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: const Text(
+                'JOIN',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLiveHistoryHeader() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Row(
+          children: [
+            const Text(
+              'Live History',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_liveHistory.length}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return SliverFillRemaining(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.live_tv_rounded,
+            size: 80,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No live history yet',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              'When this user goes live, their streams will appear here',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.black45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveHistoryList() {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+            (context, index) {
+          final live = _liveHistory[index];
+          return _LiveHistoryCard(
+            liveHistory: live,
+            onTap: () => _viewLiveReplay(live),
+          );
+        },
+        childCount: _liveHistory.length,
+      ),
+    );
+  }
+
+  void _joinLiveStream(String liveId) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in to join live stream')),
+        );
+        return;
+      }
+
+      final userProfile = await UserService.getUserProfile(currentUser.uid);
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LiveStreamScreen(
+            liveId: liveId,
+            userId: currentUser.uid,
+            isHost: false,
+            userName: userProfile?.name ?? 'User',
+            hostId: widget.userId,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error joining live: $e')),
+      );
+    }
+  }
+
+  void _viewLiveReplay(LiveHistory live) {
+    if (live.liveReplayMediaUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No replay available for this stream')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(live.title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildInfoRow('Duration', '${live.durationSeconds} seconds'),
+              _buildInfoRow('Viewers', '${live.viewerCount}'),
+              _buildInfoRow('Gifts', '${live.totalGiftValue} coins'),
+              _buildInfoRow('Status', live.uploadStatus),
+              _buildInfoRow('Recording', live.recordingType),
+
+              const SizedBox(height: 16),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Replay URL:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      live.liveReplayMediaUrl,
+                      style: const TextStyle(fontSize: 10, color: Colors.blue),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              if (live.liveReplayMediaUrl.isNotEmpty) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => _launchReplayUrl(live.liveReplayMediaUrl),
+                    child: const Text('Watch Replay'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => _copyToClipboard(live.liveReplayMediaUrl),
+                    child: const Text('Copy URL'),
                   ),
                 ),
               ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _launchReplayUrl(String url) async {
+    try {
+      print('🔗 Attempting to play video: $url');
+
+      String cleanedUrl = url.trim();
+
+      if (cleanedUrl.endsWith('.mp4')) {
+        print('🎥 MP4 file detected, opening video player');
+        _openVideoPlayer(cleanedUrl);
+      } else if (cleanedUrl.contains('youtube.com') || cleanedUrl.contains('youtu.be')) {
+        print('📺 YouTube URL detected');
+        _openYouTubeVideo(cleanedUrl);
+      } else {
+        print('🌐 Generic URL, attempting to open in browser');
+        _openInBrowser(cleanedUrl);
+      }
+    } catch (e) {
+      print('❌ Error handling replay URL: $e');
+      _showReplayFallbackOptions(url, error: e.toString());
+    }
+  }
+
+  void _openVideoPlayer(String videoUrl) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading video...'),
+            ],
+          ),
+        ),
+      );
+
+      final videoPlayerController = VideoPlayerController.network(videoUrl);
+      await videoPlayerController.initialize();
+
+      if (mounted) Navigator.of(context).pop();
+
+      final chewieController = ChewieController(
+        videoPlayerController: videoPlayerController,
+        autoPlay: true,
+        looping: false,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControls: true,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: AppColors.primary,
+          handleColor: AppColors.primary,
+          backgroundColor: Colors.grey,
+          bufferedColor: Colors.grey.shade300,
+        ),
+      );
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: Colors.black,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: 300,
+                  child: Chewie(controller: chewieController),
+                ),
+              ],
             ),
-          );
+            actions: [
+              TextButton(
+                onPressed: () {
+                  chewieController.pause();
+                  videoPlayerController.dispose();
+                  chewieController.dispose();
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Close', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+
+      print('❌ Error playing video: $e');
+      _showVideoError(videoUrl, e.toString());
+    }
+  }
+
+  void _openYouTubeVideo(String url) async {
+    try {
+      String videoId = '';
+
+      if (url.contains('youtube.com/watch?v=')) {
+        videoId = url.split('v=')[1].split('&')[0];
+      } else if (url.contains('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1].split('?')[0];
+      } else if (url.contains('youtube.com/embed/')) {
+        videoId = url.split('embed/')[1].split('?')[0];
+      }
+
+      if (videoId.isNotEmpty) {
+        final youtubeAppUrl = 'vnd.youtube:$videoId';
+        final youtubeWebUrl = 'https://www.youtube.com/watch?v=$videoId';
+
+        final Uri appUri = Uri.parse(youtubeAppUrl);
+        if (await canLaunchUrl(appUri)) {
+          await launchUrl(appUri);
+          return;
         }
 
-        return ListView.builder(
-          itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index].data() as Map<String, dynamic>;
-            return ListTile(
-              title: Text(post['caption'] ?? ''),
-              // Add more post content
-            );
-          },
-        );
-      },
+        final Uri webUri = Uri.parse(youtubeWebUrl);
+        if (await canLaunchUrl(webUri)) {
+          await launchUrl(webUri, mode: LaunchMode.externalApplication);
+          return;
+        }
+      }
+
+      final Uri uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        throw Exception('Cannot open YouTube URL');
+      }
+    } catch (e) {
+      print('❌ Error opening YouTube: $e');
+      _showReplayFallbackOptions(url, error: 'Cannot open YouTube: $e');
+    }
+  }
+
+  void _openInBrowser(String url) async {
+    try {
+      String cleanedUrl = url;
+      if (!cleanedUrl.startsWith('http://') && !cleanedUrl.startsWith('https://')) {
+        cleanedUrl = 'https://$cleanedUrl';
+      }
+
+      final Uri uri = Uri.parse(cleanedUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        throw Exception('Cannot open URL in browser');
+      }
+    } catch (e) {
+      print('❌ Error opening in browser: $e');
+      _showReplayFallbackOptions(url, error: 'Cannot open in browser: $e');
+    }
+  }
+
+  void _showVideoError(String url, String error) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Video Playback Error'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Unable to play the video: $error'),
+            const SizedBox(height: 12),
+            const Text('This could be because:'),
+            const SizedBox(height: 8),
+            const Text('• The video file is corrupted'),
+            const Text('• The URL is not accessible'),
+            const Text('• Network connectivity issues'),
+            const Text('• File format not supported'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _showReplayFallbackOptions(url, error: error);
+            },
+            child: const Text('Try Other Options'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReplayFallbackOptions(String url, {String? error}) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Replay Options'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (error != null)
+              Text('Error: $error', style: TextStyle(color: Colors.red, fontSize: 12)),
+            const SizedBox(height: 12),
+            const Text('Choose how you want to access the replay:'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _copyToClipboard(url);
+            },
+            child: const Text('Copy URL'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _openInBrowser(url);
+            },
+            child: const Text('Open in Browser'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _copyToClipboard(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('URL copied to clipboard')),
     );
   }
 }
 
+class _LiveHistoryCard extends StatelessWidget {
+  final LiveHistory liveHistory;
+  final VoidCallback onTap;
+
+  const _LiveHistoryCard({
+    required this.liveHistory,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasValidUrl = liveHistory.liveReplayMediaUrl.isNotEmpty &&
+        (liveHistory.liveReplayMediaUrl.contains('http') ||
+            liveHistory.liveReplayMediaUrl.contains('.mp4') ||
+            liveHistory.liveReplayMediaUrl.contains('youtube') ||
+            liveHistory.liveReplayMediaUrl.contains('vimeo'));
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      liveHistory.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildStatusIndicator(liveHistory.uploadStatus),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  _buildStatItem(
+                    Icons.people,
+                    '${liveHistory.viewerCount}',
+                  ),
+                  const SizedBox(width: 16),
+                  _buildStatItem(
+                    Icons.card_giftcard,
+                    '${liveHistory.totalGiftValue}',
+                  ),
+                  const SizedBox(width: 16),
+                  _buildStatItem(
+                    Icons.timer,
+                    '${liveHistory.durationSeconds}s',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              Text(
+                _formatDateTime(liveHistory.endTime),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.black54,
+                ),
+              ),
+
+              if (hasValidUrl)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Replay Available',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusIndicator(String status) {
+    Color color;
+    String text;
+
+    switch (status) {
+      case 'success':
+        color = Colors.green;
+        text = 'Completed';
+        break;
+      case 'partial_success':
+        color = Colors.orange;
+        text = 'Partial';
+        break;
+      case 'failed':
+        color = Colors.red;
+        text = 'Failed';
+        break;
+      default:
+        color = Colors.grey;
+        text = 'Unknown';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(IconData icon, String value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: Colors.black54),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.black54,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDateTime(Timestamp timestamp) {
+    final date = timestamp.toDate();
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return '${difference.inMinutes} minutes ago';
+      }
+      return '${difference.inHours} hours ago';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday at ${DateFormat('h:mm a').format(date)}';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return DateFormat('MMM d, y • h:mm a').format(date);
+    }
+  }
+}
+
+// Add this to your UserService class
+extension UserServiceExtensions on UserService {
+  static Future<List<LiveHistory>> getUserLiveHistory(String userId) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('live_history')
+          .where('UID', isEqualTo: userId)
+          .orderBy('end_time', descending: true)
+          .limit(20)
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        return LiveHistory.fromFirestore(doc);
+      }).toList();
+    } catch (e) {
+      print('Error getting user live history: $e');
+      return [];
+    }
+  }
+}
+
+// Keep all your other existing classes (_ClipsTab, _WalletTab, _AboutTab, _SchedulesTab)
+// They should work as-is with the original implementations
 class _ClipsTab extends StatefulWidget {
   final String userId;
   final bool isMyProfile;
@@ -1793,10 +2593,15 @@ class _ClipsTabState extends State<_ClipsTab> {
   }
 }
 
-class _WalletTab extends StatelessWidget {
+class _WalletTab extends StatefulWidget {
   final UserModel userProfile;
   const _WalletTab({required this.userProfile});
 
+  @override
+  State<_WalletTab> createState() => _WalletTabState();
+}
+
+class _WalletTabState extends State<_WalletTab> {
   Widget _walletTile({
     required String title,
     required String value,
@@ -1840,8 +2645,8 @@ class _WalletTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final coinBalance = UserService.getCoinBalance(userProfile);
-    final totalEarnings = UserService.getTotalEarnings(userProfile);
+    final coinBalance = UserService.getCoinBalance(widget.userProfile);
+    final totalEarnings = UserService.getTotalEarnings(widget.userProfile);
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -1895,7 +2700,7 @@ class _WalletTab extends StatelessWidget {
   }
 }
 
-class _AboutTab extends StatelessWidget {
+class _AboutTab extends StatefulWidget {
   final UserModel userProfile;
   final bool isMyProfile;
   final VoidCallback onEmailTap;
@@ -1919,9 +2724,14 @@ class _AboutTab extends StatelessWidget {
   });
 
   @override
+  State<_AboutTab> createState() => _AboutTabState();
+}
+
+class _AboutTabState extends State<_AboutTab> {
+  @override
   Widget build(BuildContext context) {
-    final joinDate = UserService.getFormattedJoinDate(userProfile);
-    final primaryMode = UserService.getPrimaryMode(userProfile);
+    final joinDate = UserService.getFormattedJoinDate(widget.userProfile);
+    final primaryMode = UserService.getPrimaryMode(widget.userProfile);
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -1932,9 +2742,9 @@ class _AboutTab extends StatelessWidget {
           _SectionCard(
             title: "Bio",
             child: Text(
-              userProfile.bio?.isNotEmpty == true
-                  ? userProfile.bio!
-                  : 'No bio yet. ${isMyProfile ? 'Add a bio to tell people about yourself!' : ''}',
+              widget.userProfile.bio?.isNotEmpty == true
+                  ? widget.userProfile.bio!
+                  : 'No bio yet. ${widget.isMyProfile ? 'Add a bio to tell people about yourself!' : ''}',
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 height: 1.4,
@@ -1952,8 +2762,8 @@ class _AboutTab extends StatelessWidget {
                 _InfoTile(
                   icon: FontAwesomeIcons.locationDot,
                   label: "Location",
-                  value: userProfile.location?.isNotEmpty == true
-                      ? userProfile.location!
+                  value: widget.userProfile.location?.isNotEmpty == true
+                      ? widget.userProfile.location!
                       : 'Not set',
                 ),
                 const SizedBox(height: 12),
@@ -1972,8 +2782,8 @@ class _AboutTab extends StatelessWidget {
                 _InfoTile(
                   icon: FontAwesomeIcons.venusMars,
                   label: "Preferences",
-                  value: userProfile.preferences.isNotEmpty
-                      ? userProfile.preferences
+                  value: widget.userProfile.preferences.isNotEmpty
+                      ? widget.userProfile.preferences
                       : 'Not set',
                 ),
               ],
@@ -1982,97 +2792,97 @@ class _AboutTab extends StatelessWidget {
           const SizedBox(height: 16),
 
           // Links Section
-          if (userProfile.email.isNotEmpty ||
-              userProfile.website?.isNotEmpty == true ||
-              userProfile.instagram?.isNotEmpty == true ||
-              userProfile.twitter?.isNotEmpty == true ||
-              userProfile.facebook?.isNotEmpty == true ||
-              userProfile.tiktok?.isNotEmpty == true ||
-              userProfile.youtube?.isNotEmpty == true)
+          if (widget.userProfile.email.isNotEmpty ||
+              widget.userProfile.website?.isNotEmpty == true ||
+              widget.userProfile.instagram?.isNotEmpty == true ||
+              widget.userProfile.twitter?.isNotEmpty == true ||
+              widget.userProfile.facebook?.isNotEmpty == true ||
+              widget.userProfile.tiktok?.isNotEmpty == true ||
+              widget.userProfile.youtube?.isNotEmpty == true)
             _SectionCard(
               title: "Links",
               child: Column(
                 children: [
-                  if (userProfile.email.isNotEmpty)
+                  if (widget.userProfile.email.isNotEmpty)
                     _ClickableInfoTile(
                       icon: FontAwesomeIcons.solidEnvelope,
                       label: "Email",
-                      value: userProfile.email,
-                      onTap: onEmailTap,
+                      value: widget.userProfile.email,
+                      onTap: widget.onEmailTap,
                     ),
-                  if (userProfile.website?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty)
+                  if (widget.userProfile.website?.isNotEmpty == true) ...[
+                    if (widget.userProfile.email.isNotEmpty)
                       const SizedBox(height: 12),
                     _ClickableInfoTile(
                       icon: FontAwesomeIcons.globe,
                       label: "Website",
-                      value: userProfile.website!,
-                      onTap: onWebsiteTap,
+                      value: widget.userProfile.website!,
+                      onTap: widget.onWebsiteTap,
                     ),
                   ],
-                  if (userProfile.instagram?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true)
+                  if (widget.userProfile.instagram?.isNotEmpty == true) ...[
+                    if (widget.userProfile.email.isNotEmpty ||
+                        widget.userProfile.website?.isNotEmpty == true)
                       const SizedBox(height: 12),
                     _ClickableInfoTile(
                       icon: FontAwesomeIcons.instagram,
                       label: "Instagram",
-                      value: userProfile.instagram!,
-                      onTap: onInstagramTap,
+                      value: widget.userProfile.instagram!,
+                      onTap: widget.onInstagramTap,
                     ),
                   ],
-                  if (userProfile.twitter?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true)
+                  if (widget.userProfile.twitter?.isNotEmpty == true) ...[
+                    if (widget.userProfile.email.isNotEmpty ||
+                        widget.userProfile.website?.isNotEmpty == true ||
+                        widget.userProfile.instagram?.isNotEmpty == true)
                       const SizedBox(height: 12),
                     _ClickableInfoTile(
                       icon: FontAwesomeIcons.xTwitter,
                       label: "Twitter",
-                      value: userProfile.twitter!,
-                      onTap: onTwitterTap,
+                      value: widget.userProfile.twitter!,
+                      onTap: widget.onTwitterTap,
                     ),
                   ],
-                  if (userProfile.facebook?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true ||
-                        userProfile.twitter?.isNotEmpty == true)
+                  if (widget.userProfile.facebook?.isNotEmpty == true) ...[
+                    if (widget.userProfile.email.isNotEmpty ||
+                        widget.userProfile.website?.isNotEmpty == true ||
+                        widget.userProfile.instagram?.isNotEmpty == true ||
+                        widget.userProfile.twitter?.isNotEmpty == true)
                       const SizedBox(height: 12),
                     _ClickableInfoTile(
                       icon: FontAwesomeIcons.facebook,
                       label: "Facebook",
-                      value: userProfile.facebook!,
-                      onTap: onFacebookTap,
+                      value: widget.userProfile.facebook!,
+                      onTap: widget.onFacebookTap,
                     ),
                   ],
-                  if (userProfile.tiktok?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true ||
-                        userProfile.twitter?.isNotEmpty == true ||
-                        userProfile.facebook?.isNotEmpty == true)
+                  if (widget.userProfile.tiktok?.isNotEmpty == true) ...[
+                    if (widget.userProfile.email.isNotEmpty ||
+                        widget.userProfile.website?.isNotEmpty == true ||
+                        widget.userProfile.instagram?.isNotEmpty == true ||
+                        widget.userProfile.twitter?.isNotEmpty == true ||
+                        widget.userProfile.facebook?.isNotEmpty == true)
                       const SizedBox(height: 12),
                     _ClickableInfoTile(
                       icon: FontAwesomeIcons.tiktok,
                       label: "TikTok",
-                      value: userProfile.tiktok!,
-                      onTap: onTikTokTap,
+                      value: widget.userProfile.tiktok!,
+                      onTap: widget.onTikTokTap,
                     ),
                   ],
-                  if (userProfile.youtube?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true ||
-                        userProfile.twitter?.isNotEmpty == true ||
-                        userProfile.facebook?.isNotEmpty == true ||
-                        userProfile.tiktok?.isNotEmpty == true)
+                  if (widget.userProfile.youtube?.isNotEmpty == true) ...[
+                    if (widget.userProfile.email.isNotEmpty ||
+                        widget.userProfile.website?.isNotEmpty == true ||
+                        widget.userProfile.instagram?.isNotEmpty == true ||
+                        widget.userProfile.twitter?.isNotEmpty == true ||
+                        widget.userProfile.facebook?.isNotEmpty == true ||
+                        widget.userProfile.tiktok?.isNotEmpty == true)
                       const SizedBox(height: 12),
                     _ClickableInfoTile(
                       icon: FontAwesomeIcons.youtube,
                       label: "YouTube",
-                      value: userProfile.youtube!,
-                      onTap: onYouTubeTap,
+                      value: widget.userProfile.youtube!,
+                      onTap: widget.onYouTubeTap,
                     ),
                   ],
                 ],
@@ -2086,10 +2896,15 @@ class _AboutTab extends StatelessWidget {
   }
 }
 
-class _SchedulesTab extends StatelessWidget {
+class _SchedulesTab extends StatefulWidget {
   final bool isMyProfile;
   const _SchedulesTab({required this.isMyProfile});
 
+  @override
+  State<_SchedulesTab> createState() => _SchedulesTabState();
+}
+
+class _SchedulesTabState extends State<_SchedulesTab> {
   @override
   Widget build(BuildContext context) {
     return const Center(
