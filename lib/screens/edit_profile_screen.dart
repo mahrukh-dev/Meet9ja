@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:io';
@@ -47,12 +48,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _ageController = TextEditingController(text: widget.userProfile.age.toString());
     _websiteController = TextEditingController(text: widget.userProfile.website ?? '');
 
-    // Initialize social media controllers (you might need to add these fields to your UserModel)
-    _instagramController = TextEditingController();
-    _twitterController = TextEditingController();
-    _facebookController = TextEditingController();
-    _tiktokController = TextEditingController();
-    _youtubeController = TextEditingController();
+    // Initialize social media controllers with current values
+    _instagramController = TextEditingController(text: widget.userProfile.instagram ?? '');
+    _twitterController = TextEditingController(text: widget.userProfile.twitter ?? '');
+    _facebookController = TextEditingController(text: widget.userProfile.facebook ?? '');
+    _tiktokController = TextEditingController(text: widget.userProfile.tiktok ?? '');
+    _youtubeController = TextEditingController(text: widget.userProfile.youtube ?? '');
   }
 
   void _loadCurrentPhotos() {
@@ -107,13 +108,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'location': _locationController.text.trim(),
         'age': int.tryParse(_ageController.text.trim()) ?? widget.userProfile.age,
         'website': _websiteController.text.trim(),
-        // Add social media updates when you add these fields to your UserModel
-        // 'instagram': _instagramController.text.trim(),
-        // 'twitter': _twitterController.text.trim(),
-        // 'facebook': _facebookController.text.trim(),
-        // 'tiktok': _tiktokController.text.trim(),
-        // 'youtube': _youtubeController.text.trim(),
+        // Social media updates
+        'instagram': _instagramController.text.trim().isEmpty ? null : _instagramController.text.trim(),
+        'twitter': _twitterController.text.trim().isEmpty ? null : _twitterController.text.trim(),
+        'facebook': _facebookController.text.trim().isEmpty ? null : _facebookController.text.trim(),
+        'tiktok': _tiktokController.text.trim().isEmpty ? null : _tiktokController.text.trim(),
+        'youtube': _youtubeController.text.trim().isEmpty ? null : _youtubeController.text.trim(),
+        'updated_at': FieldValue.serverTimestamp(),
       };
+
+      // Remove null values from updates
+      updates.removeWhere((key, value) => value == null || value == '');
 
       // Upload new photos if any were selected
       if (_selectedPhotos.isNotEmpty) {
@@ -180,6 +185,39 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() {
       _selectedPhotos.removeAt(index);
     });
+  }
+
+  // Helper method to validate social media usernames
+  String? _validateSocialMedia(String value, String platform) {
+    if (value.isEmpty) return null; // Optional field
+
+    final cleanedValue = value.replaceAll('@', '').trim();
+
+    if (cleanedValue.isEmpty) {
+      return 'Please enter a valid $platform username';
+    }
+
+    // Basic validation for special characters
+    if (!RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(cleanedValue)) {
+      return '$platform username can only contain letters, numbers, underscores, and periods';
+    }
+
+    return null;
+  }
+
+  String? _validateWebsite(String value) {
+    if (value.isEmpty) return null; // Optional field
+
+    if (!value.startsWith('http://') && !value.startsWith('https://')) {
+      return 'Please include http:// or https://';
+    }
+
+    try {
+      Uri.parse(value);
+      return null;
+    } catch (e) {
+      return 'Please enter a valid website URL';
+    }
   }
 
   @override
@@ -335,13 +373,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     label: 'Website URL',
                     icon: FontAwesomeIcons.globe,
                     keyboardType: TextInputType.url,
+                    // validator: _validateWebsite,
+                    hintText: 'https://example.com',
                   ),
                   const SizedBox(height: 32),
 
-                  // Social Media Section (Optional - you can add this later)
-                  // _buildSocialMediaSection(),
-
-                  const SizedBox(height: 80),
+                  // Social Media Section
+                  _buildSocialMediaSection(),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -442,6 +481,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
+    String? hintText,
   }) {
     return TextFormField(
       controller: controller,
@@ -450,6 +490,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.black54),
+        hintText: hintText,
         prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -471,49 +512,64 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  // Optional: Social Media Section
+  // Social Media Section
   Widget _buildSocialMediaSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Social Media'),
+        _buildSectionHeader('Social Media Links'),
+        const SizedBox(height: 8),
+        const Text(
+          'Add your social media usernames (without @ symbol)',
+          style: TextStyle(
+            color: Colors.black54,
+            fontSize: 14,
+          ),
+        ),
         const SizedBox(height: 16),
 
         _buildSocialMediaField(
           controller: _instagramController,
-          label: 'Instagram',
+          label: 'Instagram Username',
           icon: FontAwesomeIcons.instagram,
-          prefix: '@',
+          hintText: 'username',
+          validator: (value) => _validateSocialMedia(value!, 'Instagram'),
         ),
         const SizedBox(height: 12),
 
         _buildSocialMediaField(
           controller: _twitterController,
-          label: 'Twitter',
+          label: 'Twitter Username',
           icon: FontAwesomeIcons.xTwitter,
-          prefix: '@',
+          hintText: 'username',
+          validator: (value) => _validateSocialMedia(value!, 'Twitter'),
         ),
         const SizedBox(height: 12),
 
         _buildSocialMediaField(
           controller: _facebookController,
-          label: 'Facebook',
+          label: 'Facebook Username',
           icon: FontAwesomeIcons.facebook,
+          hintText: 'username',
+          validator: (value) => _validateSocialMedia(value!, 'Facebook'),
         ),
         const SizedBox(height: 12),
 
         _buildSocialMediaField(
           controller: _tiktokController,
-          label: 'TikTok',
+          label: 'TikTok Username',
           icon: FontAwesomeIcons.tiktok,
-          prefix: '@',
+          hintText: 'username',
+          validator: (value) => _validateSocialMedia(value!, 'TikTok'),
         ),
         const SizedBox(height: 12),
 
         _buildSocialMediaField(
           controller: _youtubeController,
-          label: 'YouTube',
+          label: 'YouTube Channel',
           icon: FontAwesomeIcons.youtube,
+          hintText: 'channelname',
+          validator: (value) => _validateSocialMedia(value!, 'YouTube'),
         ),
       ],
     );
@@ -523,15 +579,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     required TextEditingController controller,
     required String label,
     required IconData icon,
-    String prefix = '',
+    String? hintText,
+    String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
+      validator: validator,
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.black54),
+        hintText: hintText,
         prefixIcon: Icon(icon, color: _getSocialMediaColor(icon), size: 20),
-        prefixText: prefix,
+        prefix: const Text('@ ', style: TextStyle(color: Colors.black54)),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Colors.grey),
@@ -539,6 +598,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: _getSocialMediaColor(icon)),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red),
         ),
       ),
     );

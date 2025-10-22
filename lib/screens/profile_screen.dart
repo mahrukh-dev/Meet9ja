@@ -1,5 +1,7 @@
+
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
@@ -19,7 +21,12 @@ import 'edit_profile_screen.dart';
 class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
   final String? userId;
-  const ProfileScreen({super.key, this.isMyProfile = true, this.userId});
+
+  const ProfileScreen({
+    super.key,
+    this.isMyProfile = true,
+    this.userId,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -39,13 +46,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     'subscribers': 0,
   };
   bool _isFollowing = false;
+  bool _isMatched = false;
 
+  // Updated tab labels - remove Schedules and Wallet for other profiles
   List<String> get _tabLabels {
-    final baseTabs = ["Home", "Clips", "About", "Schedules"];
     if (widget.isMyProfile) {
       return ["Home", "Clips", "Wallet", "About", "Schedules"];
+    } else {
+      return ["Home", "Clips", "About"]; // Remove Schedules and Wallet for others
     }
-    return baseTabs;
   }
 
   @override
@@ -88,6 +97,14 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
 
+      // Load match status if viewing other profile
+      if (!widget.isMyProfile && UserService.currentUserId != null) {
+        final matched = await _checkForMatch(userId);
+        setState(() {
+          _isMatched = matched;
+        });
+      }
+
       // Subscribe to profile updates
       _profileSubscription = UserService.getUserProfileStream(userId).listen(
             (profile) {
@@ -112,6 +129,28 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  // Check if there's a match between current user and profile user
+  Future<bool> _checkForMatch(String targetUserId) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return false;
+
+      final matchSnapshot = await FirebaseFirestore.instance
+          .collection('matches')
+          .where('UID', isEqualTo: currentUser.uid)
+          .where('matched_user_ID', isEqualTo: targetUserId)
+          .where('status', isEqualTo: 'match')
+          .limit(1)
+          .get();
+
+      return matchSnapshot.docs.isNotEmpty;
+    } catch (e) {
+      print('❌ Error checking for match: $e');
+      return false;
+    }
+  }
+
+  // Follow/Unfollow function
   Future<void> _toggleFollow() async {
     if (_userProfile == null || widget.isMyProfile) return;
 
@@ -128,15 +167,169 @@ class _ProfileScreenState extends State<ProfileScreen>
         _userStats['followers'] =
             _userStats['followers']! + (_isFollowing ? 1 : -1);
       });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to ${_isFollowing ? 'unfollow' : 'follow'}: $e',
-          ),
-          backgroundColor: Colors.red,
-        ),
+
+      _showSnackBar(
+        _isFollowing ? 'You are now following ${_userProfile!.name}' : 'You unfollowed ${_userProfile!.name}',
+        color: _isFollowing ? Colors.green : Colors.orange,
       );
+    } catch (e) {
+      _showSnackBar(
+        'Failed to ${_isFollowing ? 'unfollow' : 'follow'}: $e',
+        color: Colors.red,
+      );
+    }
+  }
+
+  // Match/Unmatch function - similar to HomeScreen logic
+  Future<void> _toggleMatch() async {
+    if (_userProfile == null || widget.isMyProfile) return;
+
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) throw 'User not logged in';
+
+      final targetUserId = _userProfile!.uid;
+
+      if (_isMatched) {
+        // Unmatch logic
+        await _unmatchProfile(targetUserId);
+      } else {
+        // Match logic - similar to HomeScreen
+        await _likeProfile(targetUserId);
+      }
+
+      setState(() {
+        _isMatched = !_isMatched;
+      });
+
+      _showSnackBar(
+        _isMatched ? 'You matched with ${_userProfile!.name}! 🎉' : 'You unmatched ${_userProfile!.name}',
+        color: _isMatched ? Colors.green : Colors.orange,
+      );
+    } catch (e) {
+      _showSnackBar(
+        'Failed to ${_isMatched ? 'unmatch' : 'match'}: $e',
+        color: Colors.red,
+      );
+    }
+  }
+
+  // Like profile function - similar to HomeScreen
+  Future<void> _likeProfile(String targetUserId) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) throw 'User not logged in';
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Update current user's liked profiles
+      final currentUserRef = FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
+      batch.update(currentUserRef, {
+        'liked_profiles': FieldValue.arrayUnion([targetUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // Create match record
+      await _createMatchRecord(currentUser.uid, targetUserId, 'like');
+
+      // Check for mutual like (match)
+      final targetUserDoc = await FirebaseFirestore.instance.collection('users').doc(targetUserId).get();
+      final targetUserLikes = List.from(targetUserDoc.data()?['liked_profiles'] ?? []);
+
+      if (targetUserLikes.contains(currentUser.uid)) {
+        // It's a mutual match!
+        await _createMutualMatch(currentUser.uid, targetUserId);
+      }
+
+      await batch.commit();
+
+      print('✅ Liked profile: $targetUserId');
+    } catch (e) {
+      print('❌ Error liking profile: $e');
+      throw 'Failed to like profile: $e';
+    }
+  }
+
+  // Unmatch profile function
+  Future<void> _unmatchProfile(String targetUserId) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) throw 'User not logged in';
+
+      // Remove from liked profiles
+      await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).update({
+        'liked_profiles': FieldValue.arrayRemove([targetUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // Update match record to 'pass' or remove
+      await _createMatchRecord(currentUser.uid, targetUserId, 'pass');
+
+      print('✅ Unmatched profile: $targetUserId');
+    } catch (e) {
+      print('❌ Error unmatching profile: $e');
+      throw 'Failed to unmatch profile: $e';
+    }
+  }
+
+  // Create match record
+  Future<void> _createMatchRecord(String user1Id, String user2Id, String status) async {
+    try {
+      final matchId = '${user1Id}_$user2Id';
+      final matchRef = FirebaseFirestore.instance.collection('matches').doc(matchId);
+
+      await matchRef.set({
+        'matchId': matchId,
+        'UID': user1Id,
+        'matched_user_ID': user2Id,
+        'status': status,
+        'time_stamp': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      print('✅ Created match record: $matchId with status: $status');
+    } catch (e) {
+      print('❌ Error creating match record: $e');
+    }
+  }
+
+  // Create mutual match
+  Future<void> _createMutualMatch(String user1Id, String user2Id) async {
+    try {
+      final matchId = '${user1Id}_$user2Id';
+      final mutualMatchId = 'mutual_$matchId';
+
+      final matchRef = FirebaseFirestore.instance.collection('matches').doc(mutualMatchId);
+
+      await matchRef.set({
+        'matchId': mutualMatchId,
+        'UID': user1Id,
+        'matched_user_ID': user2Id,
+        'status': 'match',
+        'time_stamp': FieldValue.serverTimestamp(),
+        'is_mutual': true,
+      });
+
+      // Update both users' matches array
+      final batch = FirebaseFirestore.instance.batch();
+
+      final user1Ref = FirebaseFirestore.instance.collection('users').doc(user1Id);
+      batch.update(user1Ref, {
+        'matches': FieldValue.arrayUnion([mutualMatchId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      final user2Ref = FirebaseFirestore.instance.collection('users').doc(user2Id);
+      batch.update(user2Ref, {
+        'matches': FieldValue.arrayUnion([mutualMatchId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      print('🎉 Mutual match created between $user1Id and $user2Id');
+
+    } catch (e) {
+      print('❌ Error creating mutual match: $e');
     }
   }
 
@@ -156,39 +349,188 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Social media URLs
-  String get _instagramUrl =>
-      "https://instagram.com/${_userProfile?.instagram ?? _userProfile?.username}";
-  String get _twitterUrl =>
-      "https://twitter.com/${_userProfile?.twitter ?? _userProfile?.username}";
-  String get _facebookUrl =>
-      "https://facebook.com/${_userProfile?.facebook ?? _userProfile?.username}";
-  String get _tiktokUrl =>
-      "https://tiktok.com/@${_userProfile?.tiktok ?? _userProfile?.username}";
-  String get _youtubeUrl =>
-      "https://youtube.com/c/${_userProfile?.youtube ?? _userProfile?.username}";
-
+  // Enhanced URL launch methods
   Future<void> _launchURL(String url) async {
-    final Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+    if (url.isEmpty) {
+      _showSnackBar('No URL available');
+      return;
+    }
+
+    try {
+      final Uri uri = Uri.parse(url);
+
+      // First try external application (browser)
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } else {
+        // Fallback to in-app web view
+        await launchUrl(
+          uri,
+          mode: LaunchMode.inAppWebView,
+        );
+      }
+
+    } catch (e) {
+      print('Error launching URL: $e');
+      _showSnackBar('Error opening link. Please make sure you have a browser installed.');
     }
   }
 
+  Future<bool> _tryLaunchUrl(Uri uri) async {
+    try {
+      // First try with external application
+      final canLaunch = await canLaunchUrl(uri);
+      if (canLaunch) {
+        return await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      }
+
+      // Fallback to in-app web view
+      return await launchUrl(
+        uri,
+        mode: LaunchMode.inAppWebView,
+      );
+    } catch (e) {
+      print('Error in _tryLaunchUrl: $e');
+      return false;
+    }
+  }
+// Enhanced social media launch methods that open in browser
+  Future<void> _launchInstagram() async {
+    if (_userProfile?.instagram?.isEmpty ?? true) {
+      _showSnackBar('No Instagram username available');
+      return;
+    }
+
+    final username = _userProfile!.instagram!.replaceAll('@', '');
+    final url = "https://instagram.com/$username";
+
+    await _launchURL(url);
+  }
+
+  Future<void> _launchTwitter() async {
+    if (_userProfile?.twitter?.isEmpty ?? true) {
+      _showSnackBar('No Twitter username available');
+      return;
+    }
+
+    final username = _userProfile!.twitter!.replaceAll('@', '');
+    final url = "https://twitter.com/$username";
+
+    await _launchURL(url);
+  }
+
+  Future<void> _launchFacebook() async {
+    if (_userProfile?.facebook?.isEmpty ?? true) {
+      _showSnackBar('No Facebook username available');
+      return;
+    }
+
+    final username = _userProfile!.facebook!.replaceAll('@', '');
+    final url = "https://facebook.com/$username";
+
+    await _launchURL(url);
+  }
+
+  Future<void> _launchTikTok() async {
+    if (_userProfile?.tiktok?.isEmpty ?? true) {
+      _showSnackBar('No TikTok username available');
+      return;
+    }
+
+    final username = _userProfile!.tiktok!.replaceAll('@', '');
+    final url = "https://tiktok.com/@$username";
+
+    await _launchURL(url);
+  }
+
+  Future<void> _launchYouTube() async {
+    if (_userProfile?.youtube?.isEmpty ?? true) {
+      _showSnackBar('No YouTube channel available');
+      return;
+    }
+
+    final channel = _userProfile!.youtube!.replaceAll('@', '');
+    final url = "https://youtube.com/c/$channel";
+
+    await _launchURL(url);
+  }
   Future<void> _launchEmail() async {
     final email = _userProfile?.email;
-    if (email == null || email.isEmpty) return;
+    if (email == null || email.isEmpty) {
+      _showSnackBar('No email available');
+      return;
+    }
 
-    final Uri emailLaunchUri = Uri(scheme: 'mailto', path: email);
-    if (await canLaunchUrl(emailLaunchUri)) {
-      await launchUrl(emailLaunchUri);
+    try {
+      final Uri emailLaunchUri = Uri(
+        scheme: 'mailto',
+        path: email,
+        queryParameters: {
+          'subject': 'Hello from Meet9ja!',
+          'body': 'I found you on Meet9ja and wanted to connect!',
+        },
+      );
+
+      if (await canLaunchUrl(emailLaunchUri)) {
+        await launchUrl(
+          emailLaunchUri,
+          mode: LaunchMode.externalApplication,
+        );
+      } else {
+        _showSnackBar('No email app found. Please install an email app.');
+      }
+    } catch (e) {
+      print('Error launching email: $e');
+      _showSnackBar('Error opening email app. Please install an email app.');
     }
   }
 
   Future<void> _launchWebsite() async {
     final website = _userProfile?.website;
-    if (website == null || website.isEmpty) return;
-    await _launchURL(website);
+    if (website == null || website.isEmpty) {
+      _showSnackBar('No website available');
+      return;
+    }
+
+    try {
+      // Ensure website has proper protocol
+      String websiteUrl = website;
+      if (!websiteUrl.startsWith('http://') && !websiteUrl.startsWith('https://')) {
+        websiteUrl = 'https://$websiteUrl';
+      }
+
+      final Uri uri = Uri.parse(websiteUrl);
+
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } else {
+        _showSnackBar('Could not open website. Please check your connection.');
+      }
+    } catch (e) {
+      print('Error launching website: $e');
+      _showSnackBar('Error opening website. Please check the URL and try again.');
+    }
+  }
+
+  void _showSnackBar(String message, {Color color = Colors.orange}) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   @override
@@ -218,14 +560,16 @@ class _ProfileScreenState extends State<ProfileScreen>
               userProfile: _userProfile!,
               userStats: _userStats,
               isFollowing: _isFollowing,
+              isMatched: _isMatched,
               isSmallScreen: isSmallScreen,
               onFollowTap: _toggleFollow,
+              onMatchTap: _toggleMatch,
               onEditTap: _navigateToEditProfile,
-              onInstagramTap: () => _launchURL(_instagramUrl),
-              onTwitterTap: () => _launchURL(_twitterUrl),
-              onFacebookTap: () => _launchURL(_facebookUrl),
-              onTikTokTap: () => _launchURL(_tiktokUrl),
-              onYouTubeTap: () => _launchURL(_youtubeUrl),
+              onInstagramTap: _launchInstagram,
+              onTwitterTap: _launchTwitter,
+              onFacebookTap: _launchFacebook,
+              onTikTokTap: _launchTikTok,
+              onYouTubeTap: _launchYouTube,
             ),
 
             SliverPersistentHeader(
@@ -351,28 +695,34 @@ class _ProfileScreenState extends State<ProfileScreen>
         isMyProfile: widget.isMyProfile,
         onEmailTap: _launchEmail,
         onWebsiteTap: _launchWebsite,
-        onInstagramTap: () => _launchURL(_instagramUrl),
-        onTwitterTap: () => _launchURL(_twitterUrl),
-        onFacebookTap: () => _launchURL(_facebookUrl),
-        onTikTokTap: () => _launchURL(_tiktokUrl),
-        onYouTubeTap: () => _launchURL(_youtubeUrl),
+        onInstagramTap: _launchInstagram,
+        onTwitterTap: _launchTwitter,
+        onFacebookTap: _launchFacebook,
+        onTikTokTap: _launchTikTok,
+        onYouTubeTap: _launchYouTube,
       ),
-      _SchedulesTab(isMyProfile: widget.isMyProfile),
     ]);
+
+    // Only add Schedules tab for my profile
+    if (widget.isMyProfile) {
+      tabs.add(_SchedulesTab(isMyProfile: widget.isMyProfile));
+    }
 
     return tabs;
   }
 }
 
-// Updated _SliverHeader to include edit functionality
+// Updated _SliverHeader with Follow and Match buttons
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
     required this.userProfile,
     required this.userStats,
     required this.isFollowing,
+    required this.isMatched,
     required this.isSmallScreen,
     required this.onFollowTap,
+    required this.onMatchTap,
     required this.onEditTap,
     required this.onInstagramTap,
     required this.onTwitterTap,
@@ -385,14 +735,24 @@ class _SliverHeader extends StatelessWidget {
   final UserModel userProfile;
   final Map<String, int> userStats;
   final bool isFollowing;
+  final bool isMatched;
   final bool isSmallScreen;
   final VoidCallback onFollowTap;
+  final VoidCallback onMatchTap;
   final VoidCallback onEditTap;
   final VoidCallback onInstagramTap;
   final VoidCallback onTwitterTap;
   final VoidCallback onFacebookTap;
   final VoidCallback onTikTokTap;
   final VoidCallback onYouTubeTap;
+
+  bool get _hasSocialMedia {
+    return userProfile.instagram?.isNotEmpty == true ||
+        userProfile.twitter?.isNotEmpty == true ||
+        userProfile.facebook?.isNotEmpty == true ||
+        userProfile.tiktok?.isNotEmpty == true ||
+        userProfile.youtube?.isNotEmpty == true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -419,9 +779,9 @@ class _SliverHeader extends StatelessWidget {
             onPressed: () {
               FirebaseService.signOut();
               Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => Signinscreen()),
+                MaterialPageRoute(builder: (_) => Signinscreen()),
               );
-              },
+            },
           )
         else
           IconButton(
@@ -567,21 +927,13 @@ class _SliverHeader extends StatelessWidget {
                   _buildOtherProfileActions(),
 
                 // Social Media Handles - Only show if user has social media
-                if (_hasSocialMedia()) _buildSocialMediaHandles(),
+                if (_hasSocialMedia) _buildSocialMediaHandles(),
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  bool _hasSocialMedia() {
-    return userProfile.instagram != null ||
-        userProfile.twitter != null ||
-        userProfile.facebook != null ||
-        userProfile.tiktok != null ||
-        userProfile.youtube != null;
   }
 
   Widget _buildMyProfileActions() {
@@ -629,6 +981,7 @@ class _SliverHeader extends StatelessWidget {
   Widget _buildOtherProfileActions() {
     return Row(
       children: [
+        // Follow Button
         Expanded(
           child: _ActionButton(
             label: isFollowing ? "Following" : "Follow",
@@ -641,19 +994,27 @@ class _SliverHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
+
+        // Match Button
         Expanded(
           child: _ActionButton(
-            label: "Message",
-            icon: FontAwesomeIcons.solidCommentDots,
-            onPressed: () {},
+            label: isMatched ? "Matched" : "Match",
+            icon: isMatched
+                ? FontAwesomeIcons.heartCircleCheck
+                : FontAwesomeIcons.heart,
+            color: isMatched ? Colors.green : AppColors.primary,
+            textColor: Colors.white,
+            onPressed: onMatchTap,
           ),
         ),
         const SizedBox(width: 6),
+
+        // Message Button
         SizedBox(
           width: 75,
           child: _ActionButton(
-            label: "Gift",
-            icon: FontAwesomeIcons.solidGem,
+            label: "Message",
+            icon: FontAwesomeIcons.solidCommentDots,
             onPressed: () {},
           ),
         ),
@@ -679,39 +1040,44 @@ class _SliverHeader extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              if (userProfile.instagram != null)
+              if (userProfile.instagram?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.instagram,
                   color: const Color(0xFFE4405F),
                   onTap: onInstagramTap,
+                  isEnabled: true,
                 ),
-              if (userProfile.twitter != null) const SizedBox(width: 12),
-              if (userProfile.twitter != null)
+              if (userProfile.twitter?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.twitter?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.xTwitter,
                   color: Colors.black,
                   onTap: onTwitterTap,
+                  isEnabled: true,
                 ),
-              if (userProfile.facebook != null) const SizedBox(width: 12),
-              if (userProfile.facebook != null)
+              if (userProfile.facebook?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.facebook?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.facebook,
                   color: const Color(0xFF1877F2),
                   onTap: onFacebookTap,
+                  isEnabled: true,
                 ),
-              if (userProfile.tiktok != null) const SizedBox(width: 12),
-              if (userProfile.tiktok != null)
+              if (userProfile.tiktok?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.tiktok?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.tiktok,
                   color: Colors.black,
                   onTap: onTikTokTap,
+                  isEnabled: true,
                 ),
-              if (userProfile.youtube != null) const SizedBox(width: 12),
-              if (userProfile.youtube != null)
+              if (userProfile.youtube?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.youtube?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.youtube,
                   color: const Color(0xFFFF0000),
                   onTap: onYouTubeTap,
+                  isEnabled: true,
                 ),
             ],
           ),
@@ -721,7 +1087,164 @@ class _SliverHeader extends StatelessWidget {
   }
 }
 
-// Tab Content Widgets
+// UI Components
+class _StatTile extends StatelessWidget {
+  final String label;
+  final int value;
+
+  const _StatTile({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            _shortNumber(value),
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 16,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black54,
+              fontWeight: FontWeight.w400,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _shortNumber(int n) {
+  if (n >= 1000000) return "${(n / 1000000).toStringAsFixed(1)}M";
+  if (n >= 1000) return "${(n / 1000).toStringAsFixed(1)}K";
+  return n.toString();
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.color = const Color(0xFFF0F0F0),
+    this.textColor = Colors.black87,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final Color color;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: textColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+      ),
+      onPressed: onPressed,
+      icon: Icon(icon, size: 13),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: textColor,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+class _SocialMediaIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final bool isEnabled;
+
+  const _SocialMediaIcon({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.isEnabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: isEnabled ? onTap : null,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: isEnabled
+              ? color.withOpacity(0.1)
+              : Colors.grey.withOpacity(0.1),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isEnabled
+                ? color.withOpacity(0.3)
+                : Colors.grey.withOpacity(0.3),
+            width: 1.5,
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: isEnabled ? color : Colors.grey,
+        ),
+      ),
+    );
+  }
+}
+
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  _TabBarDelegate(this._tabBar);
+
+  final TabBar _tabBar;
+
+  @override
+  Widget build(
+      BuildContext context,
+      double shrinkOffset,
+      bool overlapsContent,
+      ) {
+    return Container(color: Colors.white, child: _tabBar);
+  }
+
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+
+  @override
+  bool shouldRebuild(_TabBarDelegate oldDelegate) {
+    return false;
+  }
+}
+
+// Tab Content Widgets (Keep your existing implementations)
 class _HomeTab extends StatelessWidget {
   final String userId;
   const _HomeTab({required this.userId});
@@ -815,7 +1338,6 @@ class _ClipsTabState extends State<_ClipsTab> {
     );
   }
 
-  // Add this new method for the Add Post button
   Widget _buildAddPostButton() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -844,7 +1366,6 @@ class _ClipsTabState extends State<_ClipsTab> {
     );
   }
 
-  // Add this method to handle post creation
   void _createNewPost() async {
     final result = await Navigator.push(
       context,
@@ -870,17 +1391,6 @@ class _ClipsTabState extends State<_ClipsTab> {
     return StreamBuilder<List<StoryModel>>(
       stream: _storiesStream,
       builder: (context, snapshot) {
-        // Debug logging
-        print('Stories StreamBuilder - Connection: ${snapshot.connectionState}');
-        print('Stories StreamBuilder - Has data: ${snapshot.hasData}');
-        if (snapshot.hasData) {
-          print('Stories count: ${snapshot.data!.length}');
-        }
-        if (snapshot.hasError) {
-          print('Stories error: ${snapshot.error}');
-        }
-
-        // Handle different states
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildStoriesLoading();
         }
@@ -956,7 +1466,6 @@ class _ClipsTabState extends State<_ClipsTab> {
               children: [
                 if (widget.isMyProfile)
                   _buildAddStoryButtonSkeleton(),
-                // Add skeleton loading for stories
                 _buildStoryCircleSkeleton(),
                 _buildStoryCircleSkeleton(),
               ],
@@ -1077,7 +1586,6 @@ class _ClipsTabState extends State<_ClipsTab> {
     );
   }
 
-  // Separate function for better state management
   void _createNewStory() async {
     final result = await Navigator.push(
       context,
@@ -1087,15 +1595,12 @@ class _ClipsTabState extends State<_ClipsTab> {
     );
 
     if (result == true && mounted) {
-      // Force complete rebuild of stories section
       setState(() {
-        _storiesKey = UniqueKey(); // Change the key to force rebuild
+        _storiesKey = UniqueKey();
       });
 
-      // Optional: Add a small delay to ensure Firestore updates
       await Future.delayed(Duration(milliseconds: 500));
 
-      // Force another rebuild to get fresh data
       if (mounted) {
         setState(() {});
       }
@@ -1104,7 +1609,7 @@ class _ClipsTabState extends State<_ClipsTab> {
 
   Widget _buildStoryCircle(StoryModel story, {Key? key}) {
     return Container(
-      key: key, // Use the provided key
+      key: key,
       width: 70,
       margin: const EdgeInsets.symmetric(horizontal: 4),
       child: Column(
@@ -1292,216 +1797,6 @@ class _WalletTab extends StatelessWidget {
   final UserModel userProfile;
   const _WalletTab({required this.userProfile});
 
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: _WalletTabContent(userProfile: userProfile),
-    );
-  }
-}
-
-class _AboutTab extends StatelessWidget {
-  final UserModel userProfile;
-  final bool isMyProfile;
-  final VoidCallback onEmailTap;
-  final VoidCallback onWebsiteTap;
-  final VoidCallback onInstagramTap;
-  final VoidCallback onTwitterTap;
-  final VoidCallback onFacebookTap;
-  final VoidCallback onTikTokTap;
-  final VoidCallback onYouTubeTap;
-
-  const _AboutTab({
-    required this.userProfile,
-    required this.isMyProfile,
-    required this.onEmailTap,
-    required this.onWebsiteTap,
-    required this.onInstagramTap,
-    required this.onTwitterTap,
-    required this.onFacebookTap,
-    required this.onTikTokTap,
-    required this.onYouTubeTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: _AboutTabContent(
-        userProfile: userProfile,
-        isMyProfile: isMyProfile,
-        onEmailTap: onEmailTap,
-        onWebsiteTap: onWebsiteTap,
-        onInstagramTap: onInstagramTap,
-        onTwitterTap: onTwitterTap,
-        onFacebookTap: onFacebookTap,
-        onTikTokTap: onTikTokTap,
-        onYouTubeTap: onYouTubeTap,
-      ),
-    );
-  }
-}
-
-class _SchedulesTab extends StatelessWidget {
-  final bool isMyProfile;
-  const _SchedulesTab({required this.isMyProfile});
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: _SchedulesTabContent(isMyProfile: isMyProfile),
-    );
-  }
-}
-
-// UI Components
-class _StatTile extends StatelessWidget {
-  final String label;
-  final int value;
-
-  const _StatTile({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _shortNumber(value),
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 16,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.black54,
-              fontWeight: FontWeight.w400,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _shortNumber(int n) {
-  if (n >= 1000000) return "${(n / 1000000).toStringAsFixed(1)}M";
-  if (n >= 1000) return "${(n / 1000).toStringAsFixed(1)}K";
-  return n.toString();
-}
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-    this.color = const Color(0xFFF0F0F0),
-    this.textColor = Colors.black87,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
-  final Color color;
-  final Color textColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: textColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-      ),
-      onPressed: onPressed,
-      icon: Icon(icon, size: 13),
-      label: Text(
-        label,
-        style: TextStyle(
-          fontWeight: FontWeight.w800,
-          color: textColor,
-          fontSize: 13,
-        ),
-      ),
-    );
-  }
-}
-
-class _SocialMediaIcon extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _SocialMediaIcon({
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          shape: BoxShape.circle,
-          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
-        ),
-        child: Icon(icon, size: 16, color: color),
-      ),
-    );
-  }
-}
-
-class _TabBarDelegate extends SliverPersistentHeaderDelegate {
-  _TabBarDelegate(this._tabBar);
-
-  final TabBar _tabBar;
-
-  @override
-  Widget build(
-      BuildContext context,
-      double shrinkOffset,
-      bool overlapsContent,
-      ) {
-    return Container(color: Colors.white, child: _tabBar);
-  }
-
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-
-  @override
-  bool shouldRebuild(_TabBarDelegate oldDelegate) {
-    return false;
-  }
-}
-
-// Wallet Tab Content
-class _WalletTabContent extends StatelessWidget {
-  final UserModel userProfile;
-  const _WalletTabContent({required this.userProfile});
-
   Widget _walletTile({
     required String title,
     required String value,
@@ -1595,6 +1890,378 @@ class _WalletTabContent extends StatelessWidget {
             onTap: () {},
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AboutTab extends StatelessWidget {
+  final UserModel userProfile;
+  final bool isMyProfile;
+  final VoidCallback onEmailTap;
+  final VoidCallback onWebsiteTap;
+  final VoidCallback onInstagramTap;
+  final VoidCallback onTwitterTap;
+  final VoidCallback onFacebookTap;
+  final VoidCallback onTikTokTap;
+  final VoidCallback onYouTubeTap;
+
+  const _AboutTab({
+    required this.userProfile,
+    required this.isMyProfile,
+    required this.onEmailTap,
+    required this.onWebsiteTap,
+    required this.onInstagramTap,
+    required this.onTwitterTap,
+    required this.onFacebookTap,
+    required this.onTikTokTap,
+    required this.onYouTubeTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final joinDate = UserService.getFormattedJoinDate(userProfile);
+    final primaryMode = UserService.getPrimaryMode(userProfile);
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Bio Section
+          _SectionCard(
+            title: "Bio",
+            child: Text(
+              userProfile.bio?.isNotEmpty == true
+                  ? userProfile.bio!
+                  : 'No bio yet. ${isMyProfile ? 'Add a bio to tell people about yourself!' : ''}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Info Section
+          _SectionCard(
+            title: "Info",
+            child: Column(
+              children: [
+                _InfoTile(
+                  icon: FontAwesomeIcons.locationDot,
+                  label: "Location",
+                  value: userProfile.location?.isNotEmpty == true
+                      ? userProfile.location!
+                      : 'Not set',
+                ),
+                const SizedBox(height: 12),
+                _InfoTile(
+                  icon: FontAwesomeIcons.calendar,
+                  label: "Joined",
+                  value: joinDate,
+                ),
+                const SizedBox(height: 12),
+                _InfoTile(
+                  icon: FontAwesomeIcons.user,
+                  label: "Primary Mode",
+                  value: primaryMode,
+                ),
+                const SizedBox(height: 12),
+                _InfoTile(
+                  icon: FontAwesomeIcons.venusMars,
+                  label: "Preferences",
+                  value: userProfile.preferences.isNotEmpty
+                      ? userProfile.preferences
+                      : 'Not set',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Links Section
+          if (userProfile.email.isNotEmpty ||
+              userProfile.website?.isNotEmpty == true ||
+              userProfile.instagram?.isNotEmpty == true ||
+              userProfile.twitter?.isNotEmpty == true ||
+              userProfile.facebook?.isNotEmpty == true ||
+              userProfile.tiktok?.isNotEmpty == true ||
+              userProfile.youtube?.isNotEmpty == true)
+            _SectionCard(
+              title: "Links",
+              child: Column(
+                children: [
+                  if (userProfile.email.isNotEmpty)
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.solidEnvelope,
+                      label: "Email",
+                      value: userProfile.email,
+                      onTap: onEmailTap,
+                    ),
+                  if (userProfile.website?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.globe,
+                      label: "Website",
+                      value: userProfile.website!,
+                      onTap: onWebsiteTap,
+                    ),
+                  ],
+                  if (userProfile.instagram?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty ||
+                        userProfile.website?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.instagram,
+                      label: "Instagram",
+                      value: userProfile.instagram!,
+                      onTap: onInstagramTap,
+                    ),
+                  ],
+                  if (userProfile.twitter?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty ||
+                        userProfile.website?.isNotEmpty == true ||
+                        userProfile.instagram?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.xTwitter,
+                      label: "Twitter",
+                      value: userProfile.twitter!,
+                      onTap: onTwitterTap,
+                    ),
+                  ],
+                  if (userProfile.facebook?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty ||
+                        userProfile.website?.isNotEmpty == true ||
+                        userProfile.instagram?.isNotEmpty == true ||
+                        userProfile.twitter?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.facebook,
+                      label: "Facebook",
+                      value: userProfile.facebook!,
+                      onTap: onFacebookTap,
+                    ),
+                  ],
+                  if (userProfile.tiktok?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty ||
+                        userProfile.website?.isNotEmpty == true ||
+                        userProfile.instagram?.isNotEmpty == true ||
+                        userProfile.twitter?.isNotEmpty == true ||
+                        userProfile.facebook?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.tiktok,
+                      label: "TikTok",
+                      value: userProfile.tiktok!,
+                      onTap: onTikTokTap,
+                    ),
+                  ],
+                  if (userProfile.youtube?.isNotEmpty == true) ...[
+                    if (userProfile.email.isNotEmpty ||
+                        userProfile.website?.isNotEmpty == true ||
+                        userProfile.instagram?.isNotEmpty == true ||
+                        userProfile.twitter?.isNotEmpty == true ||
+                        userProfile.facebook?.isNotEmpty == true ||
+                        userProfile.tiktok?.isNotEmpty == true)
+                      const SizedBox(height: 12),
+                    _ClickableInfoTile(
+                      icon: FontAwesomeIcons.youtube,
+                      label: "YouTube",
+                      value: userProfile.youtube!,
+                      onTap: onYouTubeTap,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _SchedulesTab extends StatelessWidget {
+  final bool isMyProfile;
+  const _SchedulesTab({required this.isMyProfile});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(FontAwesomeIcons.calendar, size: 60, color: Colors.black26),
+          SizedBox(height: 16),
+          Text(
+            "No schedules yet.",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            "Check back later for upcoming streams.",
+            style: TextStyle(fontSize: 14, color: Colors.black45),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// UI Components for About Tab
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _SectionCard({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _InfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: Colors.black87, size: 18),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black54,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ClickableInfoTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  const _ClickableInfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: Colors.black87, size: 18),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              FontAwesomeIcons.arrowUpRightFromSquare,
+              size: 14,
+              color: Colors.black54,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1819,156 +2486,6 @@ class _SchedulesTabContent extends StatelessWidget {
             style: TextStyle(fontSize: 14, color: Colors.black45),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// UI Components for About Tab
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-  const _SectionCard({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _InfoTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: Colors.black87, size: 18),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black87,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ClickableInfoTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final VoidCallback onTap;
-
-  const _ClickableInfoTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Colors.black87, size: 18),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              FontAwesomeIcons.arrowUpRightFromSquare,
-              size: 14,
-              color: Colors.black54,
-            ),
-          ],
-        ),
       ),
     );
   }
