@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/messages_screen.dart' hide StoryModel;
 import 'package:meet9ja/screens/post_detail_screen.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
@@ -765,7 +766,12 @@ class _ProfileScreenState extends State<ProfileScreen>
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.black),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => HomeScreen()),
+            );
+          },
         ),
         backgroundColor: Colors.white,
         elevation: 0,

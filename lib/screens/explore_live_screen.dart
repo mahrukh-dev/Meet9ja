@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:meet9ja/screens/profile_screen.dart';
 
 import '../constants/app_colors.dart';
+import 'discover_screen.dart';
+import 'home_screen.dart';
 import 'livestream_screen.dart';
+import 'messages_screen.dart';
 
 class ExploreLiveScreen extends StatefulWidget {
   const ExploreLiveScreen({super.key});
@@ -465,89 +470,155 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         ),
       ),
 
-      // Body content
-      body: Container(
-        color: darkBackground,
-        child: _isLoading
-            ? _buildLoadingState()
-            : TabBarView(
-          controller: _tab,
-          children: [
-            // Stories Tab - Shows ALL stories from other users
-            _ReelsFeed(items: _followingReels, showStories: true),
-
-            // Live Tab - Shows live streams
-            Column(
+      // Body content with floating button
+      body: Stack(
+        children: [
+          Container(
+            color: darkBackground,
+            child: _isLoading
+                ? _buildLoadingState()
+                : TabBarView(
+              controller: _tab,
               children: [
-                const SizedBox(height: 8),
-                // Live Filters Bar
-                _LiveFiltersBar(
-                  filters: _liveFilters,
-                  selected: _liveFilterIndex,
-                  onTap: (i) => setState(() => _liveFilterIndex = i),
-                  backgroundColor: darkBackground,
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: _liveRooms.isEmpty
-                      ? _buildEmptyLiveState()
-                      : CustomScrollView(
-                    slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        sliver: SliverGrid(
-                          delegate: SliverChildBuilderDelegate(
-                                (context, i) => _LiveTile(
-                              room: _liveRooms[i],
-                              onTap: () => _joinLiveStream(context, _liveRooms[i]),
+                // Stories Tab - Shows ALL stories from other users
+                _ReelsFeed(items: _followingReels, showStories: true),
+
+                // Live Tab - Shows live streams
+                Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    // Live Filters Bar
+                    _LiveFiltersBar(
+                      filters: _liveFilters,
+                      selected: _liveFilterIndex,
+                      onTap: (i) => setState(() => _liveFilterIndex = i),
+                      backgroundColor: darkBackground,
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: _liveRooms.isEmpty
+                          ? _buildEmptyLiveState()
+                          : CustomScrollView(
+                        slivers: [
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            sliver: SliverGrid(
+                              delegate: SliverChildBuilderDelegate(
+                                    (context, i) => _LiveTile(
+                                  room: _liveRooms[i],
+                                  onTap: () => _joinLiveStream(context, _liveRooms[i]),
+                                ),
+                                childCount: _liveRooms.length,
+                              ),
+                              gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                                childAspectRatio: 9 / 14,
+                              ),
                             ),
-                            childCount: _liveRooms.length,
                           ),
-                          gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            childAspectRatio: 9 / 14,
-                          ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+
+                // Posts Tab - Shows ALL posts from other users
+                _ReelsFeed(items: _clipsReels, showStories: false),
               ],
             ),
-
-            // Posts Tab - Shows ALL posts from other users
-            _ReelsFeed(items: _clipsReels, showStories: false),
-          ],
-        ),
-      ),
-
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: Colors.black12.withOpacity(.4)),
           ),
-          color: Colors.white,
-        ),
-        height: 58,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            const _BottomItem(
-                icon: FontAwesomeIcons.house, label: "Home", selected: true),
-            const _BottomItem(icon: FontAwesomeIcons.compass, label: "Browse"),
-            _BottomCreateButton(
+
+          // Floating Live Button - Positioned on screen
+          Positioned(
+            right: 20,
+            bottom: 20, // Position above the bottom nav
+            child: _FloatingLiveButton(
               onTap: () => _checkPremiumAndGoLive(context),
             ),
-            const _BottomItem(icon: FontAwesomeIcons.bell, label: "Activity"),
-            const _BottomItem(icon: FontAwesomeIcons.user, label: "Profile"),
+          ),
+        ],
+      ),
+
+      // Bottom Navigation Bar (without floating button)
+      bottomNavigationBar: Container(
+        height: 90,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 14)],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Profile
+            _BottomNavItem(
+              icon: CupertinoIcons.person,
+              label: "Profile",
+              selected: false,
+              onTap: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => ProfileScreen()),
+                );
+              },
+            ),
+
+            // Discover
+            _BottomNavItem(
+              icon: FontAwesomeIcons.compass,
+              label: "Discover",
+              selected: false,
+              onTap: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DiscoverScreen()),
+                );
+              },
+            ),
+
+            // People (Home)
+            _BottomNavItem(
+              icon: FontAwesomeIcons.userGroup,
+              label: "People",
+              selected: false,
+              onTap: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                );
+              },
+            ),
+
+            // Live (Current)
+            _BottomNavItem(
+              icon: FontAwesomeIcons.video,
+              label: "Live",
+              selected: true,
+              onTap: () {}, // Already on live screen
+            ),
+
+            // Chats
+            _BottomNavItem(
+              icon: FontAwesomeIcons.comment,
+              label: "Chats",
+              selected: false,
+              onTap: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MessagesScreen()),
+                );
+              },
+            ),
           ],
         ),
       ),
     );
   }
+
 
   Widget _buildLoadingState() {
     return const Center(
@@ -564,6 +635,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       ),
     );
   }
+
+
 
   Widget _buildEmptyLiveState() {
     return Center(
@@ -1519,6 +1592,50 @@ class _BottomItem extends StatelessWidget {
   }
 }
 
+class _FloatingLiveButton extends StatelessWidget {
+  const _FloatingLiveButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 35,
+        height: 35,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.primary,
+              AppColors.primary.withOpacity(0.8),
+            ],
+          ),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.4),
+              blurRadius: 15,
+              spreadRadius: 2,
+              offset: const Offset(0, 4),
+            ),
+          ],
+          border: Border.all(
+            color: Colors.white,
+            width: 2,
+          ),
+        ),
+        child: const Icon(
+          FontAwesomeIcons.video,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+}
+
 class _BottomCreateButton extends StatelessWidget {
   const _BottomCreateButton({required this.onTap});
   final VoidCallback onTap;
@@ -1542,6 +1659,62 @@ class _BottomCreateButton extends StatelessWidget {
           ],
         ),
         child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
+      ),
+    );
+  }
+}
+
+class _BottomNavItem extends StatelessWidget {
+  const _BottomNavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.primary.withOpacity(0.08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: selected ? 30 : 28,
+                color: selected ? AppColors.primary : Colors.black54,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  height: 1.0,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: selected ? AppColors.primary : Colors.black54,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

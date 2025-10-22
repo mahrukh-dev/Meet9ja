@@ -5,9 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/models/post_model.dart';
 import 'package:meet9ja/models/user_model.dart';
+import 'package:meet9ja/screens/profile_screen.dart';
 import '../constants/app_colors.dart';
+import 'explore_live_screen.dart';
 import 'home_screen_filters.dart';
 import 'home_screen.dart';
+import 'messages_screen.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -1297,7 +1300,6 @@ class _TravelCard extends StatelessWidget {
     );
   }
 }
-
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
   final int current;
@@ -1309,14 +1311,14 @@ class _BottomNav extends StatelessWidget {
       FontAwesomeIcons.user,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.userGroup,
-      FontAwesomeIcons.heart,
+      FontAwesomeIcons.video, // Changed from heart to video
       FontAwesomeIcons.solidCommentDots,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Liked You",
+      "Live", // Changed from "Liked You" to "Live"
       "Chats",
     ];
 
@@ -1339,11 +1341,44 @@ class _BottomNav extends StatelessWidget {
                   onTap!(i);
                   return;
                 }
-                if (i == 2 && current != 2) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => const HomeScreen()),
-                  );
+
+                // Handle navigation based on tab index
+                switch (i) {
+                  case 0: // Profile
+                    if (current != 0) {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => ProfileScreen()),
+                      );
+                    }
+                    break;
+                  case 1: // Discover (current screen)
+                  // Already on Discover screen, do nothing
+                    break;
+                  case 2: // People (HomeScreen)
+                    if (current != 2) {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HomeScreen()),
+                      );
+                    }
+                    break;
+                  case 3: // Live (ExploreLiveScreen)
+                    if (current != 3) {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
+                      );
+                    }
+                    break;
+                  case 4: // Chats
+                    if (current != 4) {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MessagesScreen()),
+                      );
+                    }
+                    break;
                 }
               },
               child: AnimatedContainer(

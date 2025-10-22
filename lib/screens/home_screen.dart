@@ -929,7 +929,6 @@ class _CircleBtn extends StatelessWidget {
     );
   }
 }
-
 // --------- Bottom Nav ----------
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
@@ -942,14 +941,14 @@ class _BottomNav extends StatelessWidget {
       CupertinoIcons.person,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.userGroup,
-      FontAwesomeIcons.heart,
+      FontAwesomeIcons.video, // Changed from heart to video
       FontAwesomeIcons.comment,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Liked You",
+      "Live", // Changed from "Liked You" to "Live"
       "Chats",
     ];
 
@@ -984,6 +983,13 @@ class _BottomNav extends StatelessWidget {
                   Navigator.pushReplacement(
                     context,
                     MaterialPageRoute(builder: (_) => const DiscoverScreen()),
+                  );
+                  return;
+                }
+                if (i == 3 && current != 3) { // Changed from 4 to 3 for Live tab
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
                   );
                   return;
                 }

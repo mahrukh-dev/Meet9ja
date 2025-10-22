@@ -12,6 +12,7 @@ import 'package:meet9ja/screens/create_story_screen.dart';
 import 'package:meet9ja/models/story_model.dart';
 import 'discover_screen.dart';
 import 'chat_screen.dart';
+import 'explore_live_screen.dart';
 import 'home_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
@@ -1101,7 +1102,6 @@ class _ChatTile extends StatelessWidget {
     );
   }
 }
-
 // ---------- Bottom Nav ----------
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
@@ -1114,14 +1114,14 @@ class _BottomNav extends StatelessWidget {
       FontAwesomeIcons.solidUser,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.solidCircleUser,
-      FontAwesomeIcons.solidHeart,
+      FontAwesomeIcons.video, // Changed from solidHeart to video
       FontAwesomeIcons.solidCommentDots,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Liked You",
+      "Live", // Changed from "Liked You" to "Live"
       "Chats",
     ];
 
@@ -1163,6 +1163,17 @@ class _BottomNav extends StatelessWidget {
                     context,
                     MaterialPageRoute(builder: (_) => const HomeScreen()),
                   );
+                  return;
+                }
+                if (i == 3 && current != 3) { // Added navigation for Live tab
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
+                  );
+                  return;
+                }
+                if (i == 4 && current != 4) { // Current screen (Chats), do nothing
+                  // Already on Messages screen, do nothing
                   return;
                 }
               },
