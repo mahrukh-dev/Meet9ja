@@ -283,23 +283,31 @@ class UserService {
         .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
         .toList());
   }
-
   static Stream<List<UserModel>> searchUsers(String query) {
     if (query.isEmpty) {
       return Stream.value([]);
     }
 
+    final searchQuery = query.trim();
+
+    // For very short queries, return empty to avoid too many results
+    if (searchQuery.length < 2) {
+      return Stream.value([]);
+    }
+
     return FirebaseFirestore.instance
         .collection('users')
-        .where('name', isGreaterThanOrEqualTo: query)
-        .where('name', isLessThan: query + 'z')
+        .orderBy('name')
+        .startAt([searchQuery])
+        .endAt([searchQuery + '\uf8ff'])
         .limit(20)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
-        .toList());
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return UserModel.fromFirestore(doc.data() as Map<String, dynamic>);
+      }).toList();
+    });
   }
-
   static int calculateAge(String dateOfBirth) {
     try {
       final birthDate = DateTime.parse(dateOfBirth);

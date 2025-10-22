@@ -7,19 +7,9 @@ import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'package:zego_zimkit/zego_zimkit.dart';
 import 'package:meet9ja/constants/app_colors.dart';
-import 'discover_screen.dart';
-import 'chat_screen.dart';
-import 'home_screen.dart';
-
-import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:meet9ja/screens/profile_screen.dart';
-import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
-import 'package:zego_zimkit/zego_zimkit.dart';
-import 'package:meet9ja/constants/app_colors.dart';
+import 'package:meet9ja/screens/story_view_screen.dart';
+import 'package:meet9ja/screens/create_story_screen.dart';
+import 'package:meet9ja/models/story_model.dart';
 import 'discover_screen.dart';
 import 'chat_screen.dart';
 import 'home_screen.dart';
@@ -39,12 +29,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
   // --- Real Data State ---
   List<_Conversation> _chats = [];
   List<_Conversation> _filteredChats = [];
-  List<_Story> _stories = [];
+  List<_StoryDisplay> _stories = [];
   List<_User> _allUsers = [];
   bool _isLoading = true;
   bool _showNewChatOptions = false;
   StreamSubscription<QuerySnapshot>? _chatSubscription;
   StreamSubscription<QuerySnapshot>? _usersSubscription;
+  StreamSubscription<QuerySnapshot>? _storiesSubscription;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -61,6 +52,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   void dispose() {
     _chatSubscription?.cancel();
     _usersSubscription?.cancel();
+    _storiesSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -178,63 +170,94 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  // Load stories from followed users
+  // Load stories from followed users and current user
   Future<void> _loadStories() async {
     try {
       final user = _auth.currentUser;
       if (user == null) return;
 
+      // Get current user's following list
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDoc.data() as Map<String, dynamic>?;
       final following = List<String>.from(userData?['following'] ?? []);
 
-      _stories = [_createYourStory()];
+      // Add current user to the list to show "Your Story"
+      final allUserIds = {user.uid, ...following};
 
-      if (following.isNotEmpty) {
-        final storiesSnapshot = await _firestore
-            .collection('stories')
-            .where('UID', whereIn: following)
-            .where('expires_at', isGreaterThan: Timestamp.now())
-            .get();
+      print('🔄 Loading stories for users: $allUserIds');
 
-        final followedStories = await Future.wait(
-          storiesSnapshot.docs.map((doc) async {
-            final storyData = doc.data() as Map<String, dynamic>;
-            final userDoc = await _firestore.collection('users').doc(storyData['UID']).get();
-            final userData = userDoc.data() as Map<String, dynamic>?;
+      _storiesSubscription = _firestore
+          .collection('stories')
+          .where('UID', whereIn: allUserIds.toList())
+          .where('expires_at', isGreaterThan: Timestamp.now())
+          .orderBy('expires_at', descending: true)
+          .snapshots()
+          .listen((snapshot) async {
+        if (mounted) {
+          final stories = <_StoryDisplay>[];
 
-            return _Story(
-              name: userData?['name'] ?? 'User',
-              avatar: _getFirstPhotoUrl(userData?['first_photos']) ?? 'https://i.pravatar.cc/150?img=1',
-              userId: storyData['UID'],
-              hasActiveStory: true,
-              storyId: doc.id,
-            );
-          }),
-        );
+          // Group stories by user
+          final storiesByUser = <String, List<StoryModel>>{};
 
-        setState(() {
-          _stories.addAll(followedStories);
-        });
-      }
+          for (var doc in snapshot.docs) {
+            try {
+              final story = StoryModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
 
-      print('✅ Loaded ${_stories.length} stories');
+              if (!storiesByUser.containsKey(story.uid)) {
+                storiesByUser[story.uid] = [];
+              }
+              storiesByUser[story.uid]!.add(story);
+            } catch (e) {
+              print('❌ Error processing story ${doc.id}: $e');
+            }
+          }
+
+          // Fetch user data for each story user and create story display items
+          for (final userId in storiesByUser.keys) {
+            try {
+              final userStories = storiesByUser[userId]!;
+              final userDoc = await _firestore.collection('users').doc(userId).get();
+
+              if (userDoc.exists) {
+                final userData = userDoc.data() as Map<String, dynamic>?;
+                final userName = userId == user.uid ? 'You' : userData?['name'] ?? 'User';
+                final userAvatar = _getFirstPhotoUrl(userData?['first_photos']) ?? 'https://i.pravatar.cc/150?img=1';
+
+                // Use the first story for the circle display
+                final firstStory = userStories.first;
+
+                // Create a story display item
+                stories.add(_StoryDisplay(
+                  userId: userId,
+                  userName: userName,
+                  userAvatar: userAvatar,
+                  story: firstStory,
+                  isCurrentUser: userId == user.uid,
+                ));
+              }
+            } catch (e) {
+              print('❌ Error fetching user data for story: $e');
+            }
+          }
+
+          // Sort stories: current user first, then others
+          stories.sort((a, b) {
+            if (a.isCurrentUser) return -1;
+            if (b.isCurrentUser) return 1;
+            return 0;
+          });
+
+          setState(() {
+            _stories = stories;
+          });
+          print('✅ Loaded ${_stories.length} user stories');
+        }
+      }, onError: (e) {
+        print('❌ Stories subscription error: $e');
+      });
     } catch (e) {
       print('❌ Error loading stories: $e');
-      setState(() => _stories = [_createYourStory()]);
     }
-  }
-
-  _Story _createYourStory() {
-    final user = _auth.currentUser;
-    final userAvatar = user?.photoURL ?? "https://i.pravatar.cc/150?img=1";
-    return _Story(
-      name: "You",
-      avatar: userAvatar,
-      userId: user?.uid ?? '',
-      hasActiveStory: false,
-      storyId: '',
-    );
   }
 
   // Search functionality
@@ -390,17 +413,62 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   // Create new story
-  void _createNewStory() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Story creation would open here')),
+  void _createNewStory() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateStoryScreen(userId: user.uid),
+      ),
     );
+
+    if (result == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Story created successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
-  // View user story
-  void _viewUserStory(_Story story) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Viewing ${story.name}\'s story')),
-    );
+  // View user stories
+  void _viewUserStory(_StoryDisplay storyDisplay) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      // Get all stories for this user
+      final storiesSnapshot = await _firestore
+          .collection('stories')
+          .where('UID', isEqualTo: storyDisplay.userId)
+          .where('expires_at', isGreaterThan: Timestamp.now())
+          .orderBy('created_at', descending: false)
+          .get();
+
+      final userStories = storiesSnapshot.docs
+          .map((doc) => StoryModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
+          .toList();
+
+      if (userStories.isNotEmpty) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => StoryViewScreen(
+              stories: userStories,
+              initialIndex: 0,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error viewing story: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to view story: $e')),
+      );
+    }
   }
 
   Widget _buildTitleBar(BuildContext context) {
@@ -551,12 +619,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
         const SizedBox(height: 8),
         SizedBox(
           height: 92,
-          child: ListView.separated(
+          child: _stories.isEmpty
+              ? _buildEmptyStoriesState()
+              : ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _stories.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (_, i) => _StoryCircle(
-              story: _stories[i],
+              storyDisplay: _stories[i],
               onCreateStory: _createNewStory,
               onViewStory: _viewUserStory,
             ),
@@ -590,6 +660,22 @@ class _MessagesScreenState extends State<MessagesScreen> {
         if (_filteredChats.isEmpty) _buildEmptyChatsState(),
         if (_filteredChats.isNotEmpty) ..._buildChatList(),
       ],
+    );
+  }
+
+  Widget _buildEmptyStoriesState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(FontAwesomeIcons.circlePlay, size: 40, color: Colors.grey[300]),
+          const SizedBox(height: 8),
+          const Text(
+            'No stories yet',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 
@@ -708,7 +794,22 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 }
 
-// ... (Keep all the same widget classes: _UserTile, _StoryCircle, _ChatTile, _BottomNav, _SectionHeader, _Story, _User)
+// ---------- Story Display Model (for UI) ----------
+class _StoryDisplay {
+  final String userId;
+  final String userName;
+  final String userAvatar;
+  final StoryModel story;
+  final bool isCurrentUser;
+
+  const _StoryDisplay({
+    required this.userId,
+    required this.userName,
+    required this.userAvatar,
+    required this.story,
+    required this.isCurrentUser,
+  });
+}
 
 // ---------- Updated Conversation Model ----------
 class _Conversation {
@@ -868,28 +969,28 @@ class _UserTile extends StatelessWidget {
   }
 }
 
-// ---------- Stories ----------
+// ---------- Stories Circle ----------
 class _StoryCircle extends StatelessWidget {
   const _StoryCircle({
-    required this.story,
+    required this.storyDisplay,
     required this.onCreateStory,
     required this.onViewStory,
   });
 
-  final _Story story;
+  final _StoryDisplay storyDisplay;
   final VoidCallback onCreateStory;
-  final Function(_Story) onViewStory;
+  final Function(_StoryDisplay) onViewStory;
 
   @override
   Widget build(BuildContext context) {
-    final isYou = story.name == "You";
+    final isYou = storyDisplay.isCurrentUser;
 
     return GestureDetector(
       onTap: () {
         if (isYou) {
           onCreateStory();
         } else {
-          onViewStory(story);
+          onViewStory(storyDisplay);
         }
       },
       child: Column(
@@ -898,7 +999,7 @@ class _StoryCircle extends StatelessWidget {
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: (story.hasActiveStory && !isYou)
+              gradient: (!isYou)
                   ? const LinearGradient(
                 colors: [AppColors.primary, Color(0xFFFFC107)],
               )
@@ -911,7 +1012,7 @@ class _StoryCircle extends StatelessWidget {
               backgroundColor: Colors.white,
               child: CircleAvatar(
                 radius: 28,
-                backgroundImage: NetworkImage(story.avatar),
+                backgroundImage: NetworkImage(storyDisplay.userAvatar),
               ),
             ),
           ),
@@ -919,7 +1020,7 @@ class _StoryCircle extends StatelessWidget {
           SizedBox(
             width: 72,
             child: Text(
-              story.name,
+              storyDisplay.userName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -1119,23 +1220,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ---------- Models ----------
-class _Story {
-  final String name;
-  final String avatar;
-  final String userId;
-  final bool hasActiveStory;
-  final String storyId;
-
-  const _Story({
-    required this.name,
-    required this.avatar,
-    required this.userId,
-    required this.hasActiveStory,
-    required this.storyId,
-  });
-}
-// ---------- New User Model ----------
+// ---------- User Model ----------
 class _User {
   final String id;
   final String name;
