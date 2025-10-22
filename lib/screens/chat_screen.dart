@@ -1,4 +1,3 @@
-// lib/chat_screen.dart
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/cupertino.dart';
@@ -50,8 +49,6 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _loadMessages();
     _markMessagesAsRead();
-    // Initialize ZIMKit conversation
-    _initializeZIMKitConversation();
   }
 
   @override
@@ -60,17 +57,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _textController.dispose();
     _audioPlayer.dispose();
     super.dispose();
-  }
-
-  // Initialize ZIMKit conversation
-  void _initializeZIMKitConversation() async {
-    try {
-      // ZIMKit automatically handles conversation management
-      // No need to manually create conversations
-      print('ZIMKit conversation initialized for user: ${widget.otherUserId}');
-    } catch (e) {
-      print('Error initializing ZIMKit conversation: $e');
-    }
   }
 
   // Load messages from Firestore
@@ -123,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Send text message - Using ZIMKit's built-in functionality
+  // Send text message - Simplified without ZIMKit for now
   void _sendTextMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
@@ -132,15 +118,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (user == null) return;
 
     try {
-      // Use ZIMKit's built-in method to send message
-      // ZIMKit automatically handles the conversation
-      await ZIMKit().sendTextMessage(
-        text,
-        widget.otherUserId as ZIMConversationType,
-        ZIMConversationType.peer as String,
-      );
-
-      // Also save to Firestore for backup
+      // Save to Firestore
       await _saveMessageToFirestore(
         type: 'text',
         text: text,
@@ -156,7 +134,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Send image message - Using ZIMKit's built-in functionality
+  // Send image message
   void _sendImageMessage(File imageFile) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -164,13 +142,6 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       // In a real app, you would upload the image to your storage first
       final imageUrl = 'https://via.placeholder.com/400x300.png?text=Image';
-
-      // Use ZIMKit's built-in method to send image
-      await ZIMKit().sendMediaMessage(
-        widget.otherUserId,
-        ZIMConversationType.peer,
-        imageFile.path as List<ZIMKitPlatformFile>,
-      );
 
       // Save to Firestore
       await _saveMessageToFirestore(
@@ -187,7 +158,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Send voice message - Using ZIMKit's built-in functionality
+  // Send voice message
   void _sendVoiceMessage(String audioPath, int duration) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -195,13 +166,6 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       // In a real app, you would upload the audio file to your storage first
       final audioUrl = 'voice_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-      // Use ZIMKit's built-in method to send audio
-      await ZIMKit().sendMediaMessage(
-        widget.otherUserId,
-        ZIMConversationType.peer,
-        audioPath as List<ZIMKitPlatformFile>,
-      );
 
       // Save to Firestore
       await _saveMessageToFirestore(
@@ -299,7 +263,6 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _isRecording = true;
     });
-    // In a real app, you would start recording using a package like audiorecorder
     print('Voice recording started...');
   }
 
@@ -310,7 +273,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     // Mock: Simulate recording and sending
-    // In a real app, you would get the actual audio file and duration
     final mockDuration = 5; // seconds
     final mockAudioPath = 'temp_audio.m4a';
 
@@ -333,8 +295,6 @@ class _ChatScreenState extends State<ChatScreen> {
           await _audioPlayer.stop();
         }
 
-        // In a real app, you would play from the actual URL
-        // For now, we'll just simulate playback
         setState(() {
           _isPlayingVoiceNote = true;
           _currentPlayingVoiceNote = messageId;
@@ -427,7 +387,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'call_with': {
           'friendUID': widget.otherUserId,
           'start_date_time': FieldValue.serverTimestamp(),
-          'end_date_time': null, // Will be updated when call ends
+          'end_date_time': null,
           'call_type': callType,
         },
         'created_at': FieldValue.serverTimestamp(),
@@ -609,7 +569,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.otherUserName,
+                    widget.otherUserName.substring(1, 1),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

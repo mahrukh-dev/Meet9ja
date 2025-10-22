@@ -1,4 +1,3 @@
-// lib/messages.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -28,8 +27,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
   List<_Conversation> _chats = [];
   List<_Conversation> _filteredChats = [];
   List<_Story> _stories = [];
+  List<_User> _allUsers = []; // New: List of all users for messaging
   bool _isLoading = true;
+  bool _showNewChatOptions = false; // New: Toggle for new chat UI
   StreamSubscription<QuerySnapshot>? _chatSubscription;
+  StreamSubscription<QuerySnapshot>? _usersSubscription;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -38,12 +40,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.initState();
     _searchController.addListener(_performSearch);
     _loadChatsAndStories();
+    _loadAllUsers(); // New: Load all users
     _initializeZegoCloud();
   }
 
   @override
   void dispose() {
     _chatSubscription?.cancel();
+    _usersSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -69,6 +73,37 @@ class _MessagesScreenState extends State<MessagesScreen> {
       print('✅ ZegoCloud ZIMKit initialized and user connected');
     } catch (e) {
       print('❌ ZegoCloud ZIMKit initialization error: $e');
+    }
+  }
+
+  // Load all users for messaging
+  Future<void> _loadAllUsers() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      _usersSubscription = _firestore
+          .collection('users')
+          .where('UID', isNotEqualTo: user.uid) // Exclude current user
+          .snapshots()
+          .listen((snapshot) {
+        if (mounted) {
+          setState(() {
+            _allUsers = snapshot.docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return _User(
+                id: data['UID'] ?? doc.id,
+                name: data['name'] ?? 'User',
+                avatar: data['photo_url'] ?? 'https://i.pravatar.cc/200',
+                isOnline: data['is_online'] ?? false,
+              );
+            }).toList();
+          });
+          print('✅ Loaded ${_allUsers.length} users for messaging');
+        }
+      });
+    } catch (e) {
+      print('❌ Error loading users: $e');
     }
   }
 
@@ -207,43 +242,99 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  // Open Zego conversation list (main chat screen)
-  void _openZegoConversationList() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => WillPopScope(
-          onWillPop: () async => false,
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Conversations'),
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            body: ZIMKitConversationListView(
-              onPressed: (context, conversation, defaultAction) {
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (context) {
-                    return ZIMKitMessageListPage(
-                      conversationID: conversation.id,
-                      conversationType: conversation.type,
-                    );
-                  },
-                ));
-              },
-            ),
-          ),
-        ),
-      ),
-    );
+  // Toggle between existing chats and new chat options
+  void _toggleNewChatOptions() {
+    setState(() {
+      _showNewChatOptions = !_showNewChatOptions;
+      if (_showNewChatOptions) {
+        _searchController.clear();
+      }
+    });
   }
 
-  // Open specific chat with user
-  void _openSpecificChat(_Conversation chat) async {
+  // Start chat with a user
+  void _startChatWithUser(_User user) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return;
+
+      // Create or get conversation ID
+      final conversationId = _getConversationId(currentUser.uid, user.id);
+
+      // Ensure conversation exists in Firestore
+      await _ensureConversationExists(conversationId, currentUser.uid, user);
+
+      // Navigate to chat screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            conversationId: conversationId,
+            otherUserId: user.id,
+            otherUserName: user.name,
+            otherUserAvatar: user.avatar,
+          ),
+        ),
+      );
+
+      // Reset new chat view
+      setState(() {
+        _showNewChatOptions = false;
+      });
+
+    } catch (e) {
+      print('❌ Error starting chat: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start chat: $e')),
+      );
+    }
+  }
+
+  // Generate consistent conversation ID
+  String _getConversationId(String user1, String user2) {
+    final sortedIds = [user1, user2]..sort();
+    return 'conversation_${sortedIds[0]}_${sortedIds[1]}';
+  }
+
+  // Ensure conversation exists in Firestore
+  Future<void> _ensureConversationExists(String conversationId, String currentUserId, _User otherUser) async {
+    try {
+      final conversationDoc = await _firestore.collection('chat_conversations').doc(conversationId).get();
+
+      if (!conversationDoc.exists) {
+        // Create new conversation
+        await _firestore.collection('chat_conversations').doc(conversationId).set({
+          'participants': [currentUserId, otherUser.id],
+          'participantNames': {
+            currentUserId: _auth.currentUser?.displayName ?? 'You',
+            otherUser.id: otherUser.name,
+          },
+          'participantAvatars': {
+            currentUserId: _auth.currentUser?.photoURL ?? 'https://i.pravatar.cc/200',
+            otherUser.id: otherUser.avatar,
+          },
+          'lastMessage': 'Start a conversation',
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'lastMessageType': 'text',
+          'unreadCount': {
+            currentUserId: 0,
+            otherUser.id: 0,
+          },
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('✅ Created new conversation: $conversationId');
+      } else {
+        print('✅ Conversation already exists: $conversationId');
+      }
+    } catch (e) {
+      print('❌ Error ensuring conversation exists: $e');
+      rethrow;
+    }
+  }
+
+  // Open existing chat
+  void _openExistingChat(_Conversation chat) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return;
@@ -251,45 +342,25 @@ class _MessagesScreenState extends State<MessagesScreen> {
       // Mark conversation as read
       await _markConversationAsRead(chat.id);
 
-      // Get the other user's ID
-      final otherUserId = chat.participants.firstWhere(
-            (id) => id != user.uid,
-        orElse: () => '',
+      // Navigate to chat screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            conversationId: chat.id,
+            otherUserId: chat.otherUserId,
+            otherUserName: chat.name,
+            otherUserAvatar: chat.avatar,
+          ),
+        ),
       );
 
-      if (otherUserId.isNotEmpty) {
-        // Navigate directly to chat with specific user
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ZIMKitMessageListPage(
-              conversationID: otherUserId,
-              conversationType: ZIMConversationType.peer,
-            ),
-          ),
-        );
-      }
-
     } catch (e) {
-      print('❌ Error opening specific chat: $e');
-      // Fallback to custom chat screen
-      _openCustomChat(chat);
+      print('❌ Error opening chat: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to open chat: $e')),
+      );
     }
-  }
-
-  // Alternative: Use your custom chat screen as fallback
-  void _openCustomChat(_Conversation chat) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          conversationId: 'conversation_123',
-          otherUserId: 'user_456',
-          otherUserName: 'John Doe',
-          otherUserAvatar: 'https://example.com/avatar.jpg',
-        ),
-      ),
-    );
   }
 
   // Mark conversation as read
@@ -401,17 +472,29 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     _buildTitleBar(context),
 
                     if (!_isSearching)
-                      IconButton(
-                        icon: const FaIcon(
-                          FontAwesomeIcons.magnifyingGlass,
-                          color: AppColors.primary,
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _isSearching = true;
-                          });
-                        },
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: FaIcon(
+                              _showNewChatOptions ? FontAwesomeIcons.comments : FontAwesomeIcons.plus,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            onPressed: _toggleNewChatOptions,
+                          ),
+                          IconButton(
+                            icon: const FaIcon(
+                              FontAwesomeIcons.magnifyingGlass,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isSearching = true;
+                              });
+                            },
+                          ),
+                        ],
                       ),
                   ],
                 ),
@@ -421,7 +504,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
               Expanded(
                 child: _isLoading
                     ? _buildLoadingState()
-                    : _buildContent(),
+                    : _showNewChatOptions
+                    ? _buildNewChatView()
+                    : _buildExistingChatsView(),
               ),
 
               // Bottom nav
@@ -432,13 +517,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ],
           ),
         ),
-      ),
-
-      // Floating Action Button for Zego Conversation List
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openZegoConversationList,
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.chat, color: Colors.white),
       ),
     );
   }
@@ -459,7 +537,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildExistingChatsView() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
       children: [
@@ -482,12 +560,105 @@ class _MessagesScreenState extends State<MessagesScreen> {
         const SizedBox(height: 16),
 
         // Conversations section
-        const _SectionHeader("Conversations"),
+        Row(
+          children: [
+            const _SectionHeader("Conversations"),
+            const Spacer(),
+            if (_chats.isNotEmpty)
+              TextButton(
+                onPressed: _toggleNewChatOptions,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add, size: 16, color: AppColors.primary),
+                    SizedBox(width: 4),
+                    Text(
+                      'New Chat',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: 10),
 
-        // FIXED: Replaced spread operator with proper list concatenation
+        // Chat list
         if (_filteredChats.isEmpty) _buildEmptyChatsState(),
         if (_filteredChats.isNotEmpty) ..._buildChatList(),
+      ],
+    );
+  }
+
+  Widget _buildNewChatView() {
+    return Column(
+      children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+                onPressed: _toggleNewChatOptions,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'New Chat',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+
+        // Search bar for users
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: TextField(
+            decoration: InputDecoration(
+              hintText: "Search users...",
+              prefixIcon: const Icon(Icons.search, color: AppColors.primary),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(25),
+                borderSide: BorderSide.none,
+              ),
+              filled: true,
+              fillColor: Colors.grey[100],
+            ),
+            onChanged: (value) {
+              // Implement user search here
+            },
+          ),
+        ),
+
+        // Users list
+        Expanded(
+          child: _allUsers.isEmpty
+              ? const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.people_outline, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'No users found',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          )
+              : ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _allUsers.length,
+            itemBuilder: (context, index) {
+              final user = _allUsers[index];
+              return _UserTile(
+                user: user,
+                onTap: () => _startChatWithUser(user),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
@@ -496,6 +667,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return Container(
       padding: const EdgeInsets.all(40),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(FontAwesomeIcons.comments, size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
@@ -505,35 +677,93 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Start chatting with your matches',
+            'Start a new conversation with someone',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey),
           ),
           const SizedBox(height: 20),
           ElevatedButton(
-            onPressed: _openZegoConversationList,
+            onPressed: _toggleNewChatOptions,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Open Chat'),
+            child: const Text('Start New Chat'),
           ),
         ],
       ),
     );
   }
 
-  // FIXED: Return type explicitly defined
   List<Widget> _buildChatList() {
     return _filteredChats.map((chat) => Column(
       children: [
         _ChatTile(
           chat: chat,
-          onTap: () => _openSpecificChat(chat), // Use specific chat for direct conversation
+          onTap: () => _openExistingChat(chat),
         ),
         const Divider(height: 0),
       ],
     )).toList();
+  }
+}
+
+// ---------- New User Tile Component ----------
+class _UserTile extends StatelessWidget {
+  const _UserTile({required this.user, required this.onTap});
+  final _User user;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      onTap: onTap,
+      leading: Stack(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundImage: NetworkImage(user.avatar),
+          ),
+          if (user.isOnline)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+              ),
+            ),
+        ],
+      ),
+      title: Text(
+        user.name,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        user.isOnline ? 'Online' : 'Offline',
+        style: TextStyle(
+          color: user.isOnline ? Colors.green : Colors.grey,
+          fontSize: 12,
+        ),
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: const Text(
+          'Message',
+          style: TextStyle(color: Colors.white, fontSize: 12),
+        ),
+      ),
+    );
   }
 }
 
@@ -871,4 +1101,19 @@ class _Conversation {
       return 'Now';
     }
   }
+}
+
+// ---------- New User Model ----------
+class _User {
+  final String id;
+  final String name;
+  final String avatar;
+  final bool isOnline;
+
+  const _User({
+    required this.id,
+    required this.name,
+    required this.avatar,
+    required this.isOnline,
+  });
 }
