@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:meet9ja/screens/messages_screen.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
 import 'package:meet9ja/screens/story_view_screen.dart';
@@ -21,7 +22,7 @@ import 'create_post_screen.dart';
 import 'create_story_screen.dart';
 import 'edit_profile_screen.dart';
 import 'package:intl/intl.dart';
-import 'livestream_screen.dart';
+import 'livestream_screen.dart';// Add this import for the matched users screen
 
 class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
@@ -48,7 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Map<String, int> _userStats = {
     'followers': 0,
     'following': 0,
-    'subscribers': 0,
+    'matches': 0, // Changed from 'subscribers' to 'matches'
   };
   bool _isFollowing = false;
   bool _isMatched = false;
@@ -331,6 +332,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  // Navigate to matched users screen
+  void _navigateToMatchedUsers() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MessagesScreen(),
+      ),
+    );
+  }
+
   Future<void> _launchURL(String url) async {
     if (url.isEmpty) {
       _showSnackBar('No URL available');
@@ -522,6 +533,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               onFollowTap: _toggleFollow,
               onMatchTap: _toggleMatch,
               onEditTap: _navigateToEditProfile,
+              onManageMatchesTap: _navigateToMatchedUsers, // New callback
               onInstagramTap: _launchInstagram,
               onTwitterTap: _launchTwitter,
               onFacebookTap: _launchFacebook,
@@ -668,7 +680,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
-// Header Widget
+// Updated Header Widget
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
@@ -680,6 +692,7 @@ class _SliverHeader extends StatelessWidget {
     required this.onFollowTap,
     required this.onMatchTap,
     required this.onEditTap,
+    required this.onManageMatchesTap, // New parameter
     required this.onInstagramTap,
     required this.onTwitterTap,
     required this.onFacebookTap,
@@ -696,6 +709,7 @@ class _SliverHeader extends StatelessWidget {
   final VoidCallback onFollowTap;
   final VoidCallback onMatchTap;
   final VoidCallback onEditTap;
+  final VoidCallback onManageMatchesTap; // New callback
   final VoidCallback onInstagramTap;
   final VoidCallback onTwitterTap;
   final VoidCallback onFacebookTap;
@@ -846,7 +860,7 @@ class _SliverHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
 
-                // Stats Row
+                // Stats Row - Updated to show Matches instead of Subs
                 SizedBox(
                   height: 55,
                   child: Row(
@@ -867,8 +881,8 @@ class _SliverHeader extends StatelessWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: _StatTile(
-                          label: "Subs",
-                          value: userStats['subscribers'] ?? 0,
+                          label: "Matches", // Changed from "Subs" to "Matches"
+                          value: userStats['matches'] ?? 0,
                         ),
                       ),
                     ],
@@ -895,12 +909,13 @@ class _SliverHeader extends StatelessWidget {
   Widget _buildMyProfileActions() {
     return Row(
       children: [
+        // Only one button now - Manage Matches
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(FontAwesomeIcons.userGroup, size: 13),
+            onPressed: onManageMatchesTap, // Use the new callback
+            icon: const Icon(FontAwesomeIcons.heart, size: 13), // Changed icon to heart
             label: const Text(
-              "Manage Subs",
+              "Manage Matches", // Changed text
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
             ),
             style: OutlinedButton.styleFrom(
@@ -912,24 +927,7 @@ class _SliverHeader extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(FontAwesomeIcons.shareFromSquare, size: 13),
-            label: const Text(
-              "Share",
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-            ),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              side: const BorderSide(color: Colors.black12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
+        // Removed the Share button
       ],
     );
   }
@@ -960,15 +958,7 @@ class _SliverHeader extends StatelessWidget {
             onPressed: onMatchTap,
           ),
         ),
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 75,
-          child: _ActionButton(
-            label: "Message",
-            icon: FontAwesomeIcons.solidCommentDots,
-            onPressed: () {},
-          ),
-        ),
+
       ],
     );
   }
@@ -1038,7 +1028,7 @@ class _SliverHeader extends StatelessWidget {
   }
 }
 
-// UI Components
+// UI Components (keep all the existing UI components the same)
 class _StatTile extends StatelessWidget {
   final String label;
   final int value;
@@ -1190,6 +1180,9 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
     return false;
   }
 }
+
+// ... (Keep all the other existing classes: _HomeTab, _LiveHistoryCard, _ClipsTab, _WalletTab, _AboutTab, _SchedulesTab, etc.)
+// They remain exactly the same as in your original code
 
 // Home Tab with Live Streams
 class _HomeTab extends StatefulWidget {
