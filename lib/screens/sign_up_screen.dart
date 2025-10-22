@@ -20,11 +20,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final PageController _page = PageController();
   int _step = 0;
 
-  final TextEditingController _nameCtrl = TextEditingController(text: "John");
-  final TextEditingController _emailCtrl = TextEditingController(text: "test@example.com");
-  final TextEditingController _passwordCtrl = TextEditingController(text: "123456");
-  final TextEditingController _ageCtrl = TextEditingController(text: "25");
-  final TextEditingController _usernameCtrl = TextEditingController(text: "john_doe");
+  final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _emailCtrl = TextEditingController();
+  final TextEditingController _passwordCtrl = TextEditingController();
+  final TextEditingController _ageCtrl = TextEditingController();
+  final TextEditingController _usernameCtrl = TextEditingController();
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
   bool _acceptedTerms = false;

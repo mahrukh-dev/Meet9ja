@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/screens/explore_live_screen.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
+import 'package:meet9ja/screens/signin_screen.dart';
 import '../constants/app_colors.dart';
+import '../db_functions/firebase_service.dart';
 import '../db_functions/getDiscoveryProfiles.dart';
 import '../db_functions/getUserAge.dart';
 import '../db_functions/getUserBio.dart';
@@ -232,13 +234,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Expanded(child: Center(child: _Meet9jaLogo())),
                     IconButton(
                       icon: const Icon(
-                        CupertinoIcons.line_horizontal_3_decrease,
+                        Icons.logout,
                         color: AppColors.primary,
                       ),
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const HomeScreenFilters()),
+                        FirebaseService.signOut();
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (_) => Signinscreen()),
                         );
                       },
                     ),
