@@ -81,7 +81,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 
 flutter_icons:
-  android: true
+  android: "launcher_icon"
   ios: true
   image_path: "assets/images/Heart.png"
 flutter:
