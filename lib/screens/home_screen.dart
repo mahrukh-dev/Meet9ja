@@ -19,8 +19,6 @@ import '../db_functions/passProfile.dart';
 import 'home_screen_filters.dart';
 import 'discover_screen.dart';
 import 'messages_screen.dart';
-import 'profiles_list_screen.dart';
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -194,29 +192,22 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Navigate to profile details - only triggered by share icon or card tap
+// Replace the current _navigateToProfileDetails method with this:
+
+// Navigate to profile details - only triggered by share icon or card tap
   void _navigateToProfileDetails(Map<String, dynamic> profile) {
+    final String userId = profile['uid'] ?? profile['UID'];
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ProfilesListScreen(
-          name: getUserName(profile),
-          age: getUserAge(profile),
-          job: '', // Removed job
-          edu: '', // Removed education
-          image: getUserPhotoUrl(profile),
-          isAsset: false,
-          verified: isUserPremium(profile),
-          newHere: false,
-          bio: getUserBio(profile),
-          interests: List<String>.from(profile['interests'] ?? []),
-          distanceKm: 3,
-          location: profile['location']?.toString() ?? 'Unknown',
+        builder: (_) => ProfileScreen(
+          isMyProfile: false, // This is someone else's profile
+          userId: userId, // Pass the user ID to load their profile
         ),
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     print('🏠 Building HomeScreen - Loading: $_isLoading, Profiles: ${_profiles.length}');
