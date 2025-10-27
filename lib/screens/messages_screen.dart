@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:meet9ja/db_functions/user_service.dart';
+import 'package:meet9ja/screens/MatchedUserScreen.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'package:zego_zimkit/zego_zimkit.dart';
@@ -10,6 +12,7 @@ import 'package:meet9ja/constants/app_colors.dart';
 import 'package:meet9ja/screens/story_view_screen.dart';
 import 'package:meet9ja/screens/create_story_screen.dart';
 import 'package:meet9ja/models/story_model.dart';
+import '../models/user_model.dart';
 import 'discover_screen.dart';
 import 'chat_screen.dart';
 import 'explore_live_screen.dart';
@@ -1114,16 +1117,17 @@ class _BottomNav extends StatelessWidget {
       FontAwesomeIcons.solidUser,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.solidCircleUser,
-      FontAwesomeIcons.video, // Changed from solidHeart to video
+      FontAwesomeIcons.heart, // Changed from solidHeart to video
       FontAwesomeIcons.solidCommentDots,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Live", // Changed from "Liked You" to "Live"
+      "Liked You", // Changed from "Liked You" to "Live"
       "Chats",
     ];
+
 
     return Container(
       height: 90,
@@ -1165,10 +1169,11 @@ class _BottomNav extends StatelessWidget {
                   );
                   return;
                 }
-                if (i == 3 && current != 3) { // Added navigation for Live tab
+                if (i == -3 && current != 3) { // Added navigation for Live tab
+
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
+                    MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)),
                   );
                   return;
                 }

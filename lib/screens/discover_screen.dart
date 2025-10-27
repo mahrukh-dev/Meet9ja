@@ -7,6 +7,7 @@ import 'package:meet9ja/models/post_model.dart';
 import 'package:meet9ja/models/user_model.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import '../constants/app_colors.dart';
+import 'MatchedUserScreen.dart';
 import 'explore_live_screen.dart';
 import 'home_screen_filters.dart';
 import 'home_screen.dart';
@@ -1311,14 +1312,14 @@ class _BottomNav extends StatelessWidget {
       FontAwesomeIcons.user,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.userGroup,
-      FontAwesomeIcons.video, // Changed from heart to video
+      FontAwesomeIcons.heart, // Changed from heart to video
       FontAwesomeIcons.solidCommentDots,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Live", // Changed from "Liked You" to "Live"
+      "Liked You", // Changed from "Liked You" to "Live"
       "Chats",
     ];
 
@@ -1367,7 +1368,7 @@ class _BottomNav extends StatelessWidget {
                     if (current != 3) {
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
+                        MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: '',)),
                       );
                     }
                     break;

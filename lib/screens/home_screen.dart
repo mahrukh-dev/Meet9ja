@@ -16,9 +16,12 @@ import '../db_functions/getUserPhotoUrl.dart';
 import '../db_functions/isUserPremium.dart';
 import '../db_functions/likeProfile.dart';
 import '../db_functions/passProfile.dart';
+import '../db_functions/user_service.dart';
+import 'MatchedUserScreen.dart';
 import 'home_screen_filters.dart';
 import 'discover_screen.dart';
 import 'messages_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -192,9 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-// Replace the current _navigateToProfileDetails method with this:
-
-// Navigate to profile details - only triggered by share icon or card tap
+  // Navigate to profile details - only triggered by share icon or card tap
   void _navigateToProfileDetails(Map<String, dynamic> profile) {
     final String userId = profile['uid'] ?? profile['UID'];
 
@@ -208,6 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     print('🏠 Building HomeScreen - Loading: $_isLoading, Profiles: ${_profiles.length}');
@@ -221,7 +223,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                 child: Row(
                   children: [
-                    _LivePill(onTap: () => _openLiveSheet(context)),
+                    // Updated: Direct navigation to ExploreLiveScreen
+                    _LivePill(onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
+                      );
+                    }),
                     const Expanded(child: Center(child: _Meet9jaLogo())),
                     IconButton(
                       icon: const Icon(
@@ -435,89 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openLiveSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _LiveHeader(),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(CupertinoIcons.circle_filled),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
-                    );
-                  },
-                  label: const Text(
-                    "Go live",
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(CupertinoIcons.tv),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(
-                      color: Colors.black12,
-                      width: 2.0,
-                    ),
-                    foregroundColor: Colors.black87,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
-                    );
-                  },
-                  label: const Text(
-                    "Join Lives",
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "Go live to stream yourself and hop into video calls.",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black54),
-              ),
-              const SizedBox(height: 4),
-            ],
-          ),
-        );
-      },
-    );
-  }
+// REMOVED: _openLiveSheet method completely
 }
 
 // ===== Updated Widgets for Real Data =====
@@ -798,25 +724,7 @@ class _LivePill extends StatelessWidget {
   }
 }
 
-class _LiveHeader extends StatelessWidget {
-  const _LiveHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: const [
-        Icon(CupertinoIcons.tv, color: AppColors.primary),
-        SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            "Go Live",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-          ),
-        ),
-      ],
-    );
-  }
-}
+// REMOVED: _LiveHeader class completely
 
 class _InfoRow extends StatelessWidget {
   const _InfoRow({required this.icon, required this.text});
@@ -929,6 +837,7 @@ class _CircleBtn extends StatelessWidget {
     );
   }
 }
+
 // --------- Bottom Nav ----------
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
@@ -941,14 +850,14 @@ class _BottomNav extends StatelessWidget {
       CupertinoIcons.person,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.userGroup,
-      FontAwesomeIcons.video, // Changed from heart to video
+      FontAwesomeIcons.heart, // Changed from heart to video
       FontAwesomeIcons.comment,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Live", // Changed from "Liked You" to "Live"
+      "Liked You", // Changed from "Liked You" to "Live"
       "Chats",
     ];
 
@@ -987,9 +896,10 @@ class _BottomNav extends StatelessWidget {
                   return;
                 }
                 if (i == 3 && current != 3) { // Changed from 4 to 3 for Live tab
+
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExploreLiveScreen()),
+                    MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)),
                   );
                   return;
                 }

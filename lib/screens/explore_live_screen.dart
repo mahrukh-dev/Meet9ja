@@ -460,9 +460,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                 padding: const EdgeInsets.all(6),
                 labelPadding: const EdgeInsets.symmetric(horizontal: 10),
                 tabs: const [
-                  Tab(text: "Stories"),
+                  Tab(text: "Following"),
                   Tab(text: "Live"),
-                  Tab(text: "Posts"),
+                  Tab(text: "Clips"),
                 ],
               ),
             ),
@@ -530,94 +530,37 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               ],
             ),
           ),
-
-          // Floating Live Button - Positioned on screen
-          Positioned(
-            right: 20,
-            bottom: 20, // Position above the bottom nav
-            child: _FloatingLiveButton(
-              onTap: () => _checkPremiumAndGoLive(context),
-            ),
-          ),
         ],
       ),
 
-      // Bottom Navigation Bar (without floating button)
+      // Bottom nav like screenshot (Home, Browse, Create, Activity, Profile)
       bottomNavigationBar: Container(
-        height: 90,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Colors.black12.withOpacity(.4)),
+          ),
           color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 14)],
         ),
+        height: 58,
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            // Profile
-            _BottomNavItem(
-              icon: CupertinoIcons.person,
-              label: "Profile",
-              selected: false,
-              onTap: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => ProfileScreen()),
-                );
-              },
-            ),
-
-            // Discover
-            _BottomNavItem(
-              icon: FontAwesomeIcons.compass,
-              label: "Discover",
-              selected: false,
-              onTap: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const DiscoverScreen()),
-                );
-              },
-            ),
-
-            // People (Home)
-            _BottomNavItem(
-              icon: FontAwesomeIcons.userGroup,
-              label: "People",
-              selected: false,
-              onTap: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
-                );
-              },
-            ),
-
-            // Live (Current)
-            _BottomNavItem(
-              icon: FontAwesomeIcons.video,
-              label: "Live",
-              selected: true,
-              onTap: () {}, // Already on live screen
-            ),
-
-            // Chats
-            _BottomNavItem(
-              icon: FontAwesomeIcons.comment,
-              label: "Chats",
-              selected: false,
-              onTap: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MessagesScreen()),
-                );
-              },
-            ),
+            const _BottomItem(icon: Icons.home_filled, label: "Home", selected: true),
+            const _BottomItem(icon: Icons.search, label: "Browse"),
+            _BottomCreateButton(onTap: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => LiveStreamScreen(liveId: "", userId: "", isHost: true, userName: "")),
+              );
+            },),
+            const _BottomItem(icon: Icons.notifications_none, label: "Activity"),
+            const _BottomItem(icon: Icons.person_outline, label: "Profile"),
           ],
         ),
       ),
     );
   }
+
 
 
   Widget _buildLoadingState() {
@@ -1574,6 +1517,7 @@ class _BottomItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(icon,
@@ -1719,3 +1663,29 @@ class _BottomNavItem extends StatelessWidget {
     );
   }
 }
+
+//
+// class _BottomCreateButton extends StatelessWidget {
+//   const _BottomCreateButton();
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Container(
+//       width: 52,
+//       height: 36,
+//       decoration: BoxDecoration(
+//         color: AppColors.primary,
+//         borderRadius: BorderRadius.circular(12),
+//         boxShadow: [
+//           BoxShadow(
+//             color: AppColors.primary.withOpacity(.35),
+//             blurRadius: 16,
+//             spreadRadius: 1,
+//           ),
+//         ],
+//       ),
+//       child: const Icon(Icons.add, color: Colors.white),
+//     );
+//   }
+// }
+//

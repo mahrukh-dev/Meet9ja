@@ -1,0 +1,29 @@
+email 2fa
+forget password
+match
+premium user can go live
+view other's live
+live recording
+other user profile
+post
+story
+live replay
+private chat
+gifting feature
+live status
+apply for premium
+
+admin panel
+list of users
+who is currently logged in
+reports
+ban account
+premium subscription offer
+
+splash
+onboarding
+sign in
+sign up
+selfie
+home
+live stream
