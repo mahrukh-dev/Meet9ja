@@ -32,6 +32,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   late Stream<List<PostModel>> _trendingPostsStream;
   late Stream<List<UserModel>> _similarInterestsStream;
   late Stream<List<UserModel>> _sameGoalsStream;
+  late Stream<List<UserModel>> _travelingUsersStream;
 
   @override
   void initState() {
@@ -53,6 +54,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _trendingPostsStream = UserService.getTrendingPosts();
     _similarInterestsStream = UserService.getSimilarInterestsUsers();
     _sameGoalsStream = UserService.getSameGoalsUsers();
+    _travelingUsersStream = UserService.getTravelingUsers();
   }
 
   void _onSearchChanged() {
@@ -85,18 +87,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         ),
                       ),
                     ),
-                    // IconButton(
-                    //   icon: const Icon(
-                    //     FontAwesomeIcons.sliders,
-                    //     color: AppColors.primary,
-                    //   ),
-                    //   onPressed: () {
-                    //     Navigator.push(
-                    //       context,
-                    //       MaterialPageRoute(builder: (_) => const HomeScreenFilters()),
-                    //     );
-                    //   },
-                    // ),
                   ],
                 ),
               ),
@@ -252,6 +242,13 @@ class _DiscoverContent extends StatelessWidget {
         _PopularProfilesStrip(),
         const SizedBox(height: 24),
 
+        // Recently Traveled Section
+        _TravelSection(
+          travelAlertsOn: travelAlertsOn,
+          onTravelAlertsChanged: onTravelAlertsChanged,
+        ),
+        const SizedBox(height: 22),
+
         // Timer pill + subtext
         Align(
           alignment: Alignment.centerLeft,
@@ -277,7 +274,6 @@ class _DiscoverContent extends StatelessWidget {
         ),
         const SizedBox(height: 18),
 
-
         // Recommended for you
         const _SectionHeader("Recommended for you"),
         const SizedBox(height: 10),
@@ -301,8 +297,341 @@ class _DiscoverContent extends StatelessWidget {
   }
 }
 
-// Updated Widgets with Firebase Data
+// Travel Section with Firebase Data
+class _TravelSection extends StatelessWidget {
+  final bool travelAlertsOn;
+  final ValueChanged<bool> onTravelAlertsChanged;
 
+  const _TravelSection({
+    required this.travelAlertsOn,
+    required this.onTravelAlertsChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Recently traveled section + alerts toggle
+        Row(
+          children: [
+            const _SectionHeader("Recently traveled"),
+            const Spacer(),
+            Icon(
+              travelAlertsOn
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_none_rounded,
+              size: 18,
+              color: travelAlertsOn ? AppColors.primary : Colors.black45,
+            ),
+            const SizedBox(width: 6),
+            Switch.adaptive(
+              value: travelAlertsOn,
+              activeColor: AppColors.primary,
+              onChanged: (v) {
+                onTravelAlertsChanged(v);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      v
+                          ? "Travel alerts enabled — you'll get notified when your profile shows up in a new country."
+                          : "Travel alerts turned off.",
+                    ),
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(milliseconds: 1200),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _TravelingUsersStrip(),
+      ],
+    );
+  }
+}
+
+// Traveling Users Strip with Firebase Data
+class _TravelingUsersStrip extends StatelessWidget {
+  const _TravelingUsersStrip();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<UserModel>>(
+      stream: UserService.getTravelingUsers(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          final w = MediaQuery.of(context).size.width;
+          final cardW = w * 0.68;
+          final cardH = cardW * 0.62;
+
+          return SizedBox(
+            height: cardH,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: 4,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, i) => Container(
+                width: cardW,
+                height: cardH,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError || snapshot.data == null) {
+          return SizedBox(
+            height: 200,
+            child: Center(child: Text('Error loading travel data: ${snapshot.error}')),
+          );
+        }
+
+        final users = snapshot.data!;
+
+        if (users.isEmpty) {
+          return SizedBox(
+            height: 200,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(FontAwesomeIcons.plane, size: 60, color: Colors.black26),
+                  const SizedBox(height: 16),
+                  Text(
+                    "No users traveling right now",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final w = MediaQuery.of(context).size.width;
+        final cardW = w * 0.68;
+        final cardH = cardW * 0.62;
+
+        return SizedBox(
+          height: cardH,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: users.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) => _TravelUserCard(
+              user: users[i],
+              width: cardW,
+              height: cardH,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Travel User Card
+class _TravelUserCard extends StatelessWidget {
+  final UserModel user;
+  final double width;
+  final double height;
+
+  const _TravelUserCard({
+    required this.user,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final profilePhotoUrl = UserService.getProfilePhotoUrl(user);
+    final location = _getUserLocation(user);
+    final tripType = _getTripType(user);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        children: [
+          // User image with overlay
+          Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              image: DecorationImage(
+                image: NetworkImage(profilePhotoUrl ?? "https://i.pravatar.cc/400"),
+                fit: BoxFit.cover,
+              ),
+              boxShadow: const [
+                BoxShadow(color: Colors.black12, blurRadius: 12),
+              ],
+            ),
+          ),
+
+          // Gradient overlay
+          Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.3),
+                  Colors.black.withOpacity(0.7),
+                ],
+              ),
+            ),
+          ),
+
+          // User info
+          Positioned(
+            bottom: 12,
+            left: 12,
+            right: 12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Trip type badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    tripType,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // User name and verification
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "${user.name.split(' ').first}, ${user.age}",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    if (user.type == 'premium')
+                      const Icon(
+                        FontAwesomeIcons.certificate,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                  ],
+                ),
+
+                // Location
+                Text(
+                  location,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+
+                // Interests (if available)
+                if (user.interests != null && user.interests!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Wrap(
+                      spacing: 6,
+                      children: user.interests!
+                          .take(2)
+                          .map((interest) => Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          interest,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ))
+                          .toList(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getUserLocation(UserModel user) {
+    // You can modify this based on your user model structure
+    if (user.location != null && user.location!.isNotEmpty) {
+      return user.location!;
+    }
+    return "Traveling now";
+  }
+
+  String _getTripType(UserModel user) {
+    // Determine trip type based on user data or random selection
+    final tripTypes = ["Recent trip", "Currently traveling", "Local explorer", "Adventure seeker"];
+    final index = user.name.hashCode % tripTypes.length;
+    return tripTypes[index];
+  }
+}
+
+// Updated UserService with getTravelingUsers method
+// Add this to your UserService class:
+/*
+static Stream<List<UserModel>> getTravelingUsers() {
+  return FirebaseFirestore.instance
+      .collection('users')
+      .where('isTraveling', isEqualTo: true) // You might want to add this field
+      .limit(8)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
+          .toList());
+}
+*/
+
+// If you don't have the isTraveling field, you can use this alternative:
+/*
+static Stream<List<UserModel>> getTravelingUsers() {
+  return FirebaseFirestore.instance
+      .collection('users')
+      .limit(8)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
+          .toList());
+}
+*/
+
+// The rest of your existing widgets remain the same...
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
 
@@ -481,6 +810,8 @@ class _TrendingClipCard extends StatelessWidget {
   }
 }
 
+// ... [Rest of your existing widgets remain the same]
+
 class _PopularProfilesStrip extends StatelessWidget {
   const _PopularProfilesStrip();
 
@@ -609,56 +940,6 @@ class _UserCircleSkeleton extends StatelessWidget {
           color: Colors.grey.shade300,
         ),
       ],
-    );
-  }
-}
-
-class _TravelStrip extends StatelessWidget {
-  const _TravelStrip();
-
-  @override
-  Widget build(BuildContext context) {
-    // For now, using static travel data as in original
-    // You can replace this with Firebase data later
-    final recentTrips = const [
-      _Trip(
-        country: "UAE",
-        state: "Dubai",
-        city: "Dubai",
-        image: "https://images.unsplash.com/photo-1504610926078-a1611febcad3",
-      ),
-      _Trip(
-        country: "Turkey",
-        state: "Istanbul",
-        city: "Beyoğlu",
-        image: "https://images.unsplash.com/photo-1524231757912-21f4fe3a7200",
-      ),
-      _Trip(
-        country: "Pakistan",
-        state: "Punjab",
-        city: "Lahore",
-        image: "https://images.unsplash.com/photo-1591604129939-1cb13857dc3a",
-      ),
-      _Trip(
-        country: "Saudi Arabia",
-        state: "Makkah",
-        city: "Jeddah",
-        image: "https://images.unsplash.com/photo-1602071792473-99137559e889",
-      ),
-    ];
-
-    final w = MediaQuery.of(context).size.width;
-    final cardW = w * 0.68;
-    final cardH = cardW * 0.62;
-
-    return SizedBox(
-      height: cardH,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: recentTrips.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, i) => _TravelCard(trip: recentTrips[i], width: cardW, height: cardH),
-      ),
     );
   }
 }
@@ -1150,23 +1431,6 @@ class _GridSkeleton extends StatelessWidget {
   }
 }
 
-// Keep all the existing helper classes (Trip, SectionHeader, SurfaceBlock, BottomNav) from your original code
-// ... [Rest of the helper classes remain the same as in your original code]
-
-class _Trip {
-  final String country;
-  final String state;
-  final String city;
-  final String image;
-
-  const _Trip({
-    required this.country,
-    required this.state,
-    required this.city,
-    required this.image,
-  });
-}
-
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.text);
   final String text;
@@ -1208,100 +1472,6 @@ class _SurfaceBlock extends StatelessWidget {
   }
 }
 
-class _TravelCard extends StatelessWidget {
-  const _TravelCard({
-    required this.trip,
-    required this.width,
-    required this.height,
-  });
-  final _Trip trip;
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: Stack(
-        children: [
-          // image
-          Container(
-            width: width,
-            height: height,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              image: DecorationImage(
-                image: NetworkImage(trip.image),
-                fit: BoxFit.cover,
-              ),
-              boxShadow: const [
-                BoxShadow(color: Colors.black12, blurRadius: 12),
-              ],
-            ),
-          ),
-
-          // overlay info
-          Align(
-            alignment: Alignment.bottomLeft,
-            child: Container(
-              width: width,
-              padding: const EdgeInsets.fromLTRB(12, 48, 12, 10),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black54, Colors.black87],
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      "Recent trip",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "${trip.city}, ${trip.state}",
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text(
-                    trip.country,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
   final int current;
@@ -1313,14 +1483,14 @@ class _BottomNav extends StatelessWidget {
       FontAwesomeIcons.user,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.userGroup,
-      FontAwesomeIcons.heart, // Changed from heart to video
+      FontAwesomeIcons.heart,
       FontAwesomeIcons.solidCommentDots,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Liked You", // Changed from "Liked You" to "Live"
+      "Liked You",
       "Chats",
     ];
 

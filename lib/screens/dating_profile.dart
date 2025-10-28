@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:meet9ja/constants/app_colors.dart';
 import 'package:meet9ja/screens/explore_live_screen.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
+import 'package:meet9ja/screens/subscription_screen.dart';
+import 'package:meet9ja/screens/edit_profile_screen.dart';
 import 'package:meet9ja/models/user_model.dart';
 import '../db_functions/user_service.dart';
 import 'discover_screen.dart';
@@ -50,6 +54,28 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
     }
   }
 
+  void _navigateToSubscriptionScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SubscriptionPage(),
+      ),
+    );
+  }
+
+  void _navigateToEditProfileScreen() async {
+    final userProfile = await UserService.getUserProfile(UserService.currentUserId!);
+
+    if (!mounted || userProfile == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditProfileScreen(userProfile: userProfile),
+      ),
+    ).then((_) => _loadUserData());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -94,7 +120,7 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
                     _Header(
                       user: _currentUser,
                       stats: _userStats,
-                      onRefresh: _loadUserData,
+                      onEditProfile: _navigateToEditProfileScreen,
                     ),
                     const SizedBox(height: 12),
                     _Segments(
@@ -114,11 +140,17 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
                             ),
                           );
                         },
+                        onExplorePremium: _navigateToSubscriptionScreen,
+                        onSpotlightTap: _navigateToSubscriptionScreen,
+                        onSuperSwipeTap: _navigateToSubscriptionScreen,
+                        onEarningsTap: _navigateToSubscriptionScreen,
                       )
                     else if (_tab == 1)
                       _AdviceTab()
                     else
-                      const _PhotoInsightsTab(),
+                      _PhotoInsightsTab(
+                        onFindOutHowTap: _navigateToSubscriptionScreen,
+                      ),
                   ],
                 ),
               ),
@@ -138,21 +170,18 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
 
 // -------------------- HEADER --------------------
 class _Header extends StatelessWidget {
-  const _Header({this.user, required this.stats, this.onRefresh});
+  const _Header({this.user, required this.stats, this.onEditProfile});
   final UserModel? user;
   final Map<String, int> stats;
-  final VoidCallback? onRefresh;
+  final VoidCallback? onEditProfile;
 
   @override
   Widget build(BuildContext context) {
     // Calculate age from date of birth
     final age = 18;// Default age
 
-    // Get profile photo URL
-    final profilePhotoUrl = user != null
-        ? UserService.getProfilePhotoUrl(user!)
-        : null;
-
+    // Get profile photo URL - using the actual user's profile photo
+    final profilePhotoUrl = UserService.getProfilePhotoUrl(user!);
     return Row(
       children: [
         Stack(
@@ -160,7 +189,7 @@ class _Header extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 28,
-              backgroundImage: profilePhotoUrl != null
+              backgroundImage: profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
                   ? NetworkImage(profilePhotoUrl)
                   : const NetworkImage("https://i.pravatar.cc/120?img=8") as ImageProvider,
             ),
@@ -203,7 +232,7 @@ class _Header extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          onPressed: onRefresh,
+          onPressed: onEditProfile,
           child: const Text(
             "Complete profile",
             style: TextStyle(fontWeight: FontWeight.w700),
@@ -286,8 +315,20 @@ class _Segments extends StatelessWidget {
 
 // -------------------- TAB: PAY PLAN --------------------
 class _PayPlanTab extends StatelessWidget {
-  const _PayPlanTab({required this.onOpenMyProfile, this.user});
+  const _PayPlanTab({
+    required this.onOpenMyProfile,
+    required this.onExplorePremium,
+    required this.onSpotlightTap,
+    required this.onSuperSwipeTap,
+    required this.onEarningsTap,
+    this.user,
+  });
+
   final VoidCallback onOpenMyProfile;
+  final VoidCallback onExplorePremium;
+  final VoidCallback onSpotlightTap;
+  final VoidCallback onSuperSwipeTap;
+  final VoidCallback onEarningsTap;
   final UserModel? user;
 
   @override
@@ -303,20 +344,26 @@ class _PayPlanTab extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: _UserStatCard(
-                title: "Coins",
-                value: coinBalance.toString(),
-                color: Colors.amber,
-                icon: Icons.monetization_on_outlined,
+              child: GestureDetector(
+                onTap: onEarningsTap,
+                child: _UserStatCard(
+                  title: "Coins",
+                  value: coinBalance.toString(),
+                  color: Colors.amber,
+                  icon: Icons.monetization_on_outlined,
+                ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _UserStatCard(
-                title: "Earnings",
-                value: "₦$totalEarnings",
-                color: Colors.green,
-                icon: Icons.attach_money_outlined,
+              child: GestureDetector(
+                onTap: onEarningsTap,
+                child: _UserStatCard(
+                  title: "Earnings",
+                  value: "₦$totalEarnings",
+                  color: Colors.green,
+                  icon: Icons.attach_money_outlined,
+                ),
               ),
             ),
           ],
@@ -325,13 +372,19 @@ class _PayPlanTab extends StatelessWidget {
 
         // Spotlight / SuperSwipe
         Row(
-          children: const [
+          children: [
             Expanded(
-              child: _FeatureCard(title: "Spotlight", subtitle: "Stand out"),
+              child: GestureDetector(
+                onTap: onSpotlightTap,
+                child: const _FeatureCard(title: "Spotlight", subtitle: "Stand out"),
+              ),
             ),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
             Expanded(
-              child: _FeatureCard(title: "SuperSwipe", subtitle: "Get noticed"),
+              child: GestureDetector(
+                onTap: onSuperSwipeTap,
+                child: const _FeatureCard(title: "SuperSwipe", subtitle: "Get noticed"),
+              ),
             ),
           ],
         ),
@@ -398,7 +451,7 @@ class _PayPlanTab extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                onPressed: () {},
+                onPressed: onExplorePremium,
                 child: Text(
                   isPremium ? "Manage Subscription" : "Explore Premium+",
                   style: const TextStyle(fontWeight: FontWeight.w800),
@@ -408,16 +461,6 @@ class _PayPlanTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-
-        // // Primary Mode
-        // if (user != null) ...[
-        //   _InfoCard(
-        //     icon: Icons.work_outline,
-        //     title: "Primary Mode",
-        //     value: primaryMode,
-        //   ),
-        //   const SizedBox(height: 12),
-        // ],
 
         // What you get table
         Align(
@@ -681,8 +724,6 @@ class _BenefitsRow extends StatelessWidget {
 
 // -------------------- TAB: DATING ADVICE --------------------
 class _AdviceTab extends StatelessWidget {
-
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -891,7 +932,9 @@ class _AdviceCardData {
 
 // -------------------- TAB: PHOTO INSIGHTS --------------------
 class _PhotoInsightsTab extends StatelessWidget {
-  const _PhotoInsightsTab();
+  const _PhotoInsightsTab({required this.onFindOutHowTap});
+
+  final VoidCallback onFindOutHowTap;
 
   @override
   Widget build(BuildContext context) {
@@ -903,25 +946,28 @@ class _PhotoInsightsTab extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
-          ),
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: const [
-              Icon(Icons.bolt_outlined),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  "Find out how your photos are performing with Premium+",
-                  style: TextStyle(fontWeight: FontWeight.w700),
+        GestureDetector(
+          onTap: onFindOutHowTap,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: const [
+                Icon(Icons.bolt_outlined),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    "Find out how your photos are performing with Premium+",
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
-              ),
-              Icon(Icons.chevron_right),
-            ],
+                Icon(Icons.chevron_right),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 18),

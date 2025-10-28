@@ -32,6 +32,17 @@ class UserService {
     }
   }
 
+  // Add this to your UserService class
+  static Stream<List<UserModel>> getTravelingUsers() {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .limit(8) // Get 8 random users
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
+        .toList());
+  }
+
   // Stream user profile data for real-time updates
   static Stream<UserModel?> getUserProfileStream(String userId) {
     return _firestore.collection('users').doc(userId).snapshots().map((
