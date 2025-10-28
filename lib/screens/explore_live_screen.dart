@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:meet9ja/db_functions/user_service.dart';
+import 'package:meet9ja/screens/MatchedUserScreen.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 
 import '../constants/app_colors.dart';
@@ -25,9 +27,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
   final List<String> _liveFilters = const [
     "All",
-    "Drops & Loot",
-    "Fortnite",
-    "Call of Duty: Warzone",
+    "Comedy",
+    "Relationships",
+    "Music",
+    "Lifestyle/Entertainment",
   ];
   int _liveFilterIndex = 0;
 
@@ -37,6 +40,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   bool _isLoading = true;
   StreamSubscription<QuerySnapshot>? _liveStreamSubscription;
   String? _currentUserId;
+
+  // Bottom navigation state
+  int _currentBottomNavIndex = 0;
 
   @override
   void initState() {
@@ -407,6 +413,42 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
+  // Handle bottom navigation
+  void _onBottomNavTapped(int index) {
+    setState(() {
+      _currentBottomNavIndex = index;
+    });
+
+    switch (index) {
+      case 0:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen()),
+        );
+        break;
+      case 1:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => DiscoverScreen()),
+        );
+        break;
+      case 2:
+        _checkPremiumAndGoLive(context);
+        break;
+      case 3:
+        Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)));
+        break;
+      case 4:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => ProfileScreen()),
+        );
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // The dark background color used in the images
@@ -545,23 +587,38 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            const _BottomItem(icon: Icons.home_filled, label: "Home", selected: true),
-            const _BottomItem(icon: Icons.search, label: "Browse"),
-            _BottomCreateButton(onTap: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => LiveStreamScreen(liveId: "", userId: "", isHost: true, userName: "")),
-              );
-            },),
-            const _BottomItem(icon: Icons.notifications_none, label: "Activity"),
-            const _BottomItem(icon: Icons.person_outline, label: "Profile"),
+            _BottomNavItem(
+              icon: Icons.home_filled,
+              label: "Home",
+              selected: _currentBottomNavIndex == 0,
+              onTap: () => _onBottomNavTapped(0),
+            ),
+            _BottomNavItem(
+              icon: Icons.search,
+              label: "Browse",
+              selected: _currentBottomNavIndex == 1,
+              onTap: () => _onBottomNavTapped(1),
+            ),
+            _BottomCreateButton(
+              onTap: () => _onBottomNavTapped(2),
+            ),
+            _BottomNavItem(
+              icon: Icons.notifications_none,
+              label: "Activity",
+              selected: _currentBottomNavIndex == 3,
+              onTap: () => _onBottomNavTapped(3),
+            ),
+            _BottomNavItem(
+              icon: Icons.person_outline,
+              label: "Profile",
+              selected: _currentBottomNavIndex == 4,
+              onTap: () => _onBottomNavTapped(4),
+            ),
           ],
         ),
       ),
     );
   }
-
-
 
   Widget _buildLoadingState() {
     return const Center(
@@ -578,8 +635,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       ),
     );
   }
-
-
 
   Widget _buildEmptyLiveState() {
     return Center(
@@ -1504,110 +1559,6 @@ class _LiveCard {
 }
 
 /* ----------------------- BOTTOM NAV ----------------------- */
-class _BottomItem extends StatelessWidget {
-  const _BottomItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-  });
-  final IconData icon;
-  final String label;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon,
-            color: selected ? AppColors.primary : Colors.black87, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 11,
-            color: selected ? AppColors.primary : Colors.black87,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _FloatingLiveButton extends StatelessWidget {
-  const _FloatingLiveButton({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 35,
-        height: 35,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
-            ],
-          ),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.4),
-              blurRadius: 15,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
-            ),
-          ],
-          border: Border.all(
-            color: Colors.white,
-            width: 2,
-          ),
-        ),
-        child: const Icon(
-          FontAwesomeIcons.video,
-          color: Colors.white,
-          size: 20,
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomCreateButton extends StatelessWidget {
-  const _BottomCreateButton({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: 52,
-        height: 36,
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(.35),
-              blurRadius: 16,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
-      ),
-    );
-  }
-}
-
 class _BottomNavItem extends StatelessWidget {
   const _BottomNavItem({
     required this.icon,
@@ -1664,28 +1615,30 @@ class _BottomNavItem extends StatelessWidget {
   }
 }
 
-//
-// class _BottomCreateButton extends StatelessWidget {
-//   const _BottomCreateButton();
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return Container(
-//       width: 52,
-//       height: 36,
-//       decoration: BoxDecoration(
-//         color: AppColors.primary,
-//         borderRadius: BorderRadius.circular(12),
-//         boxShadow: [
-//           BoxShadow(
-//             color: AppColors.primary.withOpacity(.35),
-//             blurRadius: 16,
-//             spreadRadius: 1,
-//           ),
-//         ],
-//       ),
-//       child: const Icon(Icons.add, color: Colors.white),
-//     );
-//   }
-// }
-//
+class _BottomCreateButton extends StatelessWidget {
+  const _BottomCreateButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: 52,
+        height: 36,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(.35),
+              blurRadius: 16,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: const Icon(FontAwesomeIcons.plus, color: Colors.white, size: 20),
+      ),
+    );
+  }
+}
