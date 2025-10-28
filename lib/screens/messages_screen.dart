@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/screens/MatchedUserScreen.dart';
+import 'package:meet9ja/screens/dating_profile.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'package:zego_zimkit/zego_zimkit.dart';
@@ -1151,7 +1152,7 @@ class _BottomNav extends StatelessWidget {
                 if (i == 0 && current != 0) {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => ProfileScreen()),
+                    MaterialPageRoute(builder: (_) => DatingProfileScreen()),
                   );
                   return;
                 }

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/models/post_model.dart';
 import 'package:meet9ja/models/user_model.dart';
+import 'package:meet9ja/screens/dating_profile.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import '../constants/app_colors.dart';
 import 'MatchedUserScreen.dart';
@@ -1349,7 +1350,7 @@ class _BottomNav extends StatelessWidget {
                     if (current != 0) {
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (_) => ProfileScreen()),
+                        MaterialPageRoute(builder: (_) => DatingProfileScreen()),
                       );
                     }
                     break;
