@@ -5,11 +5,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:zego_uikit/zego_uikit.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
-import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
-import 'package:zego_zimkit/zego_zimkit.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_sound/flutter_sound.dart';
@@ -166,7 +163,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Send text message
   // Send text message - IMPROVED VERSION
   void _sendTextMessage() async {
     final text = _textController.text.trim();
@@ -298,7 +294,7 @@ class _ChatScreenState extends State<ChatScreen> {
             await file.delete();
           }
         } catch (e) {
-          print('⚠️ Could not delete temp audio file: $e');
+          print('⚠ Could not delete temp audio file: $e');
         }
       }
     }
@@ -483,7 +479,7 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _isRecording = false;
         });
-        print('⏹️ Recording stopped');
+        print('⏹ Recording stopped');
       } catch (e) {
         print('❌ Error stopping recording: $e');
       }
@@ -508,7 +504,7 @@ class _ChatScreenState extends State<ChatScreen> {
             await file.delete();
           }
         } catch (e) {
-          print('⚠️ Could not delete temp audio file: $e');
+          print('⚠ Could not delete temp audio file: $e');
         }
       }
     }
@@ -531,7 +527,7 @@ class _ChatScreenState extends State<ChatScreen> {
           await file.delete();
         }
       } catch (e) {
-        print('⚠️ Could not delete temp audio file: $e');
+        print('⚠ Could not delete temp audio file: $e');
       }
     }
 
@@ -580,7 +576,7 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         });
 
-        print('▶️ Playing voice note: $mediaUrl');
+        print('▶ Playing voice note: $mediaUrl');
       }
     } catch (e) {
       print('❌ Error playing voice note: $e');
@@ -616,13 +612,12 @@ class _ChatScreenState extends State<ChatScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => ZegoUIKitPrebuiltCall(
-            appID: 51745598,
-            appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
-            callID: callID,
-            userID: user.uid,
-            userName: user.displayName ?? 'User',
-            config: ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall()
-              // ..onOnlySelfInRoom = (context) => Navigator.of(context).pop(),
+              appID: 51745598,
+              appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+              callID: callID,
+              userID: user.uid,
+              userName: user.displayName ?? 'User',
+              config: ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall()
           ),
         ),
       );
@@ -659,13 +654,12 @@ class _ChatScreenState extends State<ChatScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => ZegoUIKitPrebuiltCall(
-            appID: 51745598,
-            appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
-            callID: callID,
-            userID: user.uid,
-            userName: user.displayName ?? 'User',
-            config: ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-              // ..onOnlySelfInRoom = (context) => Navigator.of(context).pop(),
+              appID: 51745598,
+              appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+              callID: callID,
+              userID: user.uid,
+              userName: user.displayName ?? 'User',
+              config: ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
           ),
         ),
       );
@@ -1012,12 +1006,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Build the bottom input bar
+  // Build the bottom input bar - UPDATED TO REMOVE RED RECORDING UI
   Widget _buildInputBar() {
-    if (_isRecording) {
-      return _buildRecordingUI();
-    }
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1071,18 +1061,39 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
 
+                  // Voice recording button - now shows recording status in a snackbar instead of red UI
                   GestureDetector(
-                    onLongPressStart: (_) => _startVoiceRecording(),
-                    onLongPressEnd: (_) => _stopVoiceRecording(),
+                    onLongPressStart: (_) {
+                      _startVoiceRecording();
+                      // Show recording started snackbar
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(Icons.mic, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('Recording... Release to send'),
+                            ],
+                          ),
+                          backgroundColor: Colors.black87,
+                          duration: Duration(hours: 1), // Long duration until released
+                        ),
+                      );
+                    },
+                    onLongPressEnd: (_) {
+                      _stopVoiceRecording();
+                      // Hide the recording snackbar
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    },
                     child: Container(
                       margin: const EdgeInsets.all(4),
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.primary,
+                        color: _isRecording ? Colors.red : AppColors.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.mic,
+                      child: Icon(
+                        _isRecording ? Icons.stop : Icons.mic,
                         color: Colors.white,
                         size: 20,
                       ),
@@ -1095,7 +1106,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           const SizedBox(width: 12),
 
-          // Replace the current send button with this:
+          // Send button
           Container(
             decoration: BoxDecoration(
               color: _textController.text.trim().isNotEmpty
@@ -1118,102 +1129,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  // Build recording UI
-  Widget _buildRecordingUI() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.05),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton(
-                onPressed: _cancelVoiceRecording,
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-
-              Column(
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.mic, color: Colors.red, size: 20),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Recording...',
-                        style: TextStyle(
-                          color: Colors.red,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatDuration(_recordingDuration),
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-
-              TextButton(
-                onPressed: _stopVoiceRecording,
-                child: const Text(
-                  'Send',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          Container(
-            height: 4,
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            child: _buildRecordingWaveform(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Build recording waveform animation
-  Widget _buildRecordingWaveform() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return CustomPaint(
-          size: Size(constraints.maxWidth, 4),
-          painter: _RecordingWaveformPainter(
-            duration: _recordingDuration,
-            isRecording: _isRecording,
-          ),
-        );
-      },
     );
   }
 
@@ -1247,19 +1162,19 @@ class _ChatScreenState extends State<ChatScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  StreamBuilder<DocumentSnapshot>(
-                    stream: _firestore.collection('users').doc(widget.otherUserId).snapshots(),
-                    builder: (context, snapshot) {
-                      final isOnline = snapshot.data?['is_online'] ?? false;
-                      return Text(
-                        isOnline ? "Online" : "Offline",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isOnline ? Colors.green : Colors.grey,
-                        ),
-                      );
-                    },
-                  ),
+                  // StreamBuilder<DocumentSnapshot>(
+                  //   stream: _firestore.collection('users').doc(widget.otherUserId).snapshots(),
+                  //   builder: (context, snapshot) {
+                  //     final isOnline = snapshot.data?['is_online'] ?? false;
+                  //     return Text(
+                  //       isOnline ? "Online" : "Offline",
+                  //       style: TextStyle(
+                  //         fontSize: 12,
+                  //         color: isOnline ? Colors.green : Colors.grey,
+                  //       ),
+                  //     );
+                  //   },
+                  // ),
                 ],
               ),
             ),
@@ -1329,41 +1244,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
-}
-
-// Custom painter for recording waveform
-class _RecordingWaveformPainter extends CustomPainter {
-  final int duration;
-  final bool isRecording;
-
-  const _RecordingWaveformPainter({required this.duration, required this.isRecording});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
-
-    final waveCount = 20;
-    final waveWidth = size.width / waveCount;
-    final maxHeight = size.height;
-
-    for (var i = 0; i < waveCount; i++) {
-      final timeFactor = (duration % 2 == 0) ? 0.5 : 1.0;
-      final positionFactor = (i / waveCount);
-      final animation = isRecording ? (DateTime.now().millisecond / 1000) : 0.0;
-
-      final height = maxHeight * (0.3 + 0.7 *
-          ((positionFactor + animation * timeFactor) % 1.0));
-
-      final x = i * waveWidth;
-      final rect = Rect.fromLTWH(x, (maxHeight - height) / 2, waveWidth - 1, height);
-      canvas.drawRect(rect, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 // Custom painter for voice note waveform

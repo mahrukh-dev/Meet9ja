@@ -655,7 +655,7 @@ class _FeatureCard extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                    fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -663,7 +663,7 @@ class _FeatureCard extends StatelessWidget {
                   subtitle,
                   style: const TextStyle(
                     color: Colors.black54,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],

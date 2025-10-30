@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/screens/dating_profile.dart';
 import 'package:meet9ja/screens/explore_live_screen.dart';
+import 'package:meet9ja/screens/other_dating_profile_screen.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
 import '../constants/app_colors.dart';
@@ -203,8 +204,8 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ProfileScreen(
-          isMyProfile: false, // This is someone else's profile
+        builder: (_) => OtherDatingProfileScreen(
+          conversationId: '',// This is someone else's profile
           userId: userId, // Pass the user ID to load their profile
         ),
       ),

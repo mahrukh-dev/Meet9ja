@@ -11,6 +11,7 @@ import 'package:meet9ja/screens/activity_screen.dart' hide AppColors;
 import 'package:meet9ja/screens/profile_screen.dart';
 
 import '../constants/app_colors.dart';
+import 'browse_live_screen.dart';
 import 'discover_screen.dart';
 import 'home_screen.dart';
 import 'livestream_screen.dart';
@@ -430,7 +431,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       case 1:
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => DiscoverScreen()),
+          MaterialPageRoute(builder: (_) => BrowseLiveScreen()),
         );
         break;
       case 2:
