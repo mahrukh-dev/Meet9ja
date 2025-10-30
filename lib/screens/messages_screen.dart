@@ -1150,21 +1150,21 @@ class _BottomNav extends StatelessWidget {
                   return;
                 }
                 if (i == 0 && current != 0) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => DatingProfileScreen()),
                   );
                   return;
                 }
                 if (i == 1 && current != 1) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const DiscoverScreen()),
                   );
                   return;
                 }
                 if (i == 2 && current != 2) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const HomeScreen()),
                   );
@@ -1172,7 +1172,7 @@ class _BottomNav extends StatelessWidget {
                 }
                 if (i == -3 && current != 3) { // Added navigation for Live tab
 
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)),
                   );
@@ -1207,7 +1207,7 @@ class _BottomNav extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         height: 1.0,
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                         color: selected ? AppColors.primary : Colors.black54,
                       ),

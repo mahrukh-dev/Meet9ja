@@ -50,7 +50,7 @@ class _SigninscreenState extends State<Signinscreen> {
       }
 
       // 🎯 SUCCESS: Navigate to the main application page
-      Navigator.of(context).pushReplacement(
+      Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
 

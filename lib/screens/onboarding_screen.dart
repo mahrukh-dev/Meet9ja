@@ -85,7 +85,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                               ),
                             ),
                             onPressed: () {
-                              Navigator.of(context).pushReplacement(
+                              Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => const AuthPage(),
                                 ),
@@ -212,7 +212,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                                   curve: Curves.easeOutCubic,
                                 );
                               } else {
-                                Navigator.of(context).pushReplacement(
+                                Navigator.of(context).push(
                                   MaterialPageRoute(
                                     builder: (_) => const AuthPage(),
                                   ),

@@ -1518,7 +1518,7 @@ class _BottomNav extends StatelessWidget {
                 switch (i) {
                   case 0: // Profile
                     if (current != 0) {
-                      Navigator.pushReplacement(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => DatingProfileScreen()),
                       );
@@ -1529,7 +1529,7 @@ class _BottomNav extends StatelessWidget {
                     break;
                   case 2: // People (HomeScreen)
                     if (current != 2) {
-                      Navigator.pushReplacement(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const HomeScreen()),
                       );
@@ -1537,7 +1537,7 @@ class _BottomNav extends StatelessWidget {
                     break;
                   case 3: // Live (ExploreLiveScreen)
                     if (current != 3) {
-                      Navigator.pushReplacement(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: '',)),
                       );
@@ -1545,7 +1545,7 @@ class _BottomNav extends StatelessWidget {
                     break;
                   case 4: // Chats
                     if (current != 4) {
-                      Navigator.pushReplacement(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const MessagesScreen()),
                       );

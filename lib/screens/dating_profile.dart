@@ -8,7 +8,9 @@ import 'package:meet9ja/screens/subscription_screen.dart';
 import 'package:meet9ja/screens/edit_profile_screen.dart';
 import 'package:meet9ja/models/user_model.dart';
 import '../db_functions/user_service.dart';
+import 'MatchedUserScreen.dart';
 import 'discover_screen.dart';
+import 'messages_screen.dart';
 
 class DatingProfileScreen extends StatefulWidget {
   const DatingProfileScreen({super.key});
@@ -1084,15 +1086,31 @@ class _BottomNav extends StatelessWidget {
                   return;
                 }
                 if (i == 1 && current != 1) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const DiscoverScreen()),
                   );
                 } else if (i == 2 && current != 2) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => ExploreLiveScreen()),
                   );
+                }
+
+                if (i == 3 && current != 3) { // Changed from 4 to 3 for Live tab
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)),
+                  );
+                  return;
+                }
+                if (i == 4 && current != 4) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MessagesScreen()),
+                  );
+                  return;
                 }
               },
               child: AnimatedContainer(
@@ -1119,7 +1137,7 @@ class _BottomNav extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         height: 1.0,
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: selected
                             ? FontWeight.w800
                             : FontWeight.w600,

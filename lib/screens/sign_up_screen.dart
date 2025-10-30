@@ -512,7 +512,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.pushReplacement(
+              Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SelfieOnboardingScreen()),
               );

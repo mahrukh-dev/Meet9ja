@@ -421,13 +421,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
     switch (index) {
       case 0:
-        Navigator.pushReplacement(
+        Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => HomeScreen()),
         );
         break;
       case 1:
-        Navigator.pushReplacement(
+        Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => DiscoverScreen()),
         );
@@ -436,12 +436,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         _checkPremiumAndGoLive(context);
         break;
       case 3:
-        Navigator.pushReplacement(
+        Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)));
         break;
       case 4:
-        Navigator.pushReplacement(
+        Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => ProfileScreen()),
         );

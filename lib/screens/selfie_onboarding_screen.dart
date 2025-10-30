@@ -220,7 +220,7 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pushReplacement(
+        Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const HomeScreen()),
         );
@@ -249,13 +249,13 @@ class _SelfieOnboardingScreenState extends State<SelfieOnboardingScreen>
         });
       }
 
-      Navigator.pushReplacement(
+      Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
       print('Error skipping selfie: $e');
-      Navigator.pushReplacement(
+      Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );

@@ -239,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       onPressed: () {
                         FirebaseService.signOut();
-                        Navigator.of(context).pushReplacement(
+                        Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => Signinscreen()),
                         );
                       },
@@ -883,14 +883,14 @@ class _BottomNav extends StatelessWidget {
                   return;
                 }
                 if (i == 0 && current != 0) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => DatingProfileScreen()),
                   );
                   return;
                 }
                 if (i == 1 && current != 1) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const DiscoverScreen()),
                   );
@@ -898,14 +898,14 @@ class _BottomNav extends StatelessWidget {
                 }
                 if (i == 3 && current != 3) { // Changed from 4 to 3 for Live tab
 
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)),
                   );
                   return;
                 }
                 if (i == 4 && current != 4) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const MessagesScreen()),
                   );
@@ -936,7 +936,7 @@ class _BottomNav extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         height: 1.0,
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: selected
                             ? FontWeight.w800
                             : FontWeight.w600,
