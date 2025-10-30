@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/screens/MatchedUserScreen.dart';
+import 'package:meet9ja/screens/activity_screen.dart' hide AppColors;
 import 'package:meet9ja/screens/profile_screen.dart';
 
 import '../constants/app_colors.dart';
@@ -438,7 +439,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       case 3:
         Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)));
+            MaterialPageRoute(builder: (_) => ActivityScreen()));
         break;
       case 4:
         Navigator.push(
@@ -1580,7 +1581,7 @@ class _BottomNavItem extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 3),
           decoration: BoxDecoration(
             color: selected
                 ? AppColors.primary.withOpacity(0.08)
@@ -1602,7 +1603,7 @@ class _BottomNavItem extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   height: 1.0,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                   color: selected ? AppColors.primary : Colors.black54,
                 ),

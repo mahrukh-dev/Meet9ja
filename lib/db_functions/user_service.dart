@@ -5,6 +5,7 @@ import '../models/post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
 import 'image_service.dart';
+import 'notification_service.dart';
 
 class UserService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -29,6 +30,39 @@ class UserService {
     } catch (e) {
       print('❌ Error fetching user profile: $e');
       throw 'Failed to load user profile: $e';
+    }
+  }
+
+
+// Add this function to trigger live notifications
+  static Future<void> startLiveStream({
+    required String userId,
+    required String liveId,
+    required String title,
+  }) async {
+    try {
+      // Create live document
+      await FirebaseFirestore.instance.collection('live_history').doc(liveId).set({
+        'live_id': liveId,
+        'UID': userId,
+        'start_time': FieldValue.serverTimestamp(),
+        'title': title,
+        'status': 'active',
+        'viewer_count': 0,
+        'total_gift_value': 0,
+      });
+
+      // Trigger live notification to followers
+      await NotificationTriggers.onUserLive(
+        userId: userId,
+        liveId: liveId,
+        liveTitle: title,
+      );
+
+      print('✅ Live stream started and notifications sent');
+    } catch (e) {
+      print('❌ Error starting live stream: $e');
+      throw 'Failed to start live stream: $e';
     }
   }
 
@@ -334,6 +368,8 @@ class UserService {
     }
   }
 
+
+
   // Search users by username
   // static Future<Stream<QuerySnapshot<Object?>>> searchUsers(String query) async {
   //   return _firestore
@@ -556,6 +592,8 @@ class UserService {
     }
   }
 
+
+
   static Future<void> likePost(String postId, String userId) async {
     try {
       final likeData = {
@@ -563,6 +601,21 @@ class UserService {
         'date_time':
             Timestamp.now(), // Use Timestamp.now() instead of FieldValue.serverTimestamp()
       };
+
+      // Get post to find owner
+      final postDoc = await _firestore.collection('user_feed').doc(postId).get();
+      if (postDoc.exists) {
+        final postData = postDoc.data() as Map<String, dynamic>;
+        final postOwnerId = postData['UID'];
+
+        // Trigger post like notification
+        await NotificationTriggers.onPostLike(
+          targetUserId: postOwnerId,
+          postId: postId,
+          likerUserId: userId,
+        );
+      }
+
 
       await _firestore.collection('user_feed').doc(postId).update({
         'likes': FieldValue.arrayUnion([likeData]),
@@ -613,6 +666,23 @@ class UserService {
             Timestamp.now(), // Use Timestamp.now() instead of FieldValue.serverTimestamp()
         'text': text,
       };
+
+      // Get post to find owner
+      final postDoc = await _firestore.collection('user_feed').doc(postId).get();
+      if (postDoc.exists) {
+        final postData = postDoc.data() as Map<String, dynamic>;
+        final postOwnerId = postData['UID'];
+
+        // Only send notification if commenter is not the post owner
+        if (postOwnerId != userId) {
+          await NotificationTriggers.onPostComment(
+            targetUserId: postOwnerId,
+            postId: postId,
+            commentText: text,
+          );
+        }
+      }
+
 
       await _firestore.collection('user_feed').doc(postId).update({
         'comments': FieldValue.arrayUnion([commentData]),

@@ -63,6 +63,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _initRecorder();
     _loadMessages();
     _markMessagesAsRead();
+
+    // Listen for text changes to update send button
+    _textController.addListener(() {
+      if (mounted) {
+        setState(() {}); // Rebuild to update send button state
+      }
+    });
   }
 
   @override
@@ -160,14 +167,25 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // Send text message
+  // Send text message - IMPROVED VERSION
   void _sendTextMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
 
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to send messages')),
+      );
+      return;
+    }
 
     try {
+      // Show sending indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sending message...')),
+      );
+
       await _saveMessageToFirestore(
         type: 'text',
         text: text,
@@ -175,9 +193,18 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       _textController.clear();
+
+      // Hide sending indicator and show success
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message sent!')),
+      );
+
       print('✅ Text message sent: $text');
+
     } catch (e) {
       print('❌ Error sending text message: $e');
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send message: $e')),
       );
@@ -277,7 +304,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Save message to Firestore
+  // Save message to Firestore - FIXED VERSION
   Future<void> _saveMessageToFirestore({
     required String type,
     required String text,
@@ -286,6 +313,10 @@ class _ChatScreenState extends State<ChatScreen> {
     int duration = 0,
   }) async {
     try {
+      final user = _auth.currentUser;
+      if (user == null) throw Exception('User not authenticated');
+
+      // Create message data
       final messageData = {
         'senderId': senderId,
         'text': text,
@@ -295,26 +326,52 @@ class _ChatScreenState extends State<ChatScreen> {
         'timestamp': FieldValue.serverTimestamp(),
       };
 
+      // Save message to messages subcollection
       await _firestore
           .collection('chat_conversations')
           .doc(widget.conversationId)
           .collection('messages')
           .add(messageData);
 
-      // Update conversation
+      print('✅ Message saved to messages subcollection: $text');
+
+      // Update or create conversation document with ALL required fields
       final conversationData = {
+        'conversationId': widget.conversationId,
+        'participants': {
+          user.uid: {
+            'userId': user.uid,
+            'userName': user.displayName ?? 'User',
+            'userAvatar': user.photoURL ?? '',
+            'lastRead': FieldValue.serverTimestamp(),
+          },
+          widget.otherUserId: {
+            'userId': widget.otherUserId,
+            'userName': widget.otherUserName,
+            'userAvatar': widget.otherUserAvatar,
+            'lastRead': FieldValue.serverTimestamp(),
+          }
+        },
         'lastMessage': text,
-        'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageType': type,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': senderId,
         'updatedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'unreadCount': {
+          user.uid: 0, // Reset for current user
+          widget.otherUserId: FieldValue.increment(1), // Increment for other user
+        }
       };
 
+      // Use set with merge: true to create or update the conversation
       await _firestore
           .collection('chat_conversations')
           .doc(widget.conversationId)
           .set(conversationData, SetOptions(merge: true));
 
-      print('✅ Message saved successfully: $text');
+      print('✅ Conversation updated successfully');
+
     } catch (e) {
       print('❌ Error saving message to Firestore: $e');
       throw e;
@@ -1006,7 +1063,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       maxLines: 5,
                       minLines: 1,
-                      onSubmitted: (_) => _sendTextMessage(),
+                      onSubmitted: (text) {
+                        if (text.trim().isNotEmpty) {
+                          _sendTextMessage();
+                        }
+                      },
                     ),
                   ),
 
@@ -1034,6 +1095,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           const SizedBox(width: 12),
 
+          // Replace the current send button with this:
           Container(
             decoration: BoxDecoration(
               color: _textController.text.trim().isNotEmpty

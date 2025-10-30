@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/constants/app_colors.dart';
 import 'package:meet9ja/screens/explore_live_screen.dart';
+import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:meet9ja/screens/subscription_screen.dart';
 import 'package:meet9ja/screens/edit_profile_screen.dart';
@@ -1093,7 +1094,7 @@ class _BottomNav extends StatelessWidget {
                 } else if (i == 2 && current != 2) {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => ExploreLiveScreen()),
+                    MaterialPageRoute(builder: (_) => HomeScreen()),
                   );
                 }
 

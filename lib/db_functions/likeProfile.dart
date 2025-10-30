@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'createMatchRecord.dart';
 import 'createMutualMatch.dart';
+import 'notification_service.dart';
 
 Future<void> likeProfile(String targetUserId) async {
   try {
@@ -23,6 +24,7 @@ Future<void> likeProfile(String targetUserId) async {
     // Create match record
     await createMatchRecord(currentUser.uid, targetUserId, 'like');
 
+    await NotificationTriggers.onProfileLike(targetUserId);
     // Check for mutual like (match)
     final targetUserDoc = await FirebaseFirestore.instance.collection('users').doc(targetUserId).get();
     final targetUserLikes = List.from(targetUserDoc.data()?['liked_profiles'] ?? []);
@@ -30,6 +32,7 @@ Future<void> likeProfile(String targetUserId) async {
     if (targetUserLikes.contains(currentUser.uid)) {
       // It's a mutual match!
       await createMutualMatch(currentUser.uid, targetUserId);
+      await NotificationTriggers.onMutualMatch(currentUser.uid, targetUserId);
     }
 
     await batch.commit();
