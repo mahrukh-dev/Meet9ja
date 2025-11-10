@@ -61,41 +61,106 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
     });
   }
 
-  Future<void> _toggleLike() async {
+  // Like profile function - only triggered by ❤️ icon
+  Future<void> _likeProfile() async {
     try {
-      // Implement your like/unlike logic here
+      if (_user == null) return;
+
+      final String uid = widget.userId;
+      final String name = _user!.name ?? 'User';
+      print('❤️ Liking profile: $uid');
+
+      // Call your likeProfile function here
+      await likeProfile(uid);
+
       setState(() {
-        _isLiked = !_isLiked;
+        _isLiked = true;
       });
 
-      // Show feedback
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_isLiked ? 'Liked!' : 'Like removed'),
-          duration: const Duration(seconds: 1),
+          content: Text("You liked $name"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 800),
+          backgroundColor: Colors.green,
         ),
       );
+      // DO NOT navigate to next screen - only like action
     } catch (e) {
-      print('Error toggling like: $e');
+      print('❌ Error in _likeProfile: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1500),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  void _startChat() {
-    if (_user == null) return;
+  // Unlike profile function
+  Future<void> _unlikeProfile() async {
+    try {
+      if (_user == null) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            MessagesScreen(),
-        //     ChatScreen(
-        //   conversationId: widget.conversationId,
-        //   otherUserId: widget.userId,
-        //   otherUserName: _user!.name ?? 'User',
-        //   otherUserAvatar: UserService.getProfilePhotoUrl(_user!) ?? '',
-        // ),
-      ),
-    );
+      final String uid = widget.userId;
+      final String name = _user!.name ?? 'User';
+      print('💔 Unliking profile: $uid');
+
+      // Call your unlikeProfile function here
+      await unlikeProfile(uid);
+
+      setState(() {
+        _isLiked = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("You unliked $name"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 800),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      print('❌ Error in _unlikeProfile: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1500),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Toggle like functionality
+  Future<void> _toggleLike() async {
+    if (_isLiked) {
+      await _unlikeProfile();
+    } else {
+      await _likeProfile();
+    }
+  }
+
+  // Placeholder function - replace with your actual likeProfile implementation
+  Future<void> likeProfile(String uid) async {
+    // Implement your actual like profile logic here
+    // This should handle the match functionality
+    print('Implement likeProfile functionality for user: $uid');
+
+    await likeProfile(uid);
+
+    //await likeUser(uid);
+  }
+
+  // Placeholder function - replace with your actual unlikeProfile implementation
+  Future<void> unlikeProfile(String uid) async {
+    // Implement your actual unlike profile logic here
+    print('Implement unlikeProfile functionality for user: $uid');
+    // Example: await UserService.unlikeUser(uid);
   }
 
   void _showMoreOptions() {
@@ -303,10 +368,8 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
                   children: [
                     _Header(
                       user: _user,
-                      stats: _userStats,
                       isLiked: _isLiked,
                       onLikeTap: _toggleLike,
-                      onChatTap: _startChat,
                     ),
                     const SizedBox(height: 12),
                     _Segments(
@@ -336,17 +399,13 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
 class _Header extends StatelessWidget {
   const _Header({
     this.user,
-    required this.stats,
     required this.isLiked,
     required this.onLikeTap,
-    required this.onChatTap,
   });
 
   final UserModel? user;
-  final Map<String, int> stats;
   final bool isLiked;
   final VoidCallback onLikeTap;
-  final VoidCallback onChatTap;
 
   @override
   Widget build(BuildContext context) {
@@ -360,28 +419,11 @@ class _Header extends StatelessWidget {
       children: [
         Row(
           children: [
-            Stack(
-              alignment: Alignment.bottomLeft,
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundImage: profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
-                      ? NetworkImage(profilePhotoUrl)
-                      : const NetworkImage("https://i.pravatar.cc/120?img=8") as ImageProvider,
-                ),
-                Container(
-                  margin: const EdgeInsets.only(left: 2, bottom: 2),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black87,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    "${stats['followers'] ?? 0}",
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ),
-              ],
+            CircleAvatar(
+              radius: 40,
+              backgroundImage: profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
+                  ? NetworkImage(profilePhotoUrl)
+                  : const NetworkImage("https://i.pravatar.cc/120?img=8") as ImageProvider,
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -406,57 +448,28 @@ class _Header extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _StatItem(count: stats['followers'] ?? 0, label: "Followers"),
-                      const SizedBox(width: 16),
-                      _StatItem(count: stats['following'] ?? 0, label: "Following"),
-                      const SizedBox(width: 16),
-                      _StatItem(count: stats['subscribers'] ?? 0, label: "Subscribers"),
-                    ],
-                  ),
                 ],
               ),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: onLikeTap,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isLiked ? AppColors.primary : Colors.white,
-                  foregroundColor: isLiked ? Colors.white : AppColors.primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: AppColors.primary),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border),
-                label: Text(isLiked ? 'Liked' : 'Like'),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: onLikeTap,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isLiked ? AppColors.primary : Colors.white,
+              foregroundColor: isLiked ? Colors.white : AppColors.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: AppColors.primary),
               ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: onChatTap,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                icon: const Icon(Icons.chat),
-                label: const Text('Chat'),
-              ),
-            ),
-          ],
+            icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border),
+            label: Text(isLiked ? 'Liked' : 'Like'),
+          ),
         ),
       ],
     );
@@ -476,36 +489,6 @@ class _Header extends StatelessWidget {
     } catch (e) {
       return 18; // Default age if parsing fails
     }
-  }
-}
-
-// -------------------- STAT ITEM WIDGET --------------------
-class _StatItem extends StatelessWidget {
-  const _StatItem({required this.count, required this.label});
-  final int count;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          count.toString(),
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 16,
-          ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.black54,
-          ),
-        ),
-      ],
-    );
   }
 }
 
