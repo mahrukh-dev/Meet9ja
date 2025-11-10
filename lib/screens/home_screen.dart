@@ -221,8 +221,9 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
+              // Reduced app bar height
               Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 0), // Reduced vertical padding
                 child: Row(
                   children: [
                     // Updated: Direct navigation to ExploreLiveScreen
@@ -237,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: const Icon(
                         Icons.logout,
                         color: AppColors.primary,
+                        size: 20, // Smaller icon
                       ),
                       onPressed: () {
                         FirebaseService.signOut();
@@ -249,20 +251,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Progress indicator
+              // Progress indicator - moved closer to cards
               if (!_isLoading && _profiles.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 6), // Reduced vertical padding
                   child: Row(
                     children: List.generate(_profiles.length, (i) {
                       final active = i <= _index;
                       return Expanded(
                         child: Container(
-                          height: 4,
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          height: 3, // Thinner progress bar
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
                           decoration: BoxDecoration(
                             color: active ? AppColors.primary : Colors.black12,
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
                       );
@@ -270,7 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              // Content Area
+              // Content Area - Expanded to take more space
               Expanded(
                 child: _isLoading
                     ? _buildLoadingState()
@@ -283,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Bottom nav
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10), // Reduced padding
                 child: _BottomNav(current: 2),
               ),
             ],
@@ -444,8 +446,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-// REMOVED: _openLiveSheet method completely
 }
 
 // ===== Updated Widgets for Real Data =====
@@ -661,7 +661,7 @@ class _Meet9jaLogo extends StatelessWidget {
     return Text(
       "Meet9ja",
       style: TextStyle(
-        fontSize: 24,
+        fontSize: 22, // Slightly smaller logo
         fontWeight: FontWeight.w900,
         letterSpacing: 0.2,
         color: Colors.black87,
@@ -692,31 +692,32 @@ class _LivePill extends StatelessWidget {
           color: AppColors.primary.withOpacity(0.10),
           border: Border.all(color: AppColors.primary, width: 1.2),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), // Smaller padding
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 8,
-              height: 8,
+              width: 6, // Smaller dot
+              height: 6,
               decoration: const BoxDecoration(
                 color: Colors.redAccent,
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             const Icon(
               CupertinoIcons.tv,
-              size: 18,
+              size: 16, // Smaller icon
               color: AppColors.primary,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
             const Text(
               "LIVE",
               style: TextStyle(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 0.6,
+                fontSize: 12, // Smaller font
+                letterSpacing: 0.4,
               ),
             ),
           ],
@@ -725,8 +726,6 @@ class _LivePill extends StatelessWidget {
     );
   }
 }
-
-// REMOVED: _LiveHeader class completely
 
 class _InfoRow extends StatelessWidget {
   const _InfoRow({required this.icon, required this.text});
@@ -737,14 +736,14 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: Colors.white),
+        Icon(icon, size: 16, color: Colors.white), // Smaller icon
         const SizedBox(width: 6),
         Flexible(
           child: Text(
             text,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 15,
+              fontSize: 14, // Slightly smaller font
               fontWeight: FontWeight.w600,
               shadows: [Shadow(color: Colors.black38, blurRadius: 4)],
             ),
@@ -765,7 +764,7 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5), // Smaller padding
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.9),
         borderRadius: BorderRadius.circular(999),
@@ -774,14 +773,14 @@ class _Chip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_icon != null) ...[
-            Icon(_icon, size: 14, color: Colors.black87),
-            const SizedBox(width: 5),
+            Icon(_icon, size: 12, color: Colors.black87), // Smaller icon
+            const SizedBox(width: 4),
           ],
           Text(
             text,
             style: const TextStyle(
               color: Colors.black87,
-              fontSize: 12.5,
+              fontSize: 11, // Smaller font
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -811,8 +810,8 @@ class _PillBtn extends StatelessWidget {
         child: Container(
           color: bg,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Icon(icon, color: fg, size: 22),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // Smaller padding
+            child: Icon(icon, color: fg, size: 20), // Smaller icon
           ),
         ),
       ),
@@ -833,8 +832,8 @@ class _CircleBtn extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Icon(icon, size: 18, color: Colors.black87),
+        padding: const EdgeInsets.all(8), // Smaller padding
+        child: Icon(icon, size: 16, color: Colors.black87), // Smaller icon
       ),
     );
   }
@@ -864,8 +863,8 @@ class _BottomNav extends StatelessWidget {
     ];
 
     return Container(
-      height: 90,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      height: 80, // Smaller bottom nav
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), // Reduced padding
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
@@ -915,7 +914,7 @@ class _BottomNav extends StatelessWidget {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4), // Smaller padding
                 decoration: BoxDecoration(
                   color: selected
                       ? AppColors.primary.withOpacity(0.08)
@@ -927,17 +926,17 @@ class _BottomNav extends StatelessWidget {
                   children: [
                     Icon(
                       icons[i],
-                      size: selected ? 30 : 28,
+                      size: selected ? 26 : 24, // Smaller icons
                       color: selected ? AppColors.primary : Colors.black54,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2), // Reduced spacing
                     Text(
                       labels[i],
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         height: 1.0,
-                        fontSize: 11,
+                        fontSize: 10, // Smaller font
                         fontWeight: selected
                             ? FontWeight.w800
                             : FontWeight.w600,

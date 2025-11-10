@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/screens/MatchedUserScreen.dart';
+import 'package:meet9ja/screens/activity_screen.dart';
 import 'package:meet9ja/screens/dating_profile.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
@@ -48,7 +49,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_performSearch);
-    _loadChatsAndStories();
+    _loadAllChats();
     _loadAllUsers();
     _initializeZegoCloud();
   }
@@ -115,19 +116,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
-    if (firstPhotos == null) return null;
-    for (var i = 1; i <= 4; i++) {
-      final photoUrl = firstPhotos['photo${i}url']?.toString();
-      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
-        return photoUrl;
-      }
-    }
-    return null;
-  }
-
-  // Load real chat data from Firestore
-  Future<void> _loadChatsAndStories() async {
+  // Load ALL chat conversations (not just matched users)
+  Future<void> _loadAllChats() async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
@@ -135,7 +125,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         return;
       }
 
-      print('🔄 Loading chats for user: ${user.uid}');
+      print('🔄 Loading ALL chats for user: ${user.uid}');
 
       _chatSubscription = _firestore
           .collection('chat_conversations')
@@ -144,7 +134,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
           .snapshots()
           .listen((snapshot) async {
         if (mounted) {
-          // Process conversations to get correct user data
           List<_Conversation> conversations = [];
 
           for (var doc in snapshot.docs) {
@@ -161,7 +150,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             _filteredChats = List.from(_chats);
             _isLoading = false;
           });
-          print('✅ Loaded ${_chats.length} conversations');
+          print('✅ Loaded ${_chats.length} conversations (all users)');
         }
       }, onError: (e) {
         print('❌ Chat subscription error: $e');
@@ -265,6 +254,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
+  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
+  }
+
   // Search functionality
   void _performSearch() {
     final query = _searchController.text.toLowerCase().trim();
@@ -292,7 +292,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
-  // Start chat with a user
+  // Start chat with any user
   void _startChatWithUser(_User user) async {
     try {
       final currentUser = _auth.currentUser;
@@ -725,19 +725,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
         Expanded(
           child: _allUsers.isEmpty
-              ? const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.people_outline, size: 64, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'No users found',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          )
+              ? _buildNoUsersState()
               : ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: _allUsers.length,
@@ -751,6 +739,39 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildNoUsersState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            FontAwesomeIcons.users,
+            size: 64,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No users found',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              'There are no other users to chat with yet',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1106,6 +1127,7 @@ class _ChatTile extends StatelessWidget {
     );
   }
 }
+
 // ---------- Bottom Nav ----------
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.current, this.onTap});
@@ -1118,17 +1140,16 @@ class _BottomNav extends StatelessWidget {
       FontAwesomeIcons.solidUser,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.solidCircleUser,
-      FontAwesomeIcons.heart, // Changed from solidHeart to video
+      FontAwesomeIcons.heart,
       FontAwesomeIcons.solidCommentDots,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Liked You", // Changed from "Liked You" to "Live"
+      "Liked You",
       "Chats",
     ];
-
 
     return Container(
       height: 90,
@@ -1170,15 +1191,14 @@ class _BottomNav extends StatelessWidget {
                   );
                   return;
                 }
-                if (i == -3 && current != 3) { // Added navigation for Live tab
-
+                if (i == 3 && current != 3) {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)),
+                    MaterialPageRoute(builder: (_) => ActivityScreen()),
                   );
                   return;
                 }
-                if (i == 4 && current != 4) { // Current screen (Chats), do nothing
+                if (i == 4 && current != 4) {
                   // Already on Messages screen, do nothing
                   return;
                 }

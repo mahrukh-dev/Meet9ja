@@ -9,8 +9,10 @@ import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/screens/MatchedUserScreen.dart';
 import 'package:meet9ja/screens/activity_screen.dart' hide AppColors;
 import 'package:meet9ja/screens/profile_screen.dart';
+import 'package:meet9ja/screens/post_detail_screen.dart';
 
 import '../constants/app_colors.dart';
+import '../models/user_model.dart';
 import 'browse_live_screen.dart';
 import 'discover_screen.dart';
 import 'home_screen.dart';
@@ -42,6 +44,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   bool _isLoading = true;
   StreamSubscription<QuerySnapshot>? _liveStreamSubscription;
   String? _currentUserId;
+  List<UserModel> _matchedUsers = [];
 
   // Bottom navigation state
   int _currentBottomNavIndex = 0;
@@ -53,6 +56,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _loadLiveData();
     _setupLiveStreamListener();
+    _loadMatchedUsers();
   }
 
   @override
@@ -61,6 +65,241 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _tab.dispose();
     super.dispose();
   }
+
+
+
+  // Load matched users for sharing
+  Future<void> _loadMatchedUsers() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      // Get mutual matches where both users have liked each other
+      final matchesSnapshot = await FirebaseFirestore.instance
+          .collection('matches')
+          .where('UID', isEqualTo: currentUser.uid)
+          .where('status', isEqualTo: 'match')
+          .where('is_mutual', isEqualTo: true)
+          .get();
+
+      final matchedUserIds = matchesSnapshot.docs
+          .map((doc) => doc.data()['matched_user_ID'] as String)
+          .toList();
+
+      final users = await Future.wait(
+        matchedUserIds.map((userId) => UserService.getUserProfile(userId)),
+      );
+
+      setState(() {
+        _matchedUsers = users.whereType<UserModel>().toList();
+      });
+    } catch (e) {
+      print('Error loading matched users: $e');
+    }
+  }
+
+  // Add these methods to _ExploreLiveScreenState class
+
+// Load matched users for sharing (same as in PostDetailScreen)
+  Future<List<UserModel>> _loadMatchedUsersForSharing() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return [];
+
+      // Get mutual matches where both users have liked each other
+      final matchesSnapshot = await FirebaseFirestore.instance
+          .collection('matches')
+          .where('UID', isEqualTo: currentUser.uid)
+          .where('status', isEqualTo: 'match')
+          .where('is_mutual', isEqualTo: true)
+          .get();
+
+      final matchedUserIds = matchesSnapshot.docs
+          .map((doc) => doc.data()['matched_user_ID'] as String)
+          .toList();
+
+      final users = await Future.wait(
+        matchedUserIds.map((userId) => UserService.getUserProfile(userId)),
+      );
+
+      return users.whereType<UserModel>().toList();
+    } catch (e) {
+      print('Error loading matched users for sharing: $e');
+      return [];
+    }
+  }
+
+// Generate consistent conversation ID (same as in PostDetailScreen)
+  String _getConversationId(String user1, String user2) {
+    final sortedIds = [user1, user2]..sort();
+    return 'conversation_${sortedIds[0]}_${sortedIds[1]}';
+  }
+
+// Ensure conversation exists (same as in PostDetailScreen)
+  Future<void> _ensureConversationExists(String conversationId, String currentUserId, UserModel otherUser) async {
+    try {
+      final conversationDoc = await FirebaseFirestore.instance
+          .collection('chat_conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        // Get current user data from Firestore
+        final currentUserDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUserId)
+            .get();
+        final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
+
+        final currentUserName = currentUserData?['name'] ?? 'You';
+        final currentUserAvatar = _getFirstPhotoUrl(currentUserData?['first_photos']) ?? 'https://i.pravatar.cc/200';
+
+        final otherUserAvatar = UserService.getProfilePhotoUrl(otherUser) ?? 'https://i.pravatar.cc/200';
+
+        await FirebaseFirestore.instance
+            .collection('chat_conversations')
+            .doc(conversationId)
+            .set({
+          'participants': [currentUserId, otherUser.uid],
+          'participantNames': {
+            currentUserId: currentUserName,
+            otherUser.uid: otherUser.name,
+          },
+          'participantAvatars': {
+            currentUserId: currentUserAvatar,
+            otherUser.uid: otherUserAvatar,
+          },
+          'lastMessage': 'Shared a post',
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'lastMessageType': 'post_share',
+          'unreadCount': {
+            currentUserId: 0,
+            otherUser.uid: 0,
+          },
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('✅ Created new conversation for sharing: $conversationId');
+      }
+    } catch (e) {
+      print('❌ Error ensuring conversation exists: $e');
+      rethrow;
+    }
+  }
+
+// Helper method to get first photo URL (same as in PostDetailScreen)
+  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
+  }
+
+// Save shared post to chat (same as in PostDetailScreen)
+  Future<void> _saveSharedPostToChat({
+    required String conversationId,
+    required String message,
+    required _ReelItem item,
+    required String senderId,
+  }) async {
+    try {
+      // Save message to messages subcollection
+      await FirebaseFirestore.instance
+          .collection('chat_conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .add({
+        'senderId': senderId,
+        'text': message,
+        'type': 'post_share',
+        'sharedPost': {
+          'postId': item.postId,
+          'mediaUrl': item.thumb,
+          'caption': item.title,
+          'ownerId': item.userId,
+          'postType': item.type, // Add post type for context
+        },
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Update conversation with shared post info
+      await FirebaseFirestore.instance
+          .collection('chat_conversations')
+          .doc(conversationId)
+          .update({
+        'lastMessage': 'Shared ${item.type == 'story' ? 'a story' : 'a post'} 📸',
+        'lastMessageType': 'post_share',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': senderId,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'unreadCount.$senderId': 0,
+      });
+
+      print('✅ Shared ${item.type} saved to chat: $conversationId');
+    } catch (e) {
+      print('❌ Error saving shared ${item.type} to chat: $e');
+      rethrow;
+    }
+  }
+
+// Share post with specific user (same as in PostDetailScreen)
+  Future<void> _shareWithUser(UserModel user, _ReelItem item) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      // Generate conversation ID
+      final conversationId = _getConversationId(currentUser.uid, user.uid);
+
+      // Ensure conversation exists
+      await _ensureConversationExists(conversationId, currentUser.uid, user);
+
+      // Create share message based on content type
+      final contentType = item.type == 'story' ? 'story' : 'post';
+      final shareMessage = "Check out this $contentType! 📸\n\n${item.title}\n\n[Shared ${contentType}: ${item.thumb}]";
+
+      // Save shared post message to Firestore
+      await _saveSharedPostToChat(
+        conversationId: conversationId,
+        message: shareMessage,
+        item: item,
+        senderId: currentUser.uid,
+      );
+
+      // Close the share sheet
+      if (mounted) {
+        Navigator.pop(context);
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${contentType} shared with ${user.name}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+
+    } catch (e) {
+      print('❌ Error sharing ${item.type}: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to share ${item.type}: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+
+
+
 
   // Load real live stream data from Firebase
   Future<void> _loadLiveData() async {
@@ -181,8 +420,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               userId: userId,
               userPhoto: userPhoto,
               timestamp: data['created_at'] as Timestamp?,
-              likes: [],
-              comments: [],
+              likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
+              comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
               mediaType: data['media_type'] ?? 'image',
             );
           } catch (e) {
@@ -281,6 +520,278 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         });
       }
     });
+  }
+
+  // Like functionality
+  Future<void> _likePost(_ReelItem item) async {
+    try {
+      final currentUserId = _currentUserId;
+      if (currentUserId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please login to like posts')),
+        );
+        return;
+      }
+
+      // Check if already liked
+      final isLiked = item.likes.any((like) => like['likerUID'] == currentUserId);
+
+      if (isLiked) {
+        // Unlike
+        await UserService.unlikePost(item.postId, currentUserId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post unliked')),
+        );
+      } else {
+        // Like
+        await UserService.likePost(item.postId, currentUserId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post liked')),
+        );
+      }
+
+      // Reload data to reflect changes
+      _loadLiveData();
+    } catch (e) {
+      print('Error liking post: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to like: $e')),
+      );
+    }
+  }
+
+  // Comment functionality
+  void _showComments(BuildContext context, _ReelItem item) {
+    final currentUserId = _currentUserId;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login to comment')),
+      );
+      return;
+    }
+
+    // Navigate to post detail screen for comments
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PostDetailScreen(postId: item.postId),
+      ),
+    );
+  }
+
+  // Share functionality - only to matched users
+  void _sharePost(_ReelItem item) {
+    final currentUserId = _currentUserId;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login to share posts')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        margin: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade200),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.share, color: AppColors.primary, size: 24),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Share ${item.type == 'story' ? 'Story' : 'Post'}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              FutureBuilder<List<UserModel>>(
+                future: _loadMatchedUsersForSharing(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(
+                        child: CircularProgressIndicator(color: AppColors.primary),
+                      ),
+                    );
+                  }
+
+                  if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.people_outline, size: 64, color: Colors.grey[300]),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'No matches yet',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Match with users to share posts',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  final matchedUsers = snapshot.data!;
+                  return Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: matchedUsers.length,
+                      itemBuilder: (context, index) {
+                        final user = matchedUsers[index];
+                        final profilePhotoUrl = UserService.getProfilePhotoUrl(user);
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            radius: 20,
+                            backgroundImage: profilePhotoUrl != null
+                                ? NetworkImage(profilePhotoUrl)
+                                : const NetworkImage("https://i.pravatar.cc/100?img=8") as ImageProvider,
+                          ),
+                          title: Text(
+                            user.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          subtitle: Text(
+                            UserService.getDisplayUsername(user),
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: const Text(
+                              'Share',
+                              style: TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                          onTap: () => _shareWithUser(user, item),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.grey.shade100,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Send share message to matched user
+  Future<void> _sendShareMessage(UserModel user, _ReelItem item) async {
+    try {
+      final currentUserId = _currentUserId;
+      if (currentUserId == null) return;
+
+      // Create a share message
+      final message = {
+        'senderId': currentUserId,
+        'receiverId': user.uid,
+        'message': 'Check out this ${item.type}! ${item.title}',
+        'sharedPostId': item.postId,
+        'sharedPostType': item.type,
+        'sharedPostImage': item.thumb,
+        'sharedPostUser': item.user,
+        'timestamp': FieldValue.serverTimestamp(),
+        'type': 'share',
+        'isRead': false,
+      };
+
+      // Save to messages collection
+      await FirebaseFirestore.instance
+          .collection('messages')
+          .add(message);
+
+      // Update user's recent activity
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUserId)
+          .collection('recent_activity')
+          .add({
+        'type': 'shared_post',
+        'postId': item.postId,
+        'sharedWith': user.uid,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      Navigator.pop(context); // Close the bottom sheet
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Shared with ${user.username}')),
+      );
+    } catch (e) {
+      print('Error sharing post: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to share: $e')),
+      );
+    }
   }
 
   // Check if user is premium before going live
@@ -458,59 +969,22 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
     return Scaffold(
       backgroundColor: darkBackground,
+      extendBodyBehindAppBar: true, // Important for TikTok-style overlay
       appBar: AppBar(
-        backgroundColor: darkBackground,
-        surfaceTintColor: Colors.transparent,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         titleSpacing: 0,
         leading: IconButton(
           icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🌸 Custom Tabs (Stories, Live, Clips)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: darkBackground,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.transparent),
-              ),
-              child: TabBar(
-                controller: _tab,
-                indicator: const UnderlineTabIndicator(
-                  borderSide: BorderSide(
-                    width: 3.0,
-                    color: Colors.white,
-                  ),
-                  insets: EdgeInsets.symmetric(horizontal: 20.0),
-                ),
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white,
-                labelStyle: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                ),
-                unselectedLabelStyle: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                ),
-                indicatorSize: TabBarIndicatorSize.label,
-                overlayColor: WidgetStateProperty.all(Colors.transparent),
-                dividerColor: Colors.transparent,
-                splashFactory: NoSplash.splashFactory,
-                padding: const EdgeInsets.all(6),
-                labelPadding: const EdgeInsets.symmetric(horizontal: 10),
-                tabs: const [
-                  Tab(text: "Following"),
-                  Tab(text: "Live"),
-                  Tab(text: "Clips"),
-                ],
-              ),
-            ),
-          ],
+        // TikTok-style transparent tabs
+        title: Container(
+          height: kToolbarHeight,
+          alignment: Alignment.center,
+          child: _TikTokTabBar(
+            tabController: _tab,
+          ),
         ),
       ),
 
@@ -525,12 +999,18 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               controller: _tab,
               children: [
                 // Stories Tab - Shows ALL stories from other users
-                _ReelsFeed(items: _followingReels, showStories: true),
+                _ReelsFeed(
+                  items: _followingReels,
+                  showStories: true,
+                  onLike: _likePost,
+                  onComment: _showComments,
+                  onShare: _sharePost,
+                ),
 
                 // Live Tab - Shows live streams
                 Column(
                   children: [
-                    const SizedBox(height: 8),
+                    const SizedBox(height: kToolbarHeight + 40), // Space for overlay tabs
                     // Live Filters Bar
                     _LiveFiltersBar(
                       filters: _liveFilters,
@@ -570,7 +1050,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                 ),
 
                 // Posts Tab - Shows ALL posts from other users
-                _ReelsFeed(items: _clipsReels, showStories: false),
+                _ReelsFeed(
+                  items: _clipsReels,
+                  showStories: false,
+                  onLike: _likePost,
+                  onComment: _showComments,
+                  onShare: _sharePost,
+                ),
               ],
             ),
           ),
@@ -668,33 +1154,54 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
-  Widget _buildEmptyContentState(String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(FontAwesomeIcons.film, size: 64, color: Colors.white54),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: const TextStyle(color: Colors.white, fontSize: 18),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Content from other users will appear here',
-            style: TextStyle(color: Colors.white54),
-          ),
-        ],
-      ),
-    );
-  }
-
   String timeOfDayText() {
     final now = TimeOfDay.now();
     final h = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
     final m = now.minute.toString().padLeft(2, '0');
     final suffix = now.period == DayPeriod.am ? "AM" : "PM";
     return "$h:$m $suffix";
+  }
+}
+
+/* ----------------------- TIKTOK STYLE TAB BAR ----------------------- */
+class _TikTokTabBar extends StatelessWidget {
+  final TabController tabController;
+
+  const _TikTokTabBar({required this.tabController});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 250,
+      height: 40,
+
+      child: TabBar(
+        controller: tabController,
+        indicator: BoxDecoration(
+          borderRadius: BorderRadius.circular(25),
+          color: Colors.transparent,
+        ),
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.black,
+        labelStyle: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.transparent,
+        splashFactory: NoSplash.splashFactory,
+        padding: const EdgeInsets.all(2),
+        tabs: const [
+          Tab(text: "Following"),
+          Tab(text: "Live"),
+          Tab(text: "Clips"),
+        ],
+      ),
+    );
   }
 }
 
@@ -899,9 +1406,19 @@ class _LiveTile extends StatelessWidget {
 
 /* ----------------------- REELS FEED ----------------------- */
 class _ReelsFeed extends StatelessWidget {
-  const _ReelsFeed({required this.items, this.showStories = false});
+  const _ReelsFeed({
+    required this.items,
+    this.showStories = false,
+    required this.onLike,
+    required this.onComment,
+    required this.onShare,
+  });
+
   final List<_ReelItem> items;
   final bool showStories;
+  final Function(_ReelItem) onLike;
+  final Function(BuildContext, _ReelItem) onComment;
+  final Function(_ReelItem) onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -912,7 +1429,13 @@ class _ReelsFeed extends StatelessWidget {
       itemCount: items.length,
       itemBuilder: (_, i) {
         final it = items[i];
-        return _ReelContent(item: it, showStories: showStories);
+        return _ReelContent(
+          item: it,
+          showStories: showStories,
+          onLike: onLike,
+          onComment: onComment,
+          onShare: onShare,
+        );
       },
     );
   }
@@ -942,11 +1465,23 @@ class _ReelsFeed extends StatelessWidget {
 class _ReelContent extends StatelessWidget {
   final _ReelItem item;
   final bool showStories;
+  final Function(_ReelItem) onLike;
+  final Function(BuildContext, _ReelItem) onComment;
+  final Function(_ReelItem) onShare;
 
-  const _ReelContent({required this.item, this.showStories = false});
+  const _ReelContent({
+    required this.item,
+    this.showStories = false,
+    required this.onLike,
+    required this.onComment,
+    required this.onShare,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final isLiked = item.likes.any((like) => like['likerUID'] == currentUserId);
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -981,27 +1516,29 @@ class _ReelContent extends StatelessWidget {
             child: _StoryTimeBadge(timestamp: item.timestamp),
           ),
 
-        // Right Action Buttons
+        // Right Action Buttons - REMOVED SAVE BUTTON
         Positioned(
           right: 12,
           bottom: 110,
           child: Column(
             children: [
               _CircleIcon(
-                icon: FontAwesomeIcons.heart,
-                onTap: () => _likePost(item),
+                icon: isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
+                onTap: () => onLike(item),
                 count: item.likes.length,
+                isLiked: isLiked,
               ),
               const SizedBox(height: 16),
               _CircleIcon(
                 icon: FontAwesomeIcons.comment,
-                onTap: () => _showComments(context, item),
+                onTap: () => onComment(context, item),
                 count: item.comments.length,
               ),
               const SizedBox(height: 16),
-              _CircleIcon(icon: FontAwesomeIcons.share, onTap: () => _sharePost(item)),
-              const SizedBox(height: 16),
-              _CircleIcon(icon: FontAwesomeIcons.bookmark, onTap: () => _savePost(item)),
+              _CircleIcon(
+                  icon: FontAwesomeIcons.share,
+                  onTap: () => onShare(item)
+              ),
             ],
           ),
         ),
@@ -1091,8 +1628,8 @@ class _ReelContent extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  const Icon(
-                    FontAwesomeIcons.heart,
+                  Icon(
+                    isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
                     color: Colors.white70,
                     size: 14,
                   ),
@@ -1142,34 +1679,111 @@ class _ReelContent extends StatelessWidget {
     return '${postTime.day}/${postTime.month}/${postTime.year}';
   }
 
-  void _likePost(_ReelItem item) {
-    // Implement like functionality
-    print('Liked post: ${item.postId}');
-  }
-
-  void _showComments(BuildContext context, _ReelItem item) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => _CommentsBottomSheet(item: item),
-    );
-  }
-
-  void _sharePost(_ReelItem item) {
-    // Implement share functionality
-    print('Shared post: ${item.postId}');
-  }
-
-  void _savePost(_ReelItem item) {
-    // Implement save functionality
-    print('Saved post: ${item.postId}');
-  }
-
   String _formatViewers(int v) {
     if (v >= 1000000) return "${(v / 1000000).toStringAsFixed(1)}M";
     if (v >= 1000) return "${(v / 1000).toStringAsFixed(1)}K";
     return "$v";
+  }
+}
+
+/* ----------------------- SHARE BOTTOM SHEET ----------------------- */
+class _ShareBottomSheet extends StatelessWidget {
+  final _ReelItem item;
+  final List<UserModel> matchedUsers;
+  final Function(UserModel, _ReelItem) onShare;
+
+  const _ShareBottomSheet({
+    required this.item,
+    required this.matchedUsers,
+    required this.onShare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: const BoxDecoration(
+        color: Color(0xFF333333),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.3),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                const Text(
+                  'Share with Matched Users',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '(${matchedUsers.length})',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(FontAwesomeIcons.xmark, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+
+          // Matched Users List
+          Expanded(
+            child: matchedUsers.isEmpty
+                ? const Center(
+              child: Text(
+                'No matched users found',
+                style: TextStyle(color: Colors.white54),
+              ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: matchedUsers.length,
+              itemBuilder: (context, index) {
+                final user = matchedUsers[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    radius: 25,
+                    backgroundImage: NetworkImage(
+                      user.photoUrl![0].isNotEmpty
+                          ? user.photoUrl![0]
+                          : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop',
+                    ),
+                  ),
+                  title: Text(
+                    user.username,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+
+                  trailing: IconButton(
+                    icon: const Icon(FontAwesomeIcons.paperPlane, color: AppColors.primary),
+                    onPressed: () => onShare(user, item),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1281,11 +1895,13 @@ class _CircleIcon extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final int count;
+  final bool isLiked;
 
   const _CircleIcon({
     required this.icon,
     required this.onTap,
     this.count = 0,
+    this.isLiked = false,
   });
 
   @override
@@ -1303,15 +1919,19 @@ class _CircleIcon extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white24),
             ),
-            child: Icon(icon, color: Colors.white, size: 20),
+            child: Icon(
+                icon,
+                color: isLiked ? Colors.red : Colors.white,
+                size: 20
+            ),
           ),
         ),
         if (count > 0) ...[
           const SizedBox(height: 4),
           Text(
             _formatCount(count),
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: isLiked ? Colors.red : Colors.white,
               fontWeight: FontWeight.w800,
               fontSize: 12,
             ),
@@ -1325,187 +1945,6 @@ class _CircleIcon extends StatelessWidget {
     if (count >= 1000000) return "${(count / 1000000).toStringAsFixed(1)}M";
     if (count >= 1000) return "${(count / 1000).toStringAsFixed(1)}K";
     return count.toString();
-  }
-}
-
-// Comments Bottom Sheet
-class _CommentsBottomSheet extends StatelessWidget {
-  final _ReelItem item;
-
-  const _CommentsBottomSheet({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      decoration: const BoxDecoration(
-        color: Color(0xFF333333),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Row(
-              children: [
-                const Text(
-                  'Comments',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '(${item.comments.length})',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(FontAwesomeIcons.xmark, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-
-          // Comments List
-          Expanded(
-            child: item.comments.isEmpty
-                ? const Center(
-              child: Text(
-                'No comments yet',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-                : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: item.comments.length,
-              itemBuilder: (context, index) {
-                final comment = item.comments[index];
-                return _CommentTile(comment: comment);
-              },
-            ),
-          ),
-
-          // Add Comment Input
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.black.withOpacity(0.3),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Add a comment...',
-                      hintStyle: const TextStyle(color: Colors.white54),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white.withOpacity(0.1),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(FontAwesomeIcons.paperPlane, color: AppColors.primary),
-                  onPressed: () {
-                    // Implement add comment
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CommentTile extends StatelessWidget {
-  final Map<String, dynamic> comment;
-
-  const _CommentTile({required this.comment});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // User Avatar
-          CircleAvatar(
-            radius: 20,
-            backgroundImage: NetworkImage(
-              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop',
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  comment['commenterUID'] ?? 'User',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  comment['text'] ?? '',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatCommentTime(comment['date_time']),
-                  style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(FontAwesomeIcons.heart, size: 16, color: Colors.white54),
-            onPressed: () {},
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatCommentTime(dynamic timestamp) {
-    if (timestamp is Timestamp) {
-      final time = timestamp.toDate();
-      final now = DateTime.now();
-      final difference = now.difference(time);
-
-      if (difference.inMinutes < 1) return 'Just now';
-      if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
-      if (difference.inHours < 24) return '${difference.inHours}h ago';
-      return '${difference.inDays}d ago';
-    }
-    return '';
   }
 }
 
@@ -1644,3 +2083,4 @@ class _BottomCreateButton extends StatelessWidget {
     );
   }
 }
+

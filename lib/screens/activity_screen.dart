@@ -10,14 +10,9 @@ import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:meet9ja/screens/chat_screen.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
 
+import '../constants/app_colors.dart';
 import 'livestream_screen.dart';
 
-class AppColors {
-  static const Color primary = Color(0xA1E43AA8);
-  static const Color kGradA = Color(0xFFFDF2F8);
-  static const Color kGradB = Color(0xFFF8EAFE);
-  static const Color kGradC = Color(0xFFFFF7FB);
-}
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({Key? key}) : super(key: key);
