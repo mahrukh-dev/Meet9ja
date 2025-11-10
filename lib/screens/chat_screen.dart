@@ -14,6 +14,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../constants/app_colors.dart';
 import '../db_functions/firebaseStorageService.dart';
+import '../models/post_model.dart';
+import '../screens/post_detail_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -132,6 +134,7 @@ class _ChatScreenState extends State<ChatScreen> {
               'timestamp': data['timestamp'],
               'duration': data['duration'] ?? 0,
               'isOther': data['senderId'] != user.uid,
+              'sharedPost': data['sharedPost'], // Add shared post data
             };
           }).toList();
         });
@@ -307,6 +310,7 @@ class _ChatScreenState extends State<ChatScreen> {
     required String senderId,
     String mediaUrl = '',
     int duration = 0,
+    Map<String, dynamic>? sharedPost,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -320,6 +324,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'mediaUrl': mediaUrl,
         'duration': duration,
         'timestamp': FieldValue.serverTimestamp(),
+        if (sharedPost != null) 'sharedPost': sharedPost,
       };
 
       // Save message to messages subcollection
@@ -696,6 +701,16 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // Navigate to post detail screen
+  void _navigateToPostDetail(String postId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostDetailScreen(postId: postId),
+      ),
+    );
+  }
+
   // Show media options
   void _showMediaOptions() {
     showModalBottomSheet(
@@ -833,11 +848,166 @@ class _ChatScreenState extends State<ChatScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
+  // Build shared post widget
+  Widget _buildSharedPost(Map<String, dynamic> sharedPost, bool isOther) {
+    final postId = sharedPost['postId'] ?? '';
+    final mediaUrl = sharedPost['mediaUrl'] ?? '';
+    final caption = sharedPost['caption'] ?? '';
+    final ownerId = sharedPost['ownerId'] ?? '';
+
+    return GestureDetector(
+      onTap: () => _navigateToPostDetail(postId),
+      child: Container(
+        width: 250,
+        decoration: BoxDecoration(
+          color: isOther ? Colors.grey[50] : AppColors.primary.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isOther ? Colors.grey[300]! : AppColors.primary.withOpacity(0.3),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Post Image
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+              child: Image.network(
+                mediaUrl,
+                height: 150,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    height: 150,
+                    color: Colors.grey[200],
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    height: 150,
+                    color: Colors.grey[200],
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.grey, size: 40),
+                        SizedBox(height: 8),
+                        Text(
+                          'Failed to load post',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // Post Info
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Shared Label
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.share,
+                        color: isOther ? Colors.grey : AppColors.primary,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Shared Post',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isOther ? Colors.grey : AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Caption Preview
+                  Text(
+                    caption.isNotEmpty
+                        ? (caption.length > 100 ? '${caption.substring(0, 100)}...' : caption)
+                        : 'No caption',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isOther ? Colors.black87 : Colors.black87,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  // Tap to view hint
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap to view post',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isOther ? Colors.grey : AppColors.primary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Build message content based on type
   Widget _buildMessageContent(Map<String, dynamic> message, bool isOther) {
     final contentColor = isOther ? Colors.black87 : Colors.white;
 
     switch (message['type']) {
+      case 'post_share':
+        final sharedPost = message['sharedPost'];
+        if (sharedPost != null) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Shared post preview
+              _buildSharedPost(sharedPost, isOther),
+              const SizedBox(height: 8),
+              // Optional text message along with the share
+              if (message['text'] != null && message['text'].toString().isNotEmpty)
+                Text(
+                  message['text'],
+                  style: TextStyle(
+                    color: contentColor,
+                    fontSize: 16,
+                  ),
+                ),
+            ],
+          );
+        } else {
+          // Fallback for old format
+          return Text(
+            message['text'] ?? 'Shared a post',
+            style: TextStyle(
+              color: contentColor,
+              fontSize: 16,
+            ),
+          );
+        }
+
       case 'image':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1162,19 +1332,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  // StreamBuilder<DocumentSnapshot>(
-                  //   stream: _firestore.collection('users').doc(widget.otherUserId).snapshots(),
-                  //   builder: (context, snapshot) {
-                  //     final isOnline = snapshot.data?['is_online'] ?? false;
-                  //     return Text(
-                  //       isOnline ? "Online" : "Offline",
-                  //       style: TextStyle(
-                  //         fontSize: 12,
-                  //         color: isOnline ? Colors.green : Colors.grey,
-                  //       ),
-                  //     );
-                  //   },
-                  // ),
                 ],
               ),
             ),
