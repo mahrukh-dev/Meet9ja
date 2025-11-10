@@ -28,6 +28,7 @@ class ActivityScreen extends StatefulWidget {
 
 class _ActivityScreenState extends State<ActivityScreen> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   late Stream<QuerySnapshot> _notificationsStream;
   late Stream<int> _unreadCountStream;
 
@@ -45,6 +46,94 @@ class _ActivityScreenState extends State<ActivityScreen> {
       // Create empty streams if no user
       _notificationsStream = const Stream.empty();
       _unreadCountStream = Stream.value(0);
+    }
+  }
+
+  // Generate consistent conversation ID
+  String _getConversationId(String user1, String user2) {
+    final sortedIds = [user1, user2]..sort();
+    return 'conversation_${sortedIds[0]}_${sortedIds[1]}';
+  }
+
+  // Get first photo URL from user's photos
+  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
+  }
+
+  // Ensure conversation exists and get user data
+  Future<Map<String, dynamic>> _prepareChatData(String otherUserId) async {
+    try {
+      final currentUser = _currentUser;
+      if (currentUser == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Get conversation ID
+      final conversationId = _getConversationId(currentUser.uid, otherUserId);
+
+      // Get other user data
+      final otherUserDoc = await _firestore.collection('users').doc(otherUserId).get();
+      if (!otherUserDoc.exists) {
+        throw Exception('User not found');
+      }
+
+      final otherUserData = otherUserDoc.data() as Map<String, dynamic>;
+      final otherUserName = otherUserData['name'] ?? 'User';
+      final otherUserAvatar = _getFirstPhotoUrl(otherUserData['first_photos']) ?? 'https://i.pravatar.cc/200';
+
+      // Ensure conversation exists
+      final conversationDoc = await _firestore.collection('chat_conversations').doc(conversationId).get();
+
+      if (!conversationDoc.exists) {
+        // Get current user data
+        final currentUserDoc = await _firestore.collection('users').doc(currentUser.uid).get();
+        final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
+
+        final currentUserName = currentUserData?['name'] ?? 'You';
+        final currentUserAvatar = _getFirstPhotoUrl(currentUserData?['first_photos']) ?? 'https://i.pravatar.cc/200';
+
+        // Create conversation
+        await _firestore.collection('chat_conversations').doc(conversationId).set({
+          'participants': [currentUser.uid, otherUserId],
+          'participantNames': {
+            currentUser.uid: currentUserName,
+            otherUserId: otherUserName,
+          },
+          'participantAvatars': {
+            currentUser.uid: currentUserAvatar,
+            otherUserId: otherUserAvatar,
+          },
+          'lastMessage': 'Start a conversation',
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'lastMessageType': 'text',
+          'unreadCount': {
+            currentUser.uid: 0,
+            otherUserId: 0,
+          },
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('✅ Created new conversation: $conversationId');
+      } else {
+        print('✅ Conversation already exists: $conversationId');
+      }
+
+      return {
+        'conversationId': conversationId,
+        'otherUserName': otherUserName,
+        'otherUserAvatar': otherUserAvatar,
+      };
+
+    } catch (e) {
+      print('❌ Error preparing chat data: $e');
+      rethrow;
     }
   }
 
@@ -382,7 +471,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               _handleNotificationTap(notification);
             },
             onLongPress: () {
-              _showNotificationOptions(notificationId, fromUserName);
+              _showNotificationOptions(notificationId, fromUserName, fromUserId);
             },
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -833,18 +922,42 @@ class _ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-  void _navigateToChat(String otherUserId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          otherUserId: otherUserId,
-          otherUserName: 'User',
-          conversationId: '',
-          otherUserAvatar: '', // You can fetch the actual name if needed
+  void _navigateToChat(String otherUserId) async {
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Opening chat...'),
+          backgroundColor: AppColors.primary,
+          duration: Duration(seconds: 2),
         ),
-      ),
-    );
+      );
+
+      // Prepare chat data (creates conversation if needed)
+      final chatData = await _prepareChatData(otherUserId);
+
+      // Navigate to chat screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            conversationId: chatData['conversationId'],
+            otherUserId: otherUserId,
+            otherUserName: chatData['otherUserName'],
+            otherUserAvatar: chatData['otherUserAvatar'],
+          ),
+        ),
+      );
+
+    } catch (e) {
+      print('❌ Error navigating to chat: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to open chat: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _navigateToLiveStream(String hostUserId, String liveId, String title) {
@@ -930,7 +1043,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return result ?? false;
   }
 
-  void _showNotificationOptions(String notificationId, String fromUserName) {
+  void _showNotificationOptions(String notificationId, String fromUserName, String fromUserId) {
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
@@ -938,14 +1051,19 @@ class _ActivityScreenState extends State<ActivityScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text(
-                'Delete Notification',
-                style: TextStyle(color: Colors.red),
-              ),
+              leading: const Icon(Icons.chat, color: AppColors.primary),
+              title: const Text('Send Message'),
               onTap: () {
                 Navigator.pop(context);
-                _showDeleteConfirmation(notificationId);
+                _navigateToChat(fromUserId);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person, color: AppColors.primary),
+              title: Text('View $fromUserName\'s Profile'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToUserProfile(fromUserId);
               },
             ),
             ListTile(
@@ -963,12 +1081,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.person, color: AppColors.primary),
-              title: Text('View $fromUserName\'s Profile'),
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text(
+                'Delete Notification',
+                style: TextStyle(color: Colors.red),
+              ),
               onTap: () {
                 Navigator.pop(context);
-                // You would need to get the user ID from the notification
-                // _navigateToUserProfile(userId);
+                _showDeleteConfirmation(notificationId);
               },
             ),
           ],
