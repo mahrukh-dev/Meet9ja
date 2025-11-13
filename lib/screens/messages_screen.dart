@@ -76,7 +76,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       await ZIMKit().connectUser(
         id: user.uid,
-        
+
         name: user.displayName ?? 'User',
       );
 
