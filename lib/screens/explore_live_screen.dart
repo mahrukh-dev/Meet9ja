@@ -66,8 +66,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     super.dispose();
   }
 
-
-
   // Load matched users for sharing
   Future<void> _loadMatchedUsers() async {
     try {
@@ -98,9 +96,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-  // Add these methods to _ExploreLiveScreenState class
-
-// Load matched users for sharing (same as in PostDetailScreen)
+  // Load matched users for sharing (same as in PostDetailScreen)
   Future<List<UserModel>> _loadMatchedUsersForSharing() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -129,13 +125,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-// Generate consistent conversation ID (same as in PostDetailScreen)
+  // Generate consistent conversation ID (same as in PostDetailScreen)
   String _getConversationId(String user1, String user2) {
     final sortedIds = [user1, user2]..sort();
     return 'conversation_${sortedIds[0]}_${sortedIds[1]}';
   }
 
-// Ensure conversation exists (same as in PostDetailScreen)
+  // Ensure conversation exists (same as in PostDetailScreen)
   Future<void> _ensureConversationExists(String conversationId, String currentUserId, UserModel otherUser) async {
     try {
       final conversationDoc = await FirebaseFirestore.instance
@@ -187,7 +183,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-// Helper method to get first photo URL (same as in PostDetailScreen)
+  // Helper method to get first photo URL (same as in PostDetailScreen)
   String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
     if (firstPhotos == null) return null;
     for (var i = 1; i <= 4; i++) {
@@ -199,7 +195,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     return null;
   }
 
-// Save shared post to chat (same as in PostDetailScreen)
+  // Save shared post to chat (same as in PostDetailScreen)
   Future<void> _saveSharedPostToChat({
     required String conversationId,
     required String message,
@@ -246,7 +242,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-// Share post with specific user (same as in PostDetailScreen)
+  // Share post with specific user (same as in PostDetailScreen)
   Future<void> _shareWithUser(UserModel user, _ReelItem item) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -296,10 +292,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       }
     }
   }
-
-
-
-
 
   // Load real live stream data from Firebase
   Future<void> _loadLiveData() async {
@@ -522,7 +514,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     });
   }
 
-  // Like functionality
+  // Like functionality - simplified without progress indicators
   Future<void> _likePost(_ReelItem item) async {
     try {
       final currentUserId = _currentUserId;
@@ -539,19 +531,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       if (isLiked) {
         // Unlike
         await UserService.unlikePost(item.postId, currentUserId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Post unliked')),
-        );
       } else {
         // Like
         await UserService.likePost(item.postId, currentUserId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Post liked')),
-        );
       }
 
-      // Reload data to reflect changes
-      _loadLiveData();
+      // Update UI immediately without showing loading state
+        _loadLiveData(); // This will refresh the data in background
     } catch (e) {
       print('Error liking post: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -794,6 +780,39 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+  // Navigate to user profile
+  void _navigateToUserProfile(String userId) async {
+    try {
+      // Check if it's the current user's profile
+      final currentUserId = _currentUserId;
+      if (currentUserId == userId) {
+        // Navigate to own profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProfileScreen(isMyProfile: true),
+          ),
+        );
+      } else {
+        // Navigate to other user's profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProfileScreen(
+              isMyProfile: false,
+              userId: userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error navigating to profile: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cannot open profile: $e')),
+      );
+    }
+  }
+
   // Check if user is premium before going live
   Future<void> _checkPremiumAndGoLive(BuildContext context) async {
     try {
@@ -993,9 +1012,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         children: [
           Container(
             color: darkBackground,
-            child: _isLoading
-                ? _buildLoadingState()
-                : TabBarView(
+            child: TabBarView(
               controller: _tab,
               children: [
                 // Stories Tab - Shows ALL stories from other users
@@ -1005,6 +1022,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onLike: _likePost,
                   onComment: _showComments,
                   onShare: _sharePost,
+                  onProfileTap: _navigateToUserProfile,
                 ),
 
                 // Live Tab - Shows live streams
@@ -1056,6 +1074,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onLike: _likePost,
                   onComment: _showComments,
                   onShare: _sharePost,
+                  onProfileTap: _navigateToUserProfile,
                 ),
               ],
             ),
@@ -1108,21 +1127,21 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
-  Widget _buildLoadingState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: Colors.white),
-          SizedBox(height: 16),
-          Text(
-            'Loading content...',
-            style: TextStyle(color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildLoadingState() {
+  //   return const Center(
+  //     child: Column(
+  //       mainAxisAlignment: MainAxisAlignment.center,
+  //       children: [
+  //         CircularProgressIndicator(color: Colors.white),
+  //         SizedBox(height: 16),
+  //         Text(
+  //           'Loading content...',
+  //           style: TextStyle(color: Colors.white),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildEmptyLiveState() {
     return Center(
@@ -1412,6 +1431,7 @@ class _ReelsFeed extends StatelessWidget {
     required this.onLike,
     required this.onComment,
     required this.onShare,
+    required this.onProfileTap,
   });
 
   final List<_ReelItem> items;
@@ -1419,6 +1439,7 @@ class _ReelsFeed extends StatelessWidget {
   final Function(_ReelItem) onLike;
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
+  final Function(String) onProfileTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1435,6 +1456,7 @@ class _ReelsFeed extends StatelessWidget {
           onLike: onLike,
           onComment: onComment,
           onShare: onShare,
+          onProfileTap: onProfileTap,
         );
       },
     );
@@ -1468,6 +1490,7 @@ class _ReelContent extends StatelessWidget {
   final Function(_ReelItem) onLike;
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
+  final Function(String) onProfileTap;
 
   const _ReelContent({
     required this.item,
@@ -1475,6 +1498,7 @@ class _ReelContent extends StatelessWidget {
     required this.onLike,
     required this.onComment,
     required this.onShare,
+    required this.onProfileTap,
   });
 
   @override
@@ -1551,49 +1575,55 @@ class _ReelContent extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // User Info Row
-              Row(
-                children: [
-                  // User Avatar
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                      image: DecorationImage(
-                        image: NetworkImage(item.userPhoto.isNotEmpty
-                            ? item.userPhoto
-                            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop'),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '@${item.user}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
+              // User Info Row - Make tappable
+              GestureDetector(
+                onTap: () => onProfileTap(item.userId),
+                child: Row(
+                  children: [
+                    // User Avatar - Make tappable
+                    GestureDetector(
+                      onTap: () => onProfileTap(item.userId),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                          image: DecorationImage(
+                            image: NetworkImage(item.userPhoto.isNotEmpty
+                                ? item.userPhoto
+                                : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop'),
+                            fit: BoxFit.cover,
                           ),
                         ),
-                        if (item.timestamp != null)
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            _formatTimestamp(item.timestamp!),
+                            '@${item.user}',
                             style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
                             ),
                           ),
-                      ],
+                          if (item.timestamp != null)
+                            Text(
+                              _formatTimestamp(item.timestamp!),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
 
@@ -1891,7 +1921,7 @@ class _ContentTypeBadge extends StatelessWidget {
 }
 
 // Updated Circle Icon with Count
-class _CircleIcon extends StatelessWidget {
+class _CircleIcon extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
   final int count;
@@ -1905,33 +1935,53 @@ class _CircleIcon extends StatelessWidget {
   });
 
   @override
+  State<_CircleIcon> createState() => _CircleIconState();
+}
+
+class _CircleIconState extends State<_CircleIcon> {
+  bool _isTapped = false;
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         InkResponse(
-          onTap: onTap,
+          onTap: () {
+            setState(() {
+              _isTapped = true;
+            });
+            widget.onTap();
+            // Reset the tap state after a short delay
+            Future.delayed(const Duration(milliseconds: 200), () {
+              if (mounted) {
+                setState(() {
+                  _isTapped = false;
+                });
+              }
+            });
+          },
           radius: 28,
           child: Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(.35),
+              color: Colors.black.withOpacity(_isTapped ? 0.5 : 0.35),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white24),
             ),
             child: Icon(
-                icon,
-                color: isLiked ? Colors.red : Colors.white,
+                widget.icon,
+                color: widget.isLiked ? Colors.red : Colors.white,
                 size: 20
             ),
           ),
         ),
-        if (count > 0) ...[
+        if (widget.count > 0) ...[
           const SizedBox(height: 4),
           Text(
-            _formatCount(count),
+            _formatCount(widget.count),
             style: TextStyle(
-              color: isLiked ? Colors.red : Colors.white,
+              color: widget.isLiked ? Colors.red : Colors.white,
               fontWeight: FontWeight.w800,
               fontSize: 12,
             ),
@@ -2083,4 +2133,3 @@ class _BottomCreateButton extends StatelessWidget {
     );
   }
 }
-

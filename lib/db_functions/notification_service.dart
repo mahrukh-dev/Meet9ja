@@ -19,6 +19,37 @@ class NotificationService {
     );
   }
 
+  static Future<void> createScheduleReminderNotification({
+    required String userId,
+    required String scheduleId,
+    required String title,
+    required String fromUserId,
+    required String fromUserName,
+    required String fromUserPhoto,
+    required DateTime scheduledTime,
+  }) async {
+    try {
+      final notificationId = 'schedule_reminder_${scheduleId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      await FirebaseFirestore.instance.collection('notifications').doc(notificationId).set({
+        'id': notificationId,
+        'userId': userId,
+        'type': 'schedule_reminder',
+        'fromUserId': fromUserId,
+        'fromUserName': fromUserName,
+        'fromUserPhoto': fromUserPhoto,
+        'commentText': title,
+        'scheduleTime': Timestamp.fromDate(scheduledTime),
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Schedule reminder notification created for user: $userId');
+    } catch (e) {
+      print('❌ Error creating schedule reminder notification: $e');
+    }
+  }
+
   // Create a notification
   static Future<void> createNotification({
     required String type,

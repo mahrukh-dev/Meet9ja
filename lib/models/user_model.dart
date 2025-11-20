@@ -9,7 +9,7 @@ class UserModel {
   final String? photoUrl;
   final Map<String, dynamic> mode;
   final String preferences;
-  final String type;
+  final String type; // premium/nonpremium
   final Map<String, dynamic> livePreferences;
   final List<String> following;
   final List<String> followers;

@@ -1,18 +1,15 @@
-// lib/screens/activity_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:meet9ja/db_functions/notification_service.dart';
-// import 'package:meet9ja/services/user_service.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:meet9ja/screens/chat_screen.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
 
 import '../constants/app_colors.dart';
 import 'livestream_screen.dart';
-
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({Key? key}) : super(key: key);
@@ -482,10 +479,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: type == 'user_live'
-                                ? Colors.red
+                            color: type == 'user_live' || type == 'schedule_reminder'
+                                ? Colors.orange
                                 : AppColors.primary.withOpacity(0.3),
-                            width: type == 'user_live' ? 3 : 2,
+                            width: type == 'user_live' || type == 'schedule_reminder' ? 3 : 2,
                           ),
                         ),
                         child: ClipOval(
@@ -529,6 +526,22 @@ class _ActivityScreenState extends State<ActivityScreen> {
                             height: 12,
                             decoration: const BoxDecoration(
                               color: Colors.red,
+                              shape: BoxShape.circle,
+                              border: Border.fromBorderSide(
+                                BorderSide(color: Colors.white, width: 2),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (type == 'schedule_reminder')
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: const BoxDecoration(
+                              color: Colors.orange,
                               shape: BoxShape.circle,
                               border: Border.fromBorderSide(
                                 BorderSide(color: Colors.white, width: 2),
@@ -735,6 +748,44 @@ class _ActivityScreenState extends State<ActivityScreen> {
           ),
         );
 
+      case 'schedule_reminder':
+        final scheduleTitle = notification['commentText'] ?? 'scheduled live';
+        final scheduleTime = notification['scheduleTime'] as Timestamp?;
+        return RichText(
+          text: TextSpan(
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 14,
+              height: 1.4,
+            ),
+            children: [
+              TextSpan(
+                text: fromUserName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: ' scheduled live: '),
+              TextSpan(
+                text: scheduleTitle,
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (scheduleTime != null) ...[
+                const TextSpan(text: ' at '),
+                TextSpan(
+                  text: DateFormat('h:mm a').format(scheduleTime.toDate()),
+                  style: TextStyle(
+                    color: Colors.grey[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+              const TextSpan(text: ' ⏰'),
+            ],
+          ),
+        );
+
       case 'live_ended':
         final summary = notification['commentText'] ?? 'Your live has ended';
         return RichText(
@@ -817,6 +868,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
           constraints: const BoxConstraints(),
           iconSize: 20,
         );
+      case 'schedule_reminder':
+        return IconButton(
+          icon: const Icon(Icons.access_time, color: Colors.orange),
+          onPressed: () => _handleNotificationTap(notification),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          iconSize: 20,
+        );
       case 'new_message':
         return IconButton(
           icon: const Icon(Icons.reply, color: AppColors.primary),
@@ -845,6 +904,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final matchId = notification['matchId'];
     final relatedUserId = notification['relatedUserId'];
     final notificationId = notification['id'];
+    final scheduleId = notification['scheduleId'];
 
     // Mark as read if not already
     if (!(notification['isRead'] ?? false) && notificationId != null) {
@@ -882,6 +942,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
       case 'user_live':
         if (relatedUserId != null && matchId != null) {
           _navigateToLiveStream(relatedUserId, matchId, notification['commentText'] ?? 'Live Stream');
+        }
+        break;
+
+      case 'schedule_reminder':
+        if (fromUserId != null) {
+          _navigateToUserProfile(fromUserId);
         }
         break;
 

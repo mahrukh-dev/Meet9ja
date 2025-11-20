@@ -9,6 +9,7 @@ import 'package:meet9ja/screens/dating_profile.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
 import '../constants/app_colors.dart';
 import 'MatchedUserScreen.dart';
+import 'activity_screen.dart';
 import 'explore_live_screen.dart';
 import 'home_screen_filters.dart';
 import 'home_screen.dart';
@@ -1539,7 +1540,7 @@ class _BottomNav extends StatelessWidget {
                     if (current != 3) {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: '',)),
+                        MaterialPageRoute(builder: (_) => ActivityScreen()),
                       );
                     }
                     break;

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:meet9ja/screens/activity_screen.dart';
 import 'package:meet9ja/screens/dating_profile.dart';
 import 'package:meet9ja/screens/explore_live_screen.dart';
 import 'package:meet9ja/screens/other_dating_profile_screen.dart';
@@ -900,7 +901,7 @@ class _BottomNav extends StatelessWidget {
 
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => MatchedUsersScreen(userId: UserService.currentUserId!,)),
+                    MaterialPageRoute(builder: (_) => ActivityScreen()),
                   );
                   return;
                 }

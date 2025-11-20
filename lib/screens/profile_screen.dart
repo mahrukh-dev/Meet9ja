@@ -2,6 +2,10 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutterwave_standard/core/flutterwave.dart';
+import 'package:flutterwave_standard/models/requests/customer.dart';
+import 'package:flutterwave_standard/models/requests/customizations.dart';
+import 'package:flutterwave_standard/models/responses/charge_response.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/messages_screen.dart' hide StoryModel;
@@ -9,6 +13,7 @@ import 'package:meet9ja/screens/post_detail_screen.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
 import 'package:meet9ja/screens/story_view_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +30,7 @@ import 'create_story_screen.dart';
 import 'edit_profile_screen.dart';
 import 'package:intl/intl.dart';
 import 'livestream_screen.dart';
+import 'create_schedule_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
@@ -58,9 +64,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   List<String> get _tabLabels {
     if (widget.isMyProfile) {
-      return ["Home", "Clips", "Wallet", "About"];
+      return ["Home", "Clips", "Wallet", "Schedules", "About"];
     } else {
-      return ["Home", "Clips", "About"];
+      return ["Home", "Clips", "Schedules", "About"];
     }
   }
 
@@ -829,6 +835,11 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     tabs.addAll([
+      _SchedulesTab(
+        userId: _userProfile!.uid,
+        isMyProfile: widget.isMyProfile,
+        userName: _userProfile!.name,
+      ),
       _AboutTab(
         userProfile: _userProfile!,
         isMyProfile: widget.isMyProfile,
@@ -1400,9 +1411,6 @@ class _ReportReasonTile extends StatelessWidget {
     );
   }
 }
-
-// Keep all your existing tab classes (_HomeTab, _ClipsTab, _WalletTab, _AboutTab, etc.)
-// They remain exactly the same as in your original code
 
 // Home Tab with Live Streams
 class _HomeTab extends StatefulWidget {
@@ -2310,13 +2318,7 @@ extension UserServiceExtensions on UserService {
   }
 }
 
-// Keep all your other existing classes (_ClipsTab, _WalletTab, _AboutTab, etc.)
-// They should work as-is with the original implementations
-
-// ... (Include all your existing _ClipsTab, _WalletTab, _AboutTab classes here)
-// They remain exactly the same as in your previous code
-// Keep all your other existing classes (_ClipsTab, _WalletTab, _AboutTab, _SchedulesTab)
-// They should work as-is with the original implementations
+// Clips Tab
 class _ClipsTab extends StatefulWidget {
   final String userId;
   final bool isMyProfile;
@@ -2811,6 +2813,7 @@ class _ClipsTabState extends State<_ClipsTab> {
   }
 }
 
+// Wallet Tab
 class _WalletTab extends StatefulWidget {
   final UserModel userProfile;
   const _WalletTab({required this.userProfile});
@@ -2820,6 +2823,465 @@ class _WalletTab extends StatefulWidget {
 }
 
 class _WalletTabState extends State<_WalletTab> {
+  bool _isLoading = false;
+
+  // Flutterwave credentials
+  final String publicKey = "FLWPUBK_TEST-befed163ca7c7e9909b525da24b1332d-X";
+  final String secretKey = "FLWSECK_TEST-40e21085dd94e60bb65a13d7987295af-X";
+  final String encryptionKey = "FLWSECK_TEST31158107b2db";
+
+  // Coin packages
+  final List<Map<String, dynamic>> _coinPackages = [
+    {'coins': 10, 'price': 1.0, 'label': '10 Diamonds'},
+    {'coins': 50, 'price': 5.0, 'label': '50 Diamonds'},
+    {'coins': 100, 'price': 10.0, 'label': '100 Diamonds'},
+    {'coins': 500, 'price': 45.0, 'label': '500 Diamonds\n(10% OFF)'},
+    {'coins': 1000, 'price': 80.0, 'label': '1000 Diamonds\n(20% OFF)'},
+    {'coins': 2000, 'price': 150.0, 'label': '2000 Diamonds\n(25% OFF)'},
+  ];
+
+  Future<void> _purchaseCoins(int coins, double price) async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final Customer customer = Customer(
+          email: widget.userProfile.email,
+          phoneNumber: "2348100000000", // Default test number
+          name: widget.userProfile.name
+      );
+
+      final Flutterwave flutterwave = Flutterwave(
+        publicKey: publicKey,
+        currency: "USD",
+        amount: price.toStringAsFixed(2),
+        customer: customer,
+        txRef: Uuid().v4(),
+        paymentOptions: "card, ussd, banktransfer",
+        customization: Customization(
+          title: "Purchase Diamonds",
+          description: "Get ${coins} diamonds for \$$price",
+        ),
+        redirectUrl: "https://www.google.com",
+        isTestMode: true,
+      );
+
+      print('Initiating coin purchase...');
+      final ChargeResponse response = await flutterwave.charge(context);
+
+      print('Payment response: ${response.toJson()}');
+
+      if (mounted) {
+        if (response.status == 'successful') {
+          // Payment successful - add coins to user's wallet
+          await _addCoinsToWallet(coins);
+          _showSuccessDialog(coins);
+        } else {
+          _showErrorDialog('Payment failed. Please try again.');
+        }
+      }
+    } catch (e, stackTrace) {
+      print('Payment error: $e');
+      print('Stack trace: $stackTrace');
+
+      if (mounted) {
+        _showErrorDialog('Payment error: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addCoinsToWallet(int coins) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('User not logged in');
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final currentWallet = userData['wallet'] ?? {};
+
+        // Handle type conversion safely
+        final currentCoins = (currentWallet['coin_balance'] ?? 0).toInt();
+        final currentEarnings = (currentWallet['total_earning'] ?? 0).toDouble();
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({
+          'wallet.coin_balance': currentCoins + coins,
+          'wallet.total_earning': currentEarnings + (coins / 10), // $1 = 10 diamonds
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+
+        print('✅ Added $coins diamonds to wallet');
+      }
+    } catch (e) {
+      print('❌ Error adding coins to wallet: $e');
+      throw 'Failed to update wallet: $e';
+    }
+  }
+
+  void _showSuccessDialog(int coins) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 24),
+              SizedBox(width: 8),
+              Text('Purchase Successful!'),
+            ],
+          ),
+          content: Text(
+            'You have successfully purchased $coins diamonds! 🎉',
+            style: const TextStyle(fontSize: 16),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {}); // Refresh the wallet display
+              },
+              child: const Text('Continue', style: TextStyle(fontSize: 16)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.red, size: 24),
+              SizedBox(width: 8),
+              Text('Purchase Failed'),
+            ],
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(fontSize: 16),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK', style: TextStyle(fontSize: 16)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _withdrawFunds() async {
+    final coinBalance = UserService.getCoinBalance(widget.userProfile);
+
+    if (coinBalance < 100) {
+      _showErrorDialog('You need at least 100 diamonds to withdraw.');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Withdraw Funds'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Available Diamonds: $coinBalance 💎'),
+            const SizedBox(height: 8),
+            const Text('Minimum withdrawal: 100 diamonds (\$10)'),
+            const SizedBox(height: 16),
+            const Text(
+              'Contact support to process your withdrawal. We\'ll transfer funds to your bank account.',
+              style: TextStyle(color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _contactSupport();
+            },
+            child: const Text('Contact Support'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _contactSupport() {
+    final Uri emailLaunchUri = Uri(
+      scheme: 'mailto',
+      path: 'support@meet9ja.com',
+      queryParameters: {
+        'subject': 'Withdrawal Request - ${widget.userProfile.name}',
+        'body': 'Hello Support,\n\nI would like to withdraw my diamonds.\n\nUser ID: ${widget.userProfile.uid}\nCurrent Diamonds: ${UserService.getCoinBalance(widget.userProfile)}\n\nPlease process my withdrawal.',
+      },
+    );
+
+    launchUrl(emailLaunchUri, mode: LaunchMode.externalApplication);
+  }
+
+  Widget _coinPackageCard(Map<String, dynamic> package) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Container(
+        width: 120,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppColors.primary.withOpacity(0.1), Colors.white],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '${package['coins']}',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Icon(FontAwesomeIcons.solidGem,
+                color: AppColors.primary, size: 20),
+            const SizedBox(height: 8),
+            Text(
+              '\$${package['price']}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              package['label'],
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _isLoading
+                  ? null
+                  : () => _purchaseCoins(package['coins'], package['price']),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                height: 16,
+                width: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+                  : const Text(
+                'BUY',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final coinBalance = UserService.getCoinBalance(widget.userProfile);
+    final totalEarnings = UserService.getTotalEarnings(widget.userProfile);
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Current Balance Section
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppColors.primary, Colors.purple],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    'Current Balance',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$coinBalance 💎',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 36,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '≈ \$${(coinBalance / 10).toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Buy Diamonds Section
+          const Text(
+            "Buy Diamonds",
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "Get diamonds to send gifts, unlock premium features, and support creators",
+            style: TextStyle(
+              color: Colors.black54,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Coin Packages Grid
+          SizedBox(
+            height: 200,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _coinPackages.map((package) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: _coinPackageCard(package),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Wallet Actions
+          const Text(
+            "Wallet Actions",
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          _walletTile(
+            title: "Total Earnings",
+            value: "\$$totalEarnings",
+            icon: FontAwesomeIcons.sackDollar,
+            iconColor: Colors.green,
+          ),
+          _walletTile(
+            title: "Withdraw Funds",
+            value: "Cash Out",
+            icon: FontAwesomeIcons.moneyBillTransfer,
+            onTap: _withdrawFunds,
+          ),
+
+          // Test Mode Indicator
+          Container(
+            margin: const EdgeInsets.only(top: 20),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline, color: Colors.orange, size: 16),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Test Mode - Use test card: 5531 8866 5214 2950',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _walletTile({
     required String title,
     required String value,
@@ -2860,64 +3322,407 @@ class _WalletTabState extends State<_WalletTab> {
       ),
     );
   }
+}
+
+// Schedules Tab
+class _SchedulesTab extends StatefulWidget {
+  final String userId;
+  final bool isMyProfile;
+  final String userName;
+  const _SchedulesTab({
+    required this.userId,
+    required this.isMyProfile,
+    required this.userName,
+  });
+
+  @override
+  State<_SchedulesTab> createState() => _SchedulesTabState();
+}
+
+class _SchedulesTabState extends State<_SchedulesTab> {
+  List<Map<String, dynamic>> _schedules = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSchedules();
+  }
+
+  Future<void> _loadSchedules() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final schedules = await UserService.getUserSchedules(widget.userId);
+
+      setState(() {
+        _schedules = schedules;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load schedules: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _createNewSchedule() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateScheduleScreen(userId: widget.userId),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _loadSchedules();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Schedule created successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  void _deleteSchedule(String scheduleId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Schedule'),
+        content: const Text('Are you sure you want to delete this schedule?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await UserService.deleteSchedule(scheduleId);
+        if (mounted) {
+          _loadSchedules();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Schedule deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete schedule: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final coinBalance = UserService.getCoinBalance(widget.userProfile);
-    final totalEarnings = UserService.getTotalEarnings(widget.userProfile);
+    if (_isLoading) {
+      return _buildLoadingState();
+    }
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+    if (_error != null) {
+      return _buildErrorState();
+    }
+
+    return Column(
+      children: [
+        // Create Schedule Button (only for my profile)
+        if (widget.isMyProfile) _buildCreateScheduleButton(),
+
+        const SizedBox(height: 16),
+
+        // Schedules List
+        Expanded(
+          child: _schedules.isEmpty
+              ? _buildEmptyState()
+              : _buildSchedulesList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
           Text(
-            "Current Balance",
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
+            'Loading schedules...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.black54,
             ),
-          ),
-          const SizedBox(height: 12),
-          _walletTile(
-            title: "My Coin Balance",
-            value: "$coinBalance 💎",
-            icon: FontAwesomeIcons.solidGem,
-            iconColor: AppColors.primary,
-          ),
-          const SizedBox(height: 24),
-
-          Text(
-            "Actions",
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _walletTile(
-            title: "Top-up Coins",
-            value: "Buy",
-            icon: FontAwesomeIcons.creditCard,
-            onTap: () {},
-          ),
-          _walletTile(
-            title: "Earnings",
-            value: "\$$totalEarnings",
-            icon: FontAwesomeIcons.sackDollar,
-          ),
-          _walletTile(
-            title: "Withdraw",
-            value: "Cash Out",
-            icon: FontAwesomeIcons.moneyBillTransfer,
-            onTap: () {},
           ),
         ],
       ),
     );
   }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 60,
+            color: Colors.red[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Error loading schedules',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.black54,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black45,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _loadSchedules,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreateScheduleButton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _createNewSchedule,
+          icon: const Icon(FontAwesomeIcons.calendarPlus, size: 16),
+          label: const Text(
+            'Create New Schedule',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            FontAwesomeIcons.calendar,
+            size: 80,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            widget.isMyProfile ? "No schedules yet." : "No scheduled streams.",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.isMyProfile
+                ? "Create schedules to let your followers know when you'll be live!"
+                : "Check back later for upcoming streams.",
+            style: TextStyle(fontSize: 14, color: Colors.black45),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSchedulesList() {
+    return RefreshIndicator(
+      onRefresh: _loadSchedules,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _schedules.length,
+        itemBuilder: (context, index) {
+          final schedule = _schedules[index];
+          return _ScheduleCard(
+            schedule: schedule,
+            isMyProfile: widget.isMyProfile,
+            onDelete: () => _deleteSchedule(schedule['id']),
+          );
+        },
+      ),
+    );
+  }
 }
 
+class _ScheduleCard extends StatelessWidget {
+  final Map<String, dynamic> schedule;
+  final bool isMyProfile;
+  final VoidCallback onDelete;
+
+  const _ScheduleCard({
+    required this.schedule,
+    required this.isMyProfile,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = schedule['title'] ?? 'Untitled Schedule';
+    final description = schedule['description'] ?? '';
+    final scheduledTime = (schedule['scheduled_time'] as Timestamp).toDate();
+    final now = DateTime.now();
+    final timeUntil = scheduledTime.difference(now);
+    final isUpcoming = timeUntil > Duration.zero;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isMyProfile)
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                    onPressed: onDelete,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+              ],
+            ),
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black54,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 6),
+                Text(
+                  DateFormat('MMM d, y • h:mm a').format(scheduledTime),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isUpcoming ? AppColors.primary.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                isUpcoming
+                    ? _getTimeUntilString(timeUntil)
+                    : 'Completed',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isUpcoming ? AppColors.primary : Colors.grey,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getTimeUntilString(Duration duration) {
+    if (duration.inDays > 0) {
+      return 'In ${duration.inDays} day${duration.inDays > 1 ? 's' : ''}';
+    } else if (duration.inHours > 0) {
+      return 'In ${duration.inHours} hour${duration.inHours > 1 ? 's' : ''}';
+    } else if (duration.inMinutes > 0) {
+      return 'In ${duration.inMinutes} minute${duration.inMinutes > 1 ? 's' : ''}';
+    } else {
+      return 'Starting soon';
+    }
+  }
+}
+
+// About Tab
 class _AboutTab extends StatefulWidget {
   final UserModel userProfile;
   final bool isMyProfile;
@@ -3114,42 +3919,6 @@ class _AboutTabState extends State<_AboutTab> {
   }
 }
 
-class _SchedulesTab extends StatefulWidget {
-  final bool isMyProfile;
-  const _SchedulesTab({required this.isMyProfile});
-
-  @override
-  State<_SchedulesTab> createState() => _SchedulesTabState();
-}
-
-class _SchedulesTabState extends State<_SchedulesTab> {
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(FontAwesomeIcons.calendar, size: 60, color: Colors.black26),
-          SizedBox(height: 16),
-          Text(
-            "No schedules yet.",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.black54,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            "Check back later for upcoming streams.",
-            style: TextStyle(fontSize: 14, color: Colors.black45),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // UI Components for About Tab
 class _SectionCard extends StatelessWidget {
   final String title;
@@ -3295,230 +4064,6 @@ class _ClickableInfoTile extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// About Tab Content
-class _AboutTabContent extends StatelessWidget {
-  final UserModel userProfile;
-  final bool isMyProfile;
-  final VoidCallback onEmailTap;
-  final VoidCallback onWebsiteTap;
-  final VoidCallback onInstagramTap;
-  final VoidCallback onTwitterTap;
-  final VoidCallback onFacebookTap;
-  final VoidCallback onTikTokTap;
-  final VoidCallback onYouTubeTap;
-
-  const _AboutTabContent({
-    required this.userProfile,
-    required this.isMyProfile,
-    required this.onEmailTap,
-    required this.onWebsiteTap,
-    required this.onInstagramTap,
-    required this.onTwitterTap,
-    required this.onFacebookTap,
-    required this.onTikTokTap,
-    required this.onYouTubeTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final joinDate = UserService.getFormattedJoinDate(userProfile);
-    final primaryMode = UserService.getPrimaryMode(userProfile);
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Bio Section
-          _SectionCard(
-            title: "Bio",
-            child: Text(
-              userProfile.bio?.isNotEmpty == true
-                  ? userProfile.bio!
-                  : 'No bio yet. ${isMyProfile ? 'Add a bio to tell people about yourself!' : ''}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                height: 1.4,
-                fontSize: 15,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Info Section
-          _SectionCard(
-            title: "Info",
-            child: Column(
-              children: [
-                _InfoTile(
-                  icon: FontAwesomeIcons.locationDot,
-                  label: "Location",
-                  value: userProfile.location?.isNotEmpty == true
-                      ? userProfile.location!
-                      : 'Not set',
-                ),
-                const SizedBox(height: 12),
-                _InfoTile(
-                  icon: FontAwesomeIcons.calendar,
-                  label: "Joined",
-                  value: joinDate,
-                ),
-                const SizedBox(height: 12),
-                _InfoTile(
-                  icon: FontAwesomeIcons.user,
-                  label: "Primary Mode",
-                  value: primaryMode,
-                ),
-                const SizedBox(height: 12),
-                _InfoTile(
-                  icon: FontAwesomeIcons.venusMars,
-                  label: "Preferences",
-                  value: userProfile.preferences.isNotEmpty
-                      ? userProfile.preferences
-                      : 'Not set',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Links Section
-          if (userProfile.email.isNotEmpty ||
-              userProfile.website?.isNotEmpty == true ||
-              userProfile.instagram?.isNotEmpty == true ||
-              userProfile.twitter?.isNotEmpty == true ||
-              userProfile.facebook?.isNotEmpty == true ||
-              userProfile.tiktok?.isNotEmpty == true ||
-              userProfile.youtube?.isNotEmpty == true)
-            _SectionCard(
-              title: "Links",
-              child: Column(
-                children: [
-                  if (userProfile.email.isNotEmpty)
-                    _ClickableInfoTile(
-                      icon: FontAwesomeIcons.solidEnvelope,
-                      label: "Email",
-                      value: userProfile.email,
-                      onTap: onEmailTap,
-                    ),
-                  if (userProfile.website?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty)
-                      const SizedBox(height: 12),
-                    _ClickableInfoTile(
-                      icon: FontAwesomeIcons.globe,
-                      label: "Website",
-                      value: userProfile.website!,
-                      onTap: onWebsiteTap,
-                    ),
-                  ],
-                  if (userProfile.instagram?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true)
-                      const SizedBox(height: 12),
-                    _ClickableInfoTile(
-                      icon: FontAwesomeIcons.instagram,
-                      label: "Instagram",
-                      value: userProfile.instagram!,
-                      onTap: onInstagramTap,
-                    ),
-                  ],
-                  if (userProfile.twitter?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true)
-                      const SizedBox(height: 12),
-                    _ClickableInfoTile(
-                      icon: FontAwesomeIcons.xTwitter,
-                      label: "Twitter",
-                      value: userProfile.twitter!,
-                      onTap: onTwitterTap,
-                    ),
-                  ],
-                  if (userProfile.facebook?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true ||
-                        userProfile.twitter?.isNotEmpty == true)
-                      const SizedBox(height: 12),
-                    _ClickableInfoTile(
-                      icon: FontAwesomeIcons.facebook,
-                      label: "Facebook",
-                      value: userProfile.facebook!,
-                      onTap: onFacebookTap,
-                    ),
-                  ],
-                  if (userProfile.tiktok?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true ||
-                        userProfile.twitter?.isNotEmpty == true ||
-                        userProfile.facebook?.isNotEmpty == true)
-                      const SizedBox(height: 12),
-                    _ClickableInfoTile(
-                      icon: FontAwesomeIcons.tiktok,
-                      label: "TikTok",
-                      value: userProfile.tiktok!,
-                      onTap: onTikTokTap,
-                    ),
-                  ],
-                  if (userProfile.youtube?.isNotEmpty == true) ...[
-                    if (userProfile.email.isNotEmpty ||
-                        userProfile.website?.isNotEmpty == true ||
-                        userProfile.instagram?.isNotEmpty == true ||
-                        userProfile.twitter?.isNotEmpty == true ||
-                        userProfile.facebook?.isNotEmpty == true ||
-                        userProfile.tiktok?.isNotEmpty == true)
-                      const SizedBox(height: 12),
-                    _ClickableInfoTile(
-                      icon: FontAwesomeIcons.youtube,
-                      label: "YouTube",
-                      value: userProfile.youtube!,
-                      onTap: onYouTubeTap,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-}
-
-// Schedules Tab Content
-class _SchedulesTabContent extends StatelessWidget {
-  final bool isMyProfile;
-  const _SchedulesTabContent({required this.isMyProfile});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(FontAwesomeIcons.calendar, size: 60, color: Colors.black26),
-          SizedBox(height: 16),
-          Text(
-            "No schedules yet.",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.black54,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            "Check back later for upcoming streams.",
-            style: TextStyle(fontSize: 14, color: Colors.black45),
-          ),
-        ],
       ),
     );
   }

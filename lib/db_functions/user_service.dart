@@ -241,15 +241,7 @@ class UserService {
         .orderBy('date_time', descending: true)
         .snapshots();
   }
-  //
-  // // Get user's live history
-  // static Stream<QuerySnapshot> getUserLiveHistory(String userId) {
-  //   return _firestore
-  //       .collection('live_history')
-  //       .where('UID', isEqualTo: userId)
-  //       .orderBy('start_time', descending: true)
-  //       .snapshots();
-  // }
+
 
   // Get user's matches
   static Stream<QuerySnapshot> getUserMatches(String userId) {
@@ -368,16 +360,6 @@ class UserService {
     }
   }
 
-
-
-  // Search users by username
-  // static Future<Stream<QuerySnapshot<Object?>>> searchUsers(String query) async {
-  //   return _firestore
-  //       .collection('users')
-  //       .where('username', isGreaterThanOrEqualTo: query)
-  //       .where('username', isLessThan: query + 'z')
-  //       .snapshots();
-  // }
 
   static Future<void> submitProfileReport({
     required String reporterId,
@@ -513,17 +495,27 @@ class UserService {
     return 'Not Set';
   }
 
+  // In UserService class, update these methods:
+
   static int getCoinBalance(UserModel user) {
-    return user.wallet['coin_balance'] ?? 0;
+    final balance = user.wallet['coin_balance'];
+    if (balance is int) return balance;
+    if (balance is double) return balance.toInt();
+    return 0;
   }
 
-  static int getTotalEarnings(UserModel user) {
-    return user.wallet['total_earning'] ?? 0;
+  static double getTotalEarnings(UserModel user) {
+    final earnings = user.wallet['total_earning'];
+    if (earnings is double) return earnings;
+    if (earnings is int) return earnings.toDouble();
+    return 0.0;
   }
 
   static bool isPremium(UserModel user) {
     return user.type == 'premium';
   }
+
+
 
   // Add these methods to your existing UserService class
 
@@ -832,4 +824,108 @@ class UserService {
       throw 'Failed to delete story: $e';
     }
   }
+  static Future<List<Map<String, dynamic>>> getUserSchedules(String userId) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('schedules')
+          .where('userId', isEqualTo: userId)
+          .orderBy('scheduled_time', descending: false)
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return {
+          'id': doc.id,
+          ...data,
+        };
+      }).toList();
+    } catch (e) {
+      print('Error getting user schedules: $e');
+      return [];
+    }
+  }
+
+  static Future<void> createSchedule({
+    required String userId,
+    required String title,
+    required String description,
+    required DateTime scheduledTime,
+  }) async {
+    try {
+      final scheduleId = 'schedule_${userId}_${scheduledTime.millisecondsSinceEpoch}';
+
+      await FirebaseFirestore.instance.collection('schedules').doc(scheduleId).set({
+        'id': scheduleId,
+        'userId': userId,
+        'title': title,
+        'description': description,
+        'scheduled_time': Timestamp.fromDate(scheduledTime),
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // Schedule notification for 10 minutes before the stream
+      final notificationTime = scheduledTime.subtract(const Duration(minutes: 10));
+      if (notificationTime.isAfter(DateTime.now())) {
+        await _scheduleNotification(
+          userId: userId,
+          scheduleId: scheduleId,
+          title: title,
+          scheduledTime: scheduledTime,
+          notificationTime: notificationTime,
+        );
+      }
+
+      print('✅ Schedule created: $scheduleId');
+    } catch (e) {
+      print('❌ Error creating schedule: $e');
+      throw 'Failed to create schedule: $e';
+    }
+  }
+
+  static Future<void> _scheduleNotification({
+    required String userId,
+    required String scheduleId,
+    required String title,
+    required DateTime scheduledTime,
+    required DateTime notificationTime,
+  }) async {
+    try {
+      // Store the notification schedule
+      await FirebaseFirestore.instance
+          .collection('scheduled_notifications')
+          .doc('${scheduleId}_reminder')
+          .set({
+        'userId': userId,
+        'scheduleId': scheduleId,
+        'title': title,
+        'scheduledTime': Timestamp.fromDate(scheduledTime),
+        'notificationTime': Timestamp.fromDate(notificationTime),
+        'type': 'schedule_reminder',
+        'created_at': FieldValue.serverTimestamp(),
+      });
+
+      // print('✅ Scheduled notification for: ${DateFormat('MMM d, y h:mm a').format(notificationTime)}');
+    } catch (e) {
+      print('❌ Error scheduling notification: $e');
+    }
+  }
+
+  static Future<void> deleteSchedule(String scheduleId) async {
+    try {
+      await FirebaseFirestore.instance.collection('schedules').doc(scheduleId).delete();
+
+      // Also delete any scheduled notifications
+      await FirebaseFirestore.instance
+          .collection('scheduled_notifications')
+          .doc('${scheduleId}_reminder')
+          .delete();
+
+      print('✅ Schedule deleted: $scheduleId');
+    } catch (e) {
+      print('❌ Error deleting schedule: $e');
+      throw 'Failed to delete schedule: $e';
+    }
+  }
+
 }
