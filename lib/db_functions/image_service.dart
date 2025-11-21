@@ -39,6 +39,36 @@ class ImageService {
     }
   }
 
+  // Pick video from gallery
+  static Future<File?> pickVideoFromGallery() async {
+    try {
+      print('📱 Starting video picker...');
+
+      final XFile? pickedFile = await _imagePicker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 5), // 5 minute limit
+      );
+
+      if (pickedFile != null) {
+        print('✅ Video picked successfully: ${pickedFile.path}');
+        return File(pickedFile.path);
+      } else {
+        print('ℹ️ User cancelled video selection');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error in pickVideoFromGallery: $e');
+
+      if (e.toString().contains('PERMISSION_DENIED') ||
+          e.toString().contains('permission') ||
+          e.toString().contains('Permission')) {
+        throw 'Gallery access denied. Please grant video permission in app settings.';
+      } else {
+        throw 'Failed to pick video. Please try again.';
+      }
+    }
+  }
+
   // Pick multiple images
   static Future<List<File>> pickMultipleImagesFromGallery() async {
     try {
@@ -69,7 +99,7 @@ class ImageService {
     }
   }
 
-  // Upload image to Firebase Storage - IMPROVED
+  // Upload image to Firebase Storage
   static Future<String> uploadImage({
     required File imageFile,
     required String userId,
@@ -127,7 +157,149 @@ class ImageService {
     }
   }
 
-  // Upload multiple photos for first_photos - IMPROVED
+  // Upload post image
+  static Future<String> uploadPostImage({
+    required File imageFile,
+    required String userId,
+  }) async {
+    try {
+      print('📤 Uploading post image for user: $userId');
+
+      // Generate unique filename
+      String fileName = '${userId}_post_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
+
+      // Create storage reference in user's posts folder
+      Reference storageRef = _storage.ref().child('users/$userId/posts/$fileName');
+
+      print('📁 Storage path: users/$userId/posts/$fileName');
+
+      // Upload file
+      UploadTask uploadTask = storageRef.putFile(
+        imageFile,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          customMetadata: {
+            'uploadedBy': userId,
+            'uploadedAt': DateTime.now().toIso8601String(),
+            'type': 'post',
+          },
+        ),
+      );
+
+      // Wait for completion
+      TaskSnapshot snapshot = await uploadTask;
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      print('✅ Post image uploaded successfully');
+      return downloadUrl;
+    } catch (e) {
+      print('❌ Error uploading post image: $e');
+      throw 'Failed to upload post image: $e';
+    }
+  }
+
+  // Upload post video
+  static Future<String> uploadPostVideo({
+    required File videoFile,
+    required String userId,
+  }) async {
+    try {
+      print('📤 Uploading post video for user: $userId');
+
+      // Generate unique filename
+      String fileName = '${userId}_post_video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+
+      // Create storage reference in user's posts folder
+      Reference storageRef = _storage.ref().child('users/$userId/posts/$fileName');
+
+      print('📁 Storage path: users/$userId/posts/$fileName');
+
+      // Get file size for logging
+      final fileLength = await videoFile.length();
+      print('📁 Video file size: ${(fileLength / 1024 / 1024).toStringAsFixed(2)} MB');
+
+      // Upload file with metadata
+      UploadTask uploadTask = storageRef.putFile(
+        videoFile,
+        SettableMetadata(
+          contentType: 'video/mp4',
+          customMetadata: {
+            'uploadedBy': userId,
+            'uploadedAt': DateTime.now().toIso8601String(),
+            'type': 'post_video',
+          },
+        ),
+      );
+
+      // Monitor upload progress
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        double progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        print('📤 Video upload progress: ${progress.toStringAsFixed(1)}%');
+      });
+
+      // Wait for completion
+      TaskSnapshot snapshot = await uploadTask;
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      print('✅ Post video uploaded successfully');
+      return downloadUrl;
+    } catch (e) {
+      print('❌ Error uploading post video: $e');
+      throw 'Failed to upload video: ${e.toString()}';
+    }
+  }
+
+  // Upload story media
+  static Future<String> uploadStoryMedia({
+    required File mediaFile,
+    required String userId,
+    required String mediaType, // 'image' or 'video'
+  }) async {
+    try {
+      print('📤 Uploading story media for user: $userId');
+
+      // Generate unique filename
+      String fileExtension = path.extension(mediaFile.path);
+      String fileName = '${userId}_story_${DateTime.now().millisecondsSinceEpoch}$fileExtension';
+
+      // Create storage reference in user's stories folder
+      Reference storageRef = _storage.ref().child('users/$userId/stories/$fileName');
+
+      print('📁 Storage path: users/$userId/stories/$fileName');
+
+      // Upload file
+      UploadTask uploadTask = storageRef.putFile(
+        mediaFile,
+        SettableMetadata(
+          contentType: mediaType == 'video' ? 'video/mp4' : 'image/jpeg',
+          customMetadata: {
+            'uploadedBy': userId,
+            'uploadedAt': DateTime.now().toIso8601String(),
+            'type': 'story',
+            'mediaType': mediaType,
+          },
+        ),
+      );
+
+      // Monitor upload progress
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        double progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        print('📤 Story upload progress: ${progress.toStringAsFixed(1)}%');
+      });
+
+      // Wait for completion
+      TaskSnapshot snapshot = await uploadTask;
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      print('✅ Story media uploaded successfully');
+      return downloadUrl;
+    } catch (e) {
+      print('❌ Error uploading story media: $e');
+      throw 'Failed to upload story: $e';
+    }
+  }
+
+  // Upload multiple photos for first_photos
   static Future<Map<String, String>> uploadFirstPhotos({
     required String userId,
     required List<File> photoFiles,
@@ -193,98 +365,21 @@ class ImageService {
     }
   }
 
-  // Upload post image
-  static Future<String> uploadPostImage({
-    required File imageFile,
-    required String userId,
-  }) async {
+  // Delete video from storage
+  static Future<void> deleteVideo(String videoUrl) async {
     try {
-      print('📤 Uploading post image for user: $userId');
-
-      // Generate unique filename
-      String fileName = '${userId}_post_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
-
-      // Create storage reference in user's posts folder
-      Reference storageRef = _storage.ref().child('users/$userId/posts/$fileName');
-
-      print('📁 Storage path: users/$userId/posts/$fileName');
-
-      // Upload file
-      UploadTask uploadTask = storageRef.putFile(
-        imageFile,
-        SettableMetadata(
-          contentType: 'image/jpeg',
-          customMetadata: {
-            'uploadedBy': userId,
-            'uploadedAt': DateTime.now().toIso8601String(),
-            'type': 'post',
-          },
-        ),
-      );
-
-      // Wait for completion
-      TaskSnapshot snapshot = await uploadTask;
-      String downloadUrl = await snapshot.ref.getDownloadURL();
-
-      print('✅ Post image uploaded successfully');
-      return downloadUrl;
+      if (videoUrl.isNotEmpty && videoUrl.startsWith('http')) {
+        Reference storageRef = _storage.refFromURL(videoUrl);
+        await storageRef.delete();
+        print('✅ Video deleted successfully');
+      }
     } catch (e) {
-      print('❌ Error uploading post image: $e');
-      throw 'Failed to upload post image: $e';
+      print('❌ Error deleting video: $e');
+      // Don't throw, as this is usually for cleanup
     }
   }
 
-  // Upload story media
-  static Future<String> uploadStoryMedia({
-    required File mediaFile,
-    required String userId,
-    required String mediaType, // 'image' or 'video'
-  }) async {
-    try {
-      print('📤 Uploading story media for user: $userId');
-
-      // Generate unique filename
-      String fileExtension = path.extension(mediaFile.path);
-      String fileName = '${userId}_story_${DateTime.now().millisecondsSinceEpoch}$fileExtension';
-
-      // Create storage reference in user's stories folder
-      Reference storageRef = _storage.ref().child('users/$userId/stories/$fileName');
-
-      print('📁 Storage path: users/$userId/stories/$fileName');
-
-      // Upload file
-      UploadTask uploadTask = storageRef.putFile(
-        mediaFile,
-        SettableMetadata(
-          contentType: mediaType == 'video' ? 'video/mp4' : 'image/jpeg',
-          customMetadata: {
-            'uploadedBy': userId,
-            'uploadedAt': DateTime.now().toIso8601String(),
-            'type': 'story',
-            'mediaType': mediaType,
-          },
-        ),
-      );
-
-      // Monitor upload progress
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        double progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        print('📤 Story upload progress: ${progress.toStringAsFixed(1)}%');
-      });
-
-      // Wait for completion
-      TaskSnapshot snapshot = await uploadTask;
-      String downloadUrl = await snapshot.ref.getDownloadURL();
-
-      print('✅ Story media uploaded successfully');
-      return downloadUrl;
-    } catch (e) {
-      print('❌ Error uploading story media: $e');
-      throw 'Failed to upload story: $e';
-    }
-  }
-
-// Delete story media from storage
+  // Delete story media from storage
   static Future<void> deleteStoryMedia(String mediaUrl) async {
     try {
       if (mediaUrl.isNotEmpty && mediaUrl.startsWith('http')) {
@@ -297,5 +392,4 @@ class ImageService {
       // Don't throw, as this is for cleanup
     }
   }
-
 }

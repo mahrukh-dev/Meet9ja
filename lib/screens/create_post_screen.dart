@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../constants/app_colors.dart';
 import '../db_functions/user_service.dart';
 import '../db_functions/image_service.dart';
+import '../models/post_model.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final String userId;
@@ -15,15 +16,18 @@ class CreatePostScreen extends StatefulWidget {
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final TextEditingController _captionController = TextEditingController();
-  File? _selectedImage;
+  File? _selectedMedia;
   bool _isLoading = false;
+  String _mediaType = 'image'; // 'image' or 'video'
+  final ImagePicker _picker = ImagePicker();
 
   Future<void> _pickImage() async {
     try {
       final imageFile = await ImageService.pickImageFromGallery();
       if (imageFile != null && mounted) {
         setState(() {
-          _selectedImage = imageFile;
+          _selectedMedia = imageFile;
+          _mediaType = 'image';
         });
       }
     } catch (e) {
@@ -31,9 +35,61 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
+  Future<void> _pickVideo() async {
+    try {
+      final XFile? videoFile = await _picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 5), // 5 minute limit
+      );
+
+      if (videoFile != null && mounted) {
+        setState(() {
+          _selectedMedia = File(videoFile.path);
+          _mediaType = 'video';
+        });
+      }
+    } catch (e) {
+      _showErrorDialog('Failed to pick video: $e');
+    }
+  }
+
+  Future<void> _showMediaSelection() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library),
+              title: const Text('Choose Video'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickVideo();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('Cancel'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _createPost() async {
-    if (_selectedImage == null) {
-      _showErrorDialog('Please select an image for your post');
+    if (_selectedMedia == null) {
+      _showErrorDialog('Please select media for your post');
       return;
     }
 
@@ -47,19 +103,28 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
 
     try {
-      // Upload image to Firebase Storage
-      final String imageUrl = await ImageService.uploadImage(
-        imageFile: _selectedImage!,
-        userId: widget.userId,
-        imageType: 'post_${DateTime.now().millisecondsSinceEpoch}',
-      );
+      String mediaUrl;
+
+      if (_mediaType == 'image') {
+        // Upload image to Firebase Storage
+        mediaUrl = await ImageService.uploadPostImage(
+          imageFile: _selectedMedia!,
+          userId: widget.userId,
+        );
+      } else {
+        // Upload video to Firebase Storage
+        mediaUrl = await ImageService.uploadPostVideo(
+          videoFile: _selectedMedia!,
+          userId: widget.userId,
+        );
+      }
 
       // Create post in Firestore
       await UserService.createPost(
         userId: widget.userId,
         caption: _captionController.text.trim(),
-        mediaUrl: imageUrl,
-        type: 'post',
+        mediaUrl: mediaUrl,
+        type: _mediaType, // 'image' or 'video'
       );
 
       if (mounted) {
@@ -69,7 +134,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context, true); // Return success
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -98,6 +163,100 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildMediaPreview() {
+    if (_selectedMedia == null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.add_photo_alternate,
+            size: 60,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Tap to select media',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Images or Videos',
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 14,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_mediaType == 'image') {
+      return Image.file(
+        _selectedMedia!,
+        fit: BoxFit.cover,
+      );
+    } else {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            color: Colors.black,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.play_circle_filled,
+                    size: 60,
+                    color: Colors.white.withOpacity(0.8),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Video Post',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.videocam, size: 14, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    'VIDEO',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
   }
 
   @override
@@ -153,9 +312,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Image Selection
+            // Media Selection
             GestureDetector(
-              onTap: _pickImage,
+              onTap: _showMediaSelection,
               child: Container(
                 width: double.infinity,
                 height: 300,
@@ -166,35 +325,35 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     color: Colors.grey[300]!,
                   ),
                 ),
-                child: _selectedImage != null
-                    ? ClipRRect(
+                child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    _selectedImage!,
-                    fit: BoxFit.cover,
-                  ),
-                )
-                    : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.add_photo_alternate,
-                      size: 60,
-                      color: Colors.grey[400],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Tap to select image',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                  child: _buildMediaPreview(),
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Media type indicator
+            if (_selectedMedia != null)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _mediaType == 'image' ? Icons.photo : Icons.videocam,
+                    size: 16,
+                    color: Colors.grey[600],
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _mediaType == 'image' ? 'Image Post' : 'Video Post',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+
             const SizedBox(height: 24),
 
             // Caption

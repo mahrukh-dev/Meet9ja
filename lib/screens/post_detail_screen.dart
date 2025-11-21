@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 import '../constants/app_colors.dart';
 import '../db_functions/user_service.dart';
 import '../models/post_model.dart';
@@ -23,10 +25,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final TextEditingController _commentController = TextEditingController();
   bool _isLiked = false;
 
+  // Video player controllers
+  VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
+  bool _isVideoInitialized = false;
+
   @override
   void initState() {
     super.initState();
     _loadPost();
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    _chewieController?.dispose();
+    _commentController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPost() async {
@@ -39,6 +54,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
         await _loadPostUser(post.uid);
         _checkIfLiked();
+
+        // Initialize video if post is a video
+        if (post.isVideo) {
+          await _initializeVideo(post.mediaUrl);
+        }
       } else {
         setState(() {
           _error = 'Post not found';
@@ -50,6 +70,80 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _error = 'Failed to load post: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _initializeVideo(String videoUrl) async {
+    try {
+      setState(() {
+        _isVideoInitialized = false;
+      });
+
+      _videoController = VideoPlayerController.network(videoUrl)
+        ..setLooping(true)
+        ..setVolume(1.0);
+
+      await _videoController!.initialize();
+
+      _chewieController = ChewieController(
+        videoPlayerController: _videoController!,
+        autoPlay: false,
+        looping: false,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControls: true,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: AppColors.primary,
+          handleColor: AppColors.primary,
+          backgroundColor: Colors.grey,
+          bufferedColor: Colors.grey.shade300,
+        ),
+        placeholder: Container(
+          color: Colors.black,
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ),
+        errorBuilder: (context, errorMessage) {
+          return Container(
+            color: Colors.black,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white, size: 50),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Error loading video',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    errorMessage,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _isVideoInitialized = true;
+        });
+      }
+    } catch (e) {
+      print('❌ Error initializing video: $e');
+      if (mounted) {
+        setState(() {
+          _isVideoInitialized = false;
+        });
+      }
     }
   }
 
@@ -326,7 +420,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await _ensureConversationExists(conversationId, currentUser.uid, user);
 
       // Create share message
-      final shareMessage = "Check out this post! 📸\n\n${_post!.caption}\n\n[Shared Post: ${_post!.mediaUrl}]";
+      final shareMessage = "Check out this ${_post!.isVideo ? 'video' : 'post'}! ${_post!.isVideo ? '🎥' : '📸'}\n\n${_post!.caption}\n\n[Shared ${_post!.isVideo ? 'Video' : 'Post'}: ${_post!.mediaUrl}]";
 
       // Save shared post message to Firestore
       await _saveSharedPostToChat(
@@ -403,7 +497,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             currentUserId: currentUserAvatar,
             otherUser.uid: otherUserAvatar,
           },
-          'lastMessage': 'Shared a post',
+          'lastMessage': 'Shared a ${_post?.isVideo == true ? 'video' : 'post'}',
           'lastMessageTime': FieldValue.serverTimestamp(),
           'lastMessageType': 'post_share',
           'unreadCount': {
@@ -455,6 +549,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           'mediaUrl': post.mediaUrl,
           'caption': post.caption,
           'ownerId': post.uid,
+          'postType': post.type, // Include post type for proper display
         },
         'timestamp': FieldValue.serverTimestamp(),
       });
@@ -464,7 +559,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .collection('chat_conversations')
           .doc(conversationId)
           .update({
-        'lastMessage': 'Shared a post 📸',
+        'lastMessage': 'Shared a ${post.isVideo ? 'video' : 'post'} ${post.isVideo ? '🎥' : '📸'}',
         'lastMessageType': 'post_share',
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageSenderId': senderId,
@@ -476,6 +571,84 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } catch (e) {
       print('❌ Error saving shared post to chat: $e');
       rethrow;
+    }
+  }
+
+  Widget _buildMediaContent() {
+    if (_post == null) {
+      return Container(
+        height: 400,
+        color: Colors.grey[100],
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_post!.isImage) {
+      return Container(
+        width: double.infinity,
+        height: 400,
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+        ),
+        child: Image.network(
+          _post!.mediaUrl,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[300],
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.broken_image, size: 60, color: Colors.grey),
+                  SizedBox(height: 8),
+                  Text('Failed to load image'),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    } else if (_post!.isVideo) {
+      if (!_isVideoInitialized || _chewieController == null) {
+        return Container(
+          height: 400,
+          color: Colors.black,
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        );
+      }
+
+      return Container(
+        height: 400,
+        color: Colors.black,
+        child: Chewie(controller: _chewieController!),
+      );
+    } else {
+      return Container(
+        height: 400,
+        color: Colors.grey[300],
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error, size: 60, color: Colors.grey),
+            SizedBox(height: 8),
+            Text('Unsupported media type'),
+          ],
+        ),
+      );
     }
   }
 
@@ -509,7 +682,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          'Post',
+          _post!.isVideo ? 'Video' : 'Post',
           style: TextStyle(
             fontWeight: FontWeight.w900,
             color: Colors.black,
@@ -529,21 +702,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  // Post Image
-                  Container(
-                    width: double.infinity,
-                    height: 400,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
+                  // Media Content (Image or Video)
+                  _buildMediaContent(),
+
+                  // Post Type Indicator
+                  if (_post!.isVideo)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      color: Colors.black,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.videocam, size: 16, color: Colors.white70),
+                          const SizedBox(width: 6),
+                          Text(
+                            'VIDEO POST',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Image.network(
-                      _post!.mediaUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(Icons.error);
-                      },
-                    ),
-                  ),
 
                   // Actions
                   Padding(
@@ -575,27 +758,54 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
-                  // Caption
+                  // User Info and Caption
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _postUser?.username ?? 'User',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundImage: _postUser != null && UserService.getProfilePhotoUrl(_postUser!) != null
+                              ? NetworkImage(UserService.getProfilePhotoUrl(_postUser!)!)
+                              : const NetworkImage("https://i.pravatar.cc/100?img=8") as ImageProvider,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
-                          child: Text(_post!.caption),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _postUser?.name ?? 'User',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _post!.caption,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _formatTime(_post!.dateTime),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
 
-                  // Comments
+                  // Comments Section
                   const Padding(
                     padding: EdgeInsets.all(16),
                     child: Align(
@@ -619,33 +829,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     )
                   else
-                    ..._post!.comments.map((comment) => ListTile(
-                      leading: const CircleAvatar(
-                        backgroundColor: Colors.grey,
-                      ),
-                      title: Text(
-                        'User ${comment.commenterUID.substring(0, 8)}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(comment.text),
-                      trailing: Text(
-                        _formatTime(comment.dateTime),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
+                    ..._post!.comments.map((comment) => FutureBuilder<UserModel?>(
+                      future: UserService.getUserProfile(comment.commenterUID),
+                      builder: (context, snapshot) {
+                        final commentUser = snapshot.data;
+                        return ListTile(
+                          leading: CircleAvatar(
+                            radius: 18,
+                            backgroundImage: commentUser != null && UserService.getProfilePhotoUrl(commentUser) != null
+                                ? NetworkImage(UserService.getProfilePhotoUrl(commentUser)!)
+                                : const NetworkImage("https://i.pravatar.cc/100?img=8") as ImageProvider,
+                          ),
+                          title: Text(
+                            commentUser?.name ?? 'User',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(comment.text),
+                          trailing: Text(
+                            _formatTime(comment.dateTime),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        );
+                      },
                     )),
                 ],
               ),
             ),
           ),
 
-          // Add Comment - FIXED BORDER SYNTAX
+          // Add Comment
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              border: Border.all( // FIXED: Changed from Border.top to Border.all
+              border: Border.all(
                 color: Colors.grey[300]!,
               ),
             ),

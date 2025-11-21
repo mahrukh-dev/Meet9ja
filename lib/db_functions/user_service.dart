@@ -33,55 +33,11 @@ class UserService {
     }
   }
 
-
-// Add this function to trigger live notifications
-  static Future<void> startLiveStream({
-    required String userId,
-    required String liveId,
-    required String title,
-  }) async {
-    try {
-      // Create live document
-      await FirebaseFirestore.instance.collection('live_history').doc(liveId).set({
-        'live_id': liveId,
-        'UID': userId,
-        'start_time': FieldValue.serverTimestamp(),
-        'title': title,
-        'status': 'active',
-        'viewer_count': 0,
-        'total_gift_value': 0,
-      });
-
-      // Trigger live notification to followers
-      await NotificationTriggers.onUserLive(
-        userId: userId,
-        liveId: liveId,
-        liveTitle: title,
-      );
-
-      print('✅ Live stream started and notifications sent');
-    } catch (e) {
-      print('❌ Error starting live stream: $e');
-      throw 'Failed to start live stream: $e';
-    }
-  }
-
-  // Add this to your UserService class
-  static Stream<List<UserModel>> getTravelingUsers() {
-    return FirebaseFirestore.instance
-        .collection('users')
-        .limit(8) // Get 8 random users
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
-        .toList());
-  }
-
   // Stream user profile data for real-time updates
   static Stream<UserModel?> getUserProfileStream(String userId) {
     return _firestore.collection('users').doc(userId).snapshots().map((
-      snapshot,
-    ) {
+        snapshot,
+        ) {
       if (snapshot.exists) {
         final data = snapshot.data() as Map<String, dynamic>;
         return UserModel.fromFirestore(data);
@@ -138,21 +94,303 @@ class UserService {
     }
   }
 
-  static Future<List<LiveHistory>> getUserLiveHistory(String userId) async {
+  // Create a new post
+  static Future<void> createPost({
+    required String userId,
+    required String caption,
+    required String mediaUrl,
+    required String type, // 'image' or 'video'
+  }) async {
     try {
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('live_history')
-          .where('UID', isEqualTo: userId)
-          .orderBy('end_time', descending: true)
-          .limit(20) // Limit to recent 20 streams
-          .get();
+      final postRef = _firestore.collection('user_feed').doc();
 
-      return querySnapshot.docs.map((doc) {
-        return LiveHistory.fromFirestore(doc);
-      }).toList();
+      // Create post data matching PostModel structure
+      final postData = {
+        'ID': postRef.id,
+        'UID': userId,
+        'caption': caption,
+        'type': type, // 'image' or 'video'
+        'media_url': mediaUrl,
+        'date_time': FieldValue.serverTimestamp(),
+        'comments': [], // Initialize empty comments array
+        'likes': [],    // Initialize empty likes array
+      };
+
+      await postRef.set(postData);
+      print('✅ Post created successfully: ${postRef.id}');
     } catch (e) {
-      print('Error getting user live history: $e');
-      return [];
+      print('❌ Error creating post: $e');
+      throw 'Failed to create post: $e';
+    }
+  }
+
+  // Get user posts as stream
+  static Stream<List<PostModel>> getUserPostsStream(String userId) {
+    return _firestore
+        .collection('user_feed')
+        .where('UID', isEqualTo: userId)
+        .orderBy('date_time', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map(
+            (doc) => PostModel.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        ),
+      )
+          .toList();
+    });
+  }
+
+  // Get single post by ID
+  static Future<PostModel?> getPostById(String postId) async {
+    try {
+      final doc = await _firestore.collection('user_feed').doc(postId).get();
+      if (doc.exists) {
+        return PostModel.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        );
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error getting post: $e');
+      return null;
+    }
+  }
+
+  static Future<void> likePost(String postId, String userId) async {
+    try {
+      final likeData = {
+        'likerUID': userId,
+        'date_time': Timestamp.now(),
+      };
+
+      // Get post to find owner
+      final postDoc = await _firestore.collection('user_feed').doc(postId).get();
+      if (postDoc.exists) {
+        final postData = postDoc.data() as Map<String, dynamic>;
+        final postOwnerId = postData['UID'];
+
+        // Trigger post like notification
+        await NotificationTriggers.onPostLike(
+          targetUserId: postOwnerId,
+          postId: postId,
+          likerUserId: userId,
+        );
+      }
+
+      await _firestore.collection('user_feed').doc(postId).update({
+        'likes': FieldValue.arrayUnion([likeData]),
+      });
+    } catch (e) {
+      print('❌ Error liking post: $e');
+      throw 'Failed to like post: $e';
+    }
+  }
+
+  static Future<void> unlikePost(String postId, String userId) async {
+    try {
+      final postDoc = await _firestore
+          .collection('user_feed')
+          .doc(postId)
+          .get();
+      if (postDoc.exists) {
+        final data = postDoc.data() as Map<String, dynamic>;
+        final likes = data['likes'] as List<dynamic>? ?? [];
+
+        // Find the like to remove
+        final likeToRemove = likes.firstWhere(
+              (like) => like['likerUID'] == userId,
+          orElse: () => null,
+        );
+
+        if (likeToRemove != null) {
+          await _firestore.collection('user_feed').doc(postId).update({
+            'likes': FieldValue.arrayRemove([likeToRemove]),
+          });
+        }
+      }
+    } catch (e) {
+      print('❌ Error unliking post: $e');
+      throw 'Failed to unlike post: $e';
+    }
+  }
+
+  static Future<void> addComment({
+    required String postId,
+    required String userId,
+    required String text,
+  }) async {
+    try {
+      final commentData = {
+        'commenterUID': userId,
+        'date_time': Timestamp.now(),
+        'text': text,
+      };
+
+      // Get post to find owner
+      final postDoc = await _firestore.collection('user_feed').doc(postId).get();
+      if (postDoc.exists) {
+        final postData = postDoc.data() as Map<String, dynamic>;
+        final postOwnerId = postData['UID'];
+
+        // Only send notification if commenter is not the post owner
+        if (postOwnerId != userId) {
+          await NotificationTriggers.onPostComment(
+            targetUserId: postOwnerId,
+            postId: postId,
+            commentText: text,
+          );
+        }
+      }
+
+      await _firestore.collection('user_feed').doc(postId).update({
+        'comments': FieldValue.arrayUnion([commentData]),
+      });
+    } catch (e) {
+      print('❌ Error adding comment: $e');
+      throw 'Failed to add comment: $e';
+    }
+  }
+
+  // Create a new story
+  static Future<void> createStory({
+    required String userId,
+    required String mediaUrl,
+    required String mediaType,
+  }) async {
+    try {
+      final storyRef = _firestore.collection('stories').doc();
+      final now = DateTime.now();
+      final expiresAt = now.add(
+        const Duration(hours: 24),
+      ); // 24-hour expiration
+
+      final storyData = {
+        'ID': storyRef.id,
+        'UID': userId,
+        'media_url': mediaUrl,
+        'media_type': mediaType,
+        'created_at': Timestamp.fromDate(now),
+        'expires_at': Timestamp.fromDate(expiresAt),
+        'viewers': [],
+      };
+
+      await storyRef.set(storyData);
+      print('✅ Story created successfully: ${storyRef.id}');
+
+      // Schedule automatic deletion
+      _scheduleStoryDeletion(storyRef.id, mediaUrl, expiresAt);
+    } catch (e) {
+      print('❌ Error creating story: $e');
+      throw 'Failed to create story: $e';
+    }
+  }
+
+  // Get user stories stream
+  static Stream<List<StoryModel>> getUserStoriesStream(String userId) {
+    try {
+      return _firestore
+          .collection('stories')
+          .where('UID', isEqualTo: userId)
+          .where('expires_at', isGreaterThan: Timestamp.now())
+          .orderBy('expires_at', descending: true)
+          .snapshots()
+          .handleError((error) {
+        print('❌ Error in stories stream: $error');
+        // Return an empty list on error to prevent stream from closing
+        return [];
+      })
+          .map((snapshot) {
+        final stories = snapshot.docs
+            .map((doc) => StoryModel.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        ))
+            .toList();
+
+        print('📱 Stories stream updated: ${stories.length} stories');
+        return stories;
+      });
+    } catch (e) {
+      print('❌ Error creating stories stream: $e');
+      // Return a stream that emits an empty list
+      return Stream.value([]);
+    }
+  }
+
+  // Get all active stories from followed users
+  static Stream<List<StoryModel>> getFollowingStoriesStream(
+      List<String> followingIds,
+      ) {
+    if (followingIds.isEmpty) {
+      return Stream.value([]);
+    }
+
+    return _firestore
+        .collection('stories')
+        .where('UID', whereIn: followingIds)
+        .where('expires_at', isGreaterThan: Timestamp.now())
+        .orderBy('UID') // You'll need a composite index for this
+        .orderBy('created_at', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map(
+            (doc) => StoryModel.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        ),
+      )
+          .toList();
+    });
+  }
+
+  // Mark story as viewed
+  static Future<void> markStoryAsViewed(String storyId, String userId) async {
+    try {
+      await _firestore.collection('stories').doc(storyId).update({
+        'viewers': FieldValue.arrayUnion([userId]),
+      });
+    } catch (e) {
+      print('❌ Error marking story as viewed: $e');
+    }
+  }
+
+  // Schedule automatic story deletion
+  static void _scheduleStoryDeletion(
+      String storyId,
+      String mediaUrl,
+      DateTime expiresAt,
+      ) {
+    final durationUntilDeletion = expiresAt.difference(DateTime.now());
+
+    if (durationUntilDeletion.inSeconds > 0) {
+      Future.delayed(durationUntilDeletion, () async {
+        try {
+          // Delete from Firestore
+          await _firestore.collection('stories').doc(storyId).delete();
+          // Delete from Storage
+          await ImageService.deleteStoryMedia(mediaUrl);
+          print('✅ Story automatically deleted: $storyId');
+        } catch (e) {
+          print('❌ Error auto-deleting story: $e');
+        }
+      });
+    }
+  }
+
+  // Manual story deletion (if user wants to delete early)
+  static Future<void> deleteStory(String storyId, String mediaUrl) async {
+    try {
+      await _firestore.collection('stories').doc(storyId).delete();
+      await ImageService.deleteStoryMedia(mediaUrl);
+      print('✅ Story deleted manually: $storyId');
+    } catch (e) {
+      print('❌ Error deleting story: $e');
+      throw 'Failed to delete story: $e';
     }
   }
 
@@ -242,7 +480,6 @@ class UserService {
         .snapshots();
   }
 
-
   // Get user's matches
   static Stream<QuerySnapshot> getUserMatches(String userId) {
     return _firestore
@@ -252,8 +489,7 @@ class UserService {
         .snapshots();
   }
 
-  // Add these methods to your UserService class
-
+  // Get recommended users
   static Stream<List<UserModel>> getRecommendedUsers() {
     return FirebaseFirestore.instance
         .collection('users')
@@ -261,10 +497,11 @@ class UserService {
         .limit(10)
         .snapshots()
         .map((snapshot) => snapshot.docs
-        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
         .toList());
   }
 
+  // Get popular users
   static Stream<List<UserModel>> getPopularUsers() {
     return FirebaseFirestore.instance
         .collection('users')
@@ -272,54 +509,24 @@ class UserService {
         .limit(6)
         .snapshots()
         .map((snapshot) => snapshot.docs
-        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
         .toList());
   }
 
+  // Get trending posts
   static Stream<List<PostModel>> getTrendingPosts() {
     return FirebaseFirestore.instance
-        .collection('posts')
+        .collection('user_feed')
         .orderBy('likesCount', descending: true)
-        .where('mediaType', isEqualTo: 'video')
+        .where('type', isEqualTo: 'video')
         .limit(4)
         .snapshots()
         .map((snapshot) => snapshot.docs
-        .map((doc) => PostModel.fromFirestore(doc.data as Map<String, dynamic>, doc.id as String))
+        .map((doc) => PostModel.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
         .toList());
   }
 
-  static Stream<List<UserModel>> getSimilarInterestsUsers() {
-    final currentUserId = _auth.currentUser?.uid;
-    // final currentUserId = currentUserId;
-    if (currentUserId == null) {
-      return Stream.value([]);
-    }
-
-    return FirebaseFirestore.instance
-        .collection('users')
-        .where('uid', isNotEqualTo: currentUserId)
-        .limit(4)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
-        .toList());
-  }
-
-  static Stream<List<UserModel>> getSameGoalsUsers() {
-    final currentUserId = _auth.currentUser?.uid;
-    if (currentUserId == null) {
-      return Stream.value([]);
-    }
-
-    return FirebaseFirestore.instance
-        .collection('users')
-        .where('uid', isNotEqualTo: currentUserId)
-        .limit(4)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
-        .toList());
-  }
+  // Search users
   static Stream<List<UserModel>> searchUsers(String query) {
     if (query.isEmpty) {
       return Stream.value([]);
@@ -345,6 +552,8 @@ class UserService {
       }).toList();
     });
   }
+
+  // Calculate age from date of birth
   static int calculateAge(String dateOfBirth) {
     try {
       final birthDate = DateTime.parse(dateOfBirth);
@@ -360,7 +569,7 @@ class UserService {
     }
   }
 
-
+  // Submit profile report
   static Future<void> submitProfileReport({
     required String reporterId,
     required String reportedUserId,
@@ -393,6 +602,7 @@ class UserService {
     }
   }
 
+  // Get user reports
   static Future<List<Map<String, dynamic>>> getUserReports(String userId) async {
     try {
       final snapshot = await FirebaseFirestore.instance
@@ -408,6 +618,7 @@ class UserService {
     }
   }
 
+  // Check if user has reported profile
   static Future<bool> hasUserReportedProfile(String reporterId, String reportedUserId) async {
     try {
       final snapshot = await FirebaseFirestore.instance
@@ -438,8 +649,8 @@ class UserService {
       return querySnapshot.docs
           .map(
             (doc) =>
-                UserModel.fromFirestore(doc.data() as Map<String, dynamic>),
-          )
+            UserModel.fromFirestore(doc.data() as Map<String, dynamic>),
+      )
           .toList();
     } catch (e) {
       print('❌ Error fetching users by IDs: $e');
@@ -471,18 +682,8 @@ class UserService {
 
   static String getFormattedJoinDate(UserModel user) {
     final months = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     return "${months[user.createdAt.month - 1]} ${user.createdAt.day}, ${user.createdAt.year}";
   }
@@ -494,8 +695,6 @@ class UserService {
     if (user.mode['bizz'] == true) return 'Bizz';
     return 'Not Set';
   }
-
-  // In UserService class, update these methods:
 
   static int getCoinBalance(UserModel user) {
     final balance = user.wallet['coin_balance'];
@@ -515,315 +714,57 @@ class UserService {
     return user.type == 'premium';
   }
 
-
-
-  // Add these methods to your existing UserService class
-
-  // Create a new post
-  static Future<void> createPost({
+  // Live stream functionality
+  static Future<void> startLiveStream({
     required String userId,
-    required String caption,
-    required String mediaUrl,
-    required String type,
+    required String liveId,
+    required String title,
   }) async {
     try {
-      final postRef = _firestore.collection('user_feed').doc();
-
-      final postData = {
-        'ID': postRef.id,
+      // Create live document
+      await FirebaseFirestore.instance.collection('live_history').doc(liveId).set({
+        'live_id': liveId,
         'UID': userId,
-        'caption': caption,
-        'type': type,
-        'media_url': mediaUrl,
-        'date_time': FieldValue.serverTimestamp(),
-        'comments': [],
-        'likes': [],
-      };
-
-      await postRef.set(postData);
-      print('✅ Post created successfully: ${postRef.id}');
-    } catch (e) {
-      print('❌ Error creating post: $e');
-      throw 'Failed to create post: $e';
-    }
-  }
-
-  // Get user posts as stream
-  static Stream<List<PostModel>> getUserPostsStream(String userId) {
-    return _firestore
-        .collection('user_feed')
-        .where('UID', isEqualTo: userId)
-        .orderBy('date_time', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map(
-                (doc) => PostModel.fromFirestore(
-                  doc.data() as Map<String, dynamic>,
-                  doc.id,
-                ),
-              )
-              .toList();
-        });
-  }
-
-  // Get single post by ID
-  static Future<PostModel?> getPostById(String postId) async {
-    try {
-      final doc = await _firestore.collection('user_feed').doc(postId).get();
-      if (doc.exists) {
-        return PostModel.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        );
-      }
-      return null;
-    } catch (e) {
-      print('❌ Error getting post: $e');
-      return null;
-    }
-  }
-
-
-
-  static Future<void> likePost(String postId, String userId) async {
-    try {
-      final likeData = {
-        'likerUID': userId,
-        'date_time':
-            Timestamp.now(), // Use Timestamp.now() instead of FieldValue.serverTimestamp()
-      };
-
-      // Get post to find owner
-      final postDoc = await _firestore.collection('user_feed').doc(postId).get();
-      if (postDoc.exists) {
-        final postData = postDoc.data() as Map<String, dynamic>;
-        final postOwnerId = postData['UID'];
-
-        // Trigger post like notification
-        await NotificationTriggers.onPostLike(
-          targetUserId: postOwnerId,
-          postId: postId,
-          likerUserId: userId,
-        );
-      }
-
-
-      await _firestore.collection('user_feed').doc(postId).update({
-        'likes': FieldValue.arrayUnion([likeData]),
+        'start_time': FieldValue.serverTimestamp(),
+        'title': title,
+        'status': 'active',
+        'viewer_count': 0,
+        'total_gift_value': 0,
       });
+
+      // Trigger live notification to followers
+      await NotificationTriggers.onUserLive(
+        userId: userId,
+        liveId: liveId,
+        liveTitle: title,
+      );
+
+      print('✅ Live stream started and notifications sent');
     } catch (e) {
-      print('❌ Error liking post: $e');
-      throw 'Failed to like post: $e';
+      print('❌ Error starting live stream: $e');
+      throw 'Failed to start live stream: $e';
     }
   }
 
-  static Future<void> unlikePost(String postId, String userId) async {
+  static Future<List<LiveHistory>> getUserLiveHistory(String userId) async {
     try {
-      final postDoc = await _firestore
-          .collection('user_feed')
-          .doc(postId)
-          .get();
-      if (postDoc.exists) {
-        final data = postDoc.data() as Map<String, dynamic>;
-        final likes = data['likes'] as List<dynamic>? ?? [];
-
-        // Find the like to remove
-        final likeToRemove = likes.firstWhere(
-          (like) => like['likerUID'] == userId,
-          orElse: () => null,
-        );
-
-        if (likeToRemove != null) {
-          await _firestore.collection('user_feed').doc(postId).update({
-            'likes': FieldValue.arrayRemove([likeToRemove]),
-          });
-        }
-      }
-    } catch (e) {
-      print('❌ Error unliking post: $e');
-      throw 'Failed to unlike post: $e';
-    }
-  }
-
-  static Future<void> addComment({
-    required String postId,
-    required String userId,
-    required String text,
-  }) async {
-    try {
-      final commentData = {
-        'commenterUID': userId,
-        'date_time':
-            Timestamp.now(), // Use Timestamp.now() instead of FieldValue.serverTimestamp()
-        'text': text,
-      };
-
-      // Get post to find owner
-      final postDoc = await _firestore.collection('user_feed').doc(postId).get();
-      if (postDoc.exists) {
-        final postData = postDoc.data() as Map<String, dynamic>;
-        final postOwnerId = postData['UID'];
-
-        // Only send notification if commenter is not the post owner
-        if (postOwnerId != userId) {
-          await NotificationTriggers.onPostComment(
-            targetUserId: postOwnerId,
-            postId: postId,
-            commentText: text,
-          );
-        }
-      }
-
-
-      await _firestore.collection('user_feed').doc(postId).update({
-        'comments': FieldValue.arrayUnion([commentData]),
-      });
-    } catch (e) {
-      print('❌ Error adding comment: $e');
-      throw 'Failed to add comment: $e';
-    }
-  }
-
-  // Create a new story
-  static Future<void> createStory({
-    required String userId,
-    required String mediaUrl,
-    required String mediaType,
-  }) async {
-    try {
-      final storyRef = _firestore.collection('stories').doc();
-      final now = DateTime.now();
-      final expiresAt = now.add(
-        const Duration(hours: 24),
-      ); // 24-hour expiration
-
-      final storyData = {
-        'ID': storyRef.id,
-        'UID': userId,
-        'media_url': mediaUrl,
-        'media_type': mediaType,
-        'created_at': Timestamp.fromDate(now),
-        'expires_at': Timestamp.fromDate(expiresAt),
-        'viewers': [],
-      };
-
-      await storyRef.set(storyData);
-      print('✅ Story created successfully: ${storyRef.id}');
-
-      // Schedule automatic deletion
-      _scheduleStoryDeletion(storyRef.id, mediaUrl, expiresAt);
-    } catch (e) {
-      print('❌ Error creating story: $e');
-      throw 'Failed to create story: $e';
-    }
-  }
-
-  // In UserService class, update the getUserStoriesStream method:
-
-  static Stream<List<StoryModel>> getUserStoriesStream(String userId) {
-    try {
-      return _firestore
-          .collection('stories')
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('live_history')
           .where('UID', isEqualTo: userId)
-          .where('expires_at', isGreaterThan: Timestamp.now())
-          .orderBy('expires_at', descending: true)
-          .snapshots()
-          .handleError((error) {
-        print('❌ Error in stories stream: $error');
-        // Return an empty list on error to prevent stream from closing
-        return [];
-      })
-          .map((snapshot) {
-        final stories = snapshot.docs
-            .map((doc) => StoryModel.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        ))
-            .toList();
+          .orderBy('end_time', descending: true)
+          .limit(20)
+          .get();
 
-        print('📱 Stories stream updated: ${stories.length} stories');
-        return stories;
-      });
+      return querySnapshot.docs.map((doc) {
+        return LiveHistory.fromFirestore(doc);
+      }).toList();
     } catch (e) {
-      print('❌ Error creating stories stream: $e');
-      // Return a stream that emits an empty list
-      return Stream.value([]);
+      print('Error getting user live history: $e');
+      return [];
     }
   }
 
-  // Get all active stories from followed users
-  static Stream<List<StoryModel>> getFollowingStoriesStream(
-    List<String> followingIds,
-  ) {
-    if (followingIds.isEmpty) {
-      return Stream.value([]);
-    }
-
-    return _firestore
-        .collection('stories')
-        .where('UID', whereIn: followingIds)
-        .where('expires_at', isGreaterThan: Timestamp.now())
-        .orderBy('UID') // You'll need a composite index for this
-        .orderBy('created_at', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map(
-                (doc) => StoryModel.fromFirestore(
-                  doc.data() as Map<String, dynamic>,
-                  doc.id,
-                ),
-              )
-              .toList();
-        });
-  }
-
-  // Mark story as viewed
-  static Future<void> markStoryAsViewed(String storyId, String userId) async {
-    try {
-      await _firestore.collection('stories').doc(storyId).update({
-        'viewers': FieldValue.arrayUnion([userId]),
-      });
-    } catch (e) {
-      print('❌ Error marking story as viewed: $e');
-    }
-  }
-
-  // Schedule automatic story deletion
-  static void _scheduleStoryDeletion(
-    String storyId,
-    String mediaUrl,
-    DateTime expiresAt,
-  ) {
-    final durationUntilDeletion = expiresAt.difference(DateTime.now());
-
-    if (durationUntilDeletion.inSeconds > 0) {
-      Future.delayed(durationUntilDeletion, () async {
-        try {
-          // Delete from Firestore
-          await _firestore.collection('stories').doc(storyId).delete();
-          // Delete from Storage
-          await ImageService.deleteStoryMedia(mediaUrl);
-          print('✅ Story automatically deleted: $storyId');
-        } catch (e) {
-          print('❌ Error auto-deleting story: $e');
-        }
-      });
-    }
-  }
-
-  // Manual story deletion (if user wants to delete early)
-  static Future<void> deleteStory(String storyId, String mediaUrl) async {
-    try {
-      await _firestore.collection('stories').doc(storyId).delete();
-      await ImageService.deleteStoryMedia(mediaUrl);
-      print('✅ Story deleted manually: $storyId');
-    } catch (e) {
-      print('❌ Error deleting story: $e');
-      throw 'Failed to delete story: $e';
-    }
-  }
+  // Schedule functionality
   static Future<List<Map<String, dynamic>>> getUserSchedules(String userId) async {
     try {
       final querySnapshot = await FirebaseFirestore.instance
@@ -905,7 +846,7 @@ class UserService {
         'created_at': FieldValue.serverTimestamp(),
       });
 
-      // print('✅ Scheduled notification for: ${DateFormat('MMM d, y h:mm a').format(notificationTime)}');
+      print('✅ Scheduled notification for: $notificationTime');
     } catch (e) {
       print('❌ Error scheduling notification: $e');
     }
@@ -926,6 +867,54 @@ class UserService {
       print('❌ Error deleting schedule: $e');
       throw 'Failed to delete schedule: $e';
     }
+  }
+
+
+  // Add this to your UserService class
+  static Stream<List<UserModel>> getTravelingUsers() {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .limit(8) // Get 8 random users
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
+        .toList());
+  }
+
+
+
+
+  static Stream<List<UserModel>> getSimilarInterestsUsers() {
+    final currentUserId = _auth.currentUser?.uid;
+    // final currentUserId = currentUserId;
+    if (currentUserId == null) {
+      return Stream.value([]);
+    }
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .where('uid', isNotEqualTo: currentUserId)
+        .limit(4)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .toList());
+  }
+
+  static Stream<List<UserModel>> getSameGoalsUsers() {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) {
+      return Stream.value([]);
+    }
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .where('uid', isNotEqualTo: currentUserId)
+        .limit(4)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
+        .toList());
   }
 
 }

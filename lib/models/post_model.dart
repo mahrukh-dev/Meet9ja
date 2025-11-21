@@ -4,7 +4,7 @@ class PostModel {
   final String id;
   final String uid;
   final String caption;
-  final String type;
+  final String type; // 'image' or 'video'
   final String mediaUrl;
   final DateTime dateTime;
   final List<Comment> comments;
@@ -26,7 +26,7 @@ class PostModel {
       id: id,
       uid: data['UID'] ?? '',
       caption: data['caption'] ?? '',
-      type: data['type'] ?? 'post',
+      type: data['type'] ?? 'image', // Default to image for backward compatibility
       mediaUrl: data['media_url'] ?? '',
       dateTime: (data['date_time'] as Timestamp).toDate(),
       comments: (data['comments'] as List<dynamic>? ?? [])
@@ -49,6 +49,12 @@ class PostModel {
       'likes': likes.map((like) => like.toMap()).toList(),
     };
   }
+
+  // Helper method to check if post is a video
+  bool get isVideo => type == 'video';
+
+  // Helper method to check if post is an image
+  bool get isImage => type == 'image';
 }
 
 class Comment {
