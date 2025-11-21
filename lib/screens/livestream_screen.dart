@@ -6,9 +6,235 @@ import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_stre
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:camera/camera.dart';
-import 'package:permission_handler/permission_handler.dart';
+
+
+class ZegoRecordingService {
+  static const String _baseUrl = 'https://cloudrecord-api.zego.im';
+  static const String _signatureVersion = '2.0';
+
+  static Future<Map<String, dynamic>> startRecording({
+    required int appId,
+    required String serverSecret,
+    required String roomId,
+    required String userId,
+  }) async {
+    try {
+      await _checkNetworkConnectivity();
+
+      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+      final nonce = _generateNonce();
+
+      final signature = _generateSignatureV2(
+        appId: appId,
+        serverSecret: serverSecret,
+        timestamp: timestamp,
+        nonce: nonce,
+      );
+
+      final queryParams = {
+        'Action': 'StartRecord',
+        'AppId': appId.toString(),
+        'SignatureNonce': nonce,
+        'Timestamp': timestamp,
+        'SignatureVersion': _signatureVersion,
+        'Signature': signature,
+      };
+
+      final Map<String, dynamic> requestBody = {
+        "RoomId": roomId,
+        "RecordInputParams": {
+          "RecordMode": 1,
+          "StreamType": 3,
+          "MaxIdleTime": 60,
+          "RecordStreamList": [
+            {
+              "StreamId": "${userId}_main"
+            }
+          ],
+        },
+        "RecordOutputParams": {
+          "OutputFileFormat": "mp4",
+          "OutputFolder": "zego_recordings/",
+        },
+        "StorageParams": {
+          "Vendor": 1,
+          "Region": "eu-north-1",
+          "Bucket": "meet9ja-recordings",
+          "AccessKeyId": "AKIAZ44G2F7RDNUFZT6U",
+          "AccessKeySecret": "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",
+        }
+      };
+
+      print('🌐 Sending recording start request to Zego...');
+
+      final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
+
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode(requestBody),
+      ).timeout(const Duration(seconds: 30));
+
+      print('📡 Response status: ${response.statusCode}');
+      print('📡 Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final result = json.decode(response.body);
+        if (result['Code'] == 0) {
+          print('✅ Zego Cloud Recording started successfully');
+          return result;
+        } else {
+          throw Exception('Zego API error: Code ${result['Code']} - ${result['Message']}');
+        }
+      } else {
+        throw HttpException('HTTP ${response.statusCode}: ${response.body}');
+      }
+    } on SocketException catch (e) {
+      throw Exception('Network error: Cannot connect to Zego servers. Details: $e');
+    } catch (e) {
+      throw Exception('Recording start error: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> stopRecording({
+    required int appId,
+    required String serverSecret,
+    required String roomId,
+  }) async {
+    try {
+      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+      final nonce = _generateNonce();
+
+      final signature = _generateSignatureV2(
+        appId: appId,
+        serverSecret: serverSecret,
+        timestamp: timestamp,
+        nonce: nonce,
+      );
+
+      final queryParams = {
+        'Action': 'StopRecord',
+        'AppId': appId.toString(),
+        'SignatureNonce': nonce,
+        'Timestamp': timestamp,
+        'SignatureVersion': _signatureVersion,
+        'Signature': signature,
+      };
+
+      final Map<String, dynamic> requestBody = {
+        "RoomId": roomId,
+      };
+
+      final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
+
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode(requestBody),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final result = json.decode(response.body);
+        return result;
+      } else {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Recording stop error: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> queryRecordingStatus({
+    required int appId,
+    required String serverSecret,
+    required String roomId,
+  }) async {
+    try {
+      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+      final nonce = _generateNonce();
+
+      final signature = _generateSignatureV2(
+        appId: appId,
+        serverSecret: serverSecret,
+        timestamp: timestamp,
+        nonce: nonce,
+      );
+
+      final queryParams = {
+        'Action': 'QueryRecord',
+        'AppId': appId.toString(),
+        'SignatureNonce': nonce,
+        'Timestamp': timestamp,
+        'SignatureVersion': _signatureVersion,
+        'Signature': signature,
+      };
+
+      final Map<String, dynamic> requestBody = {
+        "RoomId": roomId,
+      };
+
+      final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
+
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode(requestBody),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Recording query error: $e');
+    }
+  }
+
+  static String _generateNonce() {
+    return 'm8pb55tp79n${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  static String _generateSignatureV2({
+    required int appId,
+    required String serverSecret,
+    required String timestamp,
+    required String nonce,
+  }) {
+    try {
+      final payload = '$appId$timestamp$nonce';
+      final key = utf8.encode(serverSecret);
+      final bytes = utf8.encode(payload);
+      final hmac = Hmac(sha256, key);
+      final digest = hmac.convert(bytes);
+      return digest.toString();
+    } catch (e) {
+      throw Exception('Signature generation error: $e');
+    }
+  }
+
+  static Future<void> _checkNetworkConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('cloudrecord-api.zego.im')
+          .timeout(const Duration(seconds: 10));
+
+      if (result.isEmpty) {
+        throw SocketException('No addresses found for cloudrecord-api.zego.im');
+      }
+    } on SocketException catch (e) {
+      throw SocketException('Cannot resolve Zego server address. Details: $e');
+    }
+  }
+}
 
 class LiveStreamScreen extends StatefulWidget {
   final String liveId;
@@ -31,139 +257,277 @@ class LiveStreamScreen extends StatefulWidget {
 }
 
 class _LiveStreamScreenState extends State<LiveStreamScreen> {
+  // Zego Configuration
+  final int _zegoAppId = 51745598;
+  final String _zegoServerSecret = 'd47d53d464da3b6ff8a8141dcb4e8b3b';
+  final String _zegoAppSign = '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4';
+
   // AWS S3 Configuration
   final String _awsBucketName = 'meet9ja-recordings';
   final String _awsRegion = 'eu-north-1';
   final String _awsAccessKey = 'AKIAZ44G2F7RDNUFZT6U';
   final String _awsSecretKey = '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';
 
-  // Camera recording state
-  CameraController? _cameraController;
+  // Recording state
   bool _isRecording = false;
-  String? _recordingFilePath;
-  bool _isCameraInitialized = false;
   bool _isUploading = false;
-  bool _permissionsChecked = false;
-
-  // Performance optimization
-  ResolutionPreset _resolutionPreset = ResolutionPreset.medium;
+  String? _recordingUrl;
+  List<String> _recordingUrls = [];
+  String? _recordingError;
+  String? _recordingTaskId;
+  bool _usingFallback = false;
+  bool _zegoInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    _initializeZego();
     _updateViewerCount();
-    if (widget.isHost) {
-      Future.delayed(const Duration(seconds: 2), () {
-        _initializeCamera();
+  }
+
+  void _initializeZego() {
+    // Zego UIKit should be initialized automatically, but we set a flag
+    Future.delayed(const Duration(seconds: 2), () {
+      setState(() {
+        _zegoInitialized = true;
       });
-    }
-  }
 
-  @override
-  void dispose() {
-    _cameraController?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _initializeCamera() async {
-    try {
-      // Check permissions first without requesting
-      final hasPermissions = await _checkPermissions();
-
-      if (!hasPermissions) {
-        print('⚠️ Camera permissions not granted, skipping recording');
-        return;
-      }
-
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        print('❌ No cameras available');
-        return;
-      }
-
-      final frontCamera = cameras.firstWhere(
-            (camera) => camera.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
-
-      _cameraController = CameraController(
-        frontCamera,
-        _resolutionPreset,
-        enableAudio: true,
-        imageFormatGroup: ImageFormatGroup.yuv420,
-      );
-
-      await _cameraController!.initialize().then((_) {
-        setState(() {
-          _isCameraInitialized = true;
+      if (widget.isHost) {
+        // Wait for Zego to fully initialize before starting recording
+        Future.delayed(const Duration(seconds: 3), () {
+          _startZegoRecordingWithRetry();
         });
-        print('✅ Camera initialized with ${_resolutionPreset.name}');
+      }
+    });
+  }
 
-        Future.delayed(const Duration(seconds: 1), _startRecording);
-      }).catchError((e) {
-        print('❌ Camera initialization failed: $e');
-        _tryLowerResolution();
-      });
+  Future<void> _startZegoRecordingWithRetry() async {
+    if (!widget.isHost || !_zegoInitialized) return;
 
-    } catch (e) {
-      print('❌ Error initializing camera: $e');
-      _tryLowerResolution();
+    print('🎥 Attempting to start Zego Cloud Recording...');
+    print('✅ Zego initialized: $_zegoInitialized');
+    print('👤 Is host: ${widget.isHost}');
+
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await _startZegoRecording();
+        return;
+      } catch (e) {
+        _recordingError = e.toString();
+        print('❌ Recording attempt $attempt failed: $e');
+
+        if (attempt < 3) {
+          final delay = Duration(seconds: attempt * 3);
+          print('⏳ Retrying in ${delay.inSeconds} seconds...');
+          await Future.delayed(delay);
+        } else {
+          print('🚫 All recording attempts failed, using fallback');
+          _handleRecordingFallback('All Zego recording attempts failed: $e');
+        }
+      }
     }
   }
 
-  Future<bool> _checkPermissions() async {
+  Future<void> _startZegoRecording() async {
+    if (!widget.isHost) return;
+
     try {
-      // Check current permission status without requesting
-      final cameraStatus = await Permission.camera.status;
-      final microphoneStatus = await Permission.microphone.status;
-      final storageStatus = await Permission.storage.status;
+      print('🎥 Starting Zego Cloud Recording...');
+      print('🏠 Room ID: ${widget.liveId}');
+      print('👤 User ID: ${widget.userId}');
 
-      print('🔍 Permission Status - Camera: $cameraStatus, Microphone: $microphoneStatus, Storage: $storageStatus');
+      final result = await ZegoRecordingService.startRecording(
+        appId: _zegoAppId,
+        serverSecret: _zegoServerSecret,
+        roomId: widget.liveId,
+        userId: widget.userId,
+      );
 
-      // If permissions are permanently denied, don't proceed
-      if (cameraStatus.isPermanentlyDenied || microphoneStatus.isPermanentlyDenied) {
-        print('❌ Camera or microphone permissions permanently denied');
-        return false;
+      if (result['Code'] == 0) {
+        setState(() {
+          _isRecording = true;
+          _recordingError = null;
+          _usingFallback = false;
+          _recordingTaskId = result['Data']?['TaskId']?.toString();
+        });
+        print('✅ Zego Cloud Recording started successfully. Task ID: $_recordingTaskId');
+        _startRecordingStatusPolling();
+      } else {
+        throw Exception('Zego recording API error: ${result['Message']}');
       }
+    } catch (e) {
+      setState(() {
+        _recordingError = e.toString();
+      });
+      rethrow;
+    }
+  }
 
-      // If permissions are denied (but not permanently), request them
-      if (!cameraStatus.isGranted || !microphoneStatus.isGranted) {
-        print('🔄 Requesting camera and microphone permissions...');
-        final cameraResult = await Permission.camera.request();
-        final microphoneResult = await Permission.microphone.request();
+  Future<void> _stopZegoRecording() async {
+    if (!_isRecording || _usingFallback) return;
 
-        if (!cameraResult.isGranted || !microphoneResult.isGranted) {
-          print('❌ Camera or microphone permission not granted after request');
-          return false;
+    try {
+      print('🛑 Stopping Zego recording...');
+
+      final result = await ZegoRecordingService.stopRecording(
+        appId: _zegoAppId,
+        serverSecret: _zegoServerSecret,
+        roomId: widget.liveId,
+      );
+
+      if (result['Code'] == 0) {
+        setState(() {
+          _isRecording = false;
+        });
+        print('✅ Zego recording stopped successfully');
+
+        // Wait for recording to be processed
+        await Future.delayed(const Duration(seconds: 10));
+        await _getRecordingUrl();
+      } else {
+        throw Exception('Stop recording failed: ${result['Message']}');
+      }
+    } catch (e) {
+      print('❌ Error stopping Zego recording: $e');
+      _handleRecordingFallback('Failed to stop Zego recording: $e');
+    }
+  }
+
+  void _startRecordingStatusPolling() {
+    if (!_isRecording || _usingFallback) return;
+
+    Future.delayed(const Duration(seconds: 30), () {
+      _queryRecordingStatus();
+      _startRecordingStatusPolling();
+    });
+  }
+
+  Future<void> _queryRecordingStatus() async {
+    if (!_isRecording || _usingFallback) return;
+
+    try {
+      final status = await ZegoRecordingService.queryRecordingStatus(
+        appId: _zegoAppId,
+        serverSecret: _zegoServerSecret,
+        roomId: widget.liveId,
+      );
+
+      print('📊 Recording status: ${status['Code']}');
+
+      if (status['Code'] == 0 && status['Data'] != null) {
+        final recordingData = status['Data'];
+        final files = recordingData['FileList'] as List<dynamic>?;
+
+        if (files != null && files.isNotEmpty) {
+          final List<String> urls = [];
+          for (final file in files) {
+            final fileUrl = file['FileUrl'] as String?;
+            if (fileUrl != null && fileUrl.isNotEmpty) {
+              urls.add(fileUrl);
+            }
+          }
+
+          if (urls.isNotEmpty) {
+            setState(() {
+              _recordingUrls = urls;
+              _recordingUrl = urls.first;
+            });
+            print('🎯 Recording URLs found: ${urls.length}');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error querying recording status: $e');
+    }
+  }
+
+  Future<void> _getRecordingUrl() async {
+    try {
+      print('🔍 Querying for final recording URL...');
+
+      for (int attempt = 1; attempt <= 5; attempt++) {
+        print('🔄 Attempt $attempt to get recording URL...');
+
+        await Future.delayed(const Duration(seconds: 5));
+
+        final status = await ZegoRecordingService.queryRecordingStatus(
+          appId: _zegoAppId,
+          serverSecret: _zegoServerSecret,
+          roomId: widget.liveId,
+        );
+
+        if (status['Code'] == 0 && status['Data'] != null) {
+          final recordingData = status['Data'];
+          final files = recordingData['FileList'] as List<dynamic>?;
+
+          if (files != null && files.isNotEmpty) {
+            final List<String> urls = [];
+            for (final file in files) {
+              final fileUrl = file['FileUrl'] as String?;
+              if (fileUrl != null && fileUrl.isNotEmpty) {
+                urls.add(fileUrl);
+              }
+            }
+
+            if (urls.isNotEmpty) {
+              setState(() {
+                _recordingUrls = urls;
+                _recordingUrl = urls.first;
+              });
+              print('✅ Final recording URLs obtained: ${urls.length} files');
+              return;
+            }
+          }
         }
       }
 
-      // Storage permission is less critical, but nice to have
-      if (!storageStatus.isGranted && !storageStatus.isPermanentlyDenied) {
-        await Permission.storage.request();
-      }
-
-      setState(() {
-        _permissionsChecked = true;
-      });
-
-      return cameraStatus.isGranted && microphoneStatus.isGranted;
-
+      _handleRecordingFallback('No recording URLs found after multiple attempts');
     } catch (e) {
-      print('❌ Error checking permissions: $e');
-      return false;
+      print('❌ Error getting recording URL: $e');
+      _handleRecordingFallback('Error getting recording URL: $e');
     }
   }
 
-  Future<void> _tryLowerResolution() async {
+  Future<void> _handleRecordingFallback(String error) async {
+    print('🔄 Using fallback recording method: $error');
+
     try {
-      if (_resolutionPreset != ResolutionPreset.low) {
-        _resolutionPreset = ResolutionPreset.low;
-        print('🔄 Trying lower resolution: ${_resolutionPreset.name}');
-        await _initializeCamera();
-      }
+      final String recordingContent = '''
+LIVE_STREAM_METADATA
+Live ID: ${widget.liveId}
+Host: ${widget.userName}
+Host ID: ${widget.userId}
+Start Time: ${DateTime.now().toIso8601String()}
+Recording Type: FALLBACK_METADATA
+Status: COMPLETED
+Error: $error
+Task ID: $_recordingTaskId
+Recording URLs: ${_recordingUrls.join(', ')}
+METADATA_END
+''';
+
+      final String fileName = 'fallback_recordings/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.txt';
+
+      final fallbackUrl = await uploadToS3Improved(
+        content: recordingContent,
+        accessKey: _awsAccessKey,
+        secretKey: _awsSecretKey,
+        bucket: _awsBucketName,
+        region: _awsRegion,
+        objectKey: fileName,
+        contentType: 'text/plain',
+      );
+
+      setState(() {
+        _recordingUrl = fallbackUrl;
+        _usingFallback = true;
+        _isRecording = false;
+      });
+
+      print('✅ Fallback recording created: $fallbackUrl');
     } catch (e) {
-      print('❌ Failed to initialize with low resolution: $e');
+      print('❌ Fallback recording also failed: $e');
+      _recordingUrl = 'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/error_${widget.liveId}.txt';
     }
   }
 
@@ -182,98 +546,29 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     }
   }
 
-  Future<void> _startRecording() async {
-    if (!widget.isHost || !_isCameraInitialized || _isRecording) return;
-
-    try {
-      final directory = await getTemporaryDirectory();
-      final fileName = '${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
-      _recordingFilePath = '${directory.path}/$fileName';
-
-      print('🎥 Starting recording: $_recordingFilePath');
-
-      await _cameraController!.startVideoRecording();
-
-      setState(() {
-        _isRecording = true;
-      });
-
-      print('✅ Recording started successfully');
-
-    } catch (e) {
-      print('❌ Error starting recording: $e');
-    }
-  }
-
-  Future<void> _stopRecording() async {
-    if (!_isRecording) return;
-
-    try {
-      print('🛑 Stopping recording...');
-
-      final XFile videoFile = await _cameraController!.stopVideoRecording();
-
-      // Copy file to desired location
-      final File originalFile = File(videoFile.path);
-      final File destinationFile = File(_recordingFilePath!);
-
-      await originalFile.copy(destinationFile.path);
-      await originalFile.delete();
-
-      setState(() {
-        _isRecording = false;
-      });
-
-      final fileSize = await destinationFile.length();
-
-      print('✅ Recording stopped');
-      print('📁 File: ${destinationFile.path}');
-      print('📊 Size: $fileSize bytes');
-
-    } catch (e) {
-      print('❌ Error stopping recording: $e');
-      setState(() {
-        _isRecording = false;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // Zego UI Kit
+          // Zego UI Kit with proper configuration
           ZegoUIKitPrebuiltLiveStreaming(
-            appID: 51745598,
-            appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+            appID: _zegoAppId,
+            appSign: _zegoAppSign,
             userID: widget.userId,
             userName: widget.userName,
             liveID: widget.liveId,
             config: widget.isHost
                 ? ZegoUIKitPrebuiltLiveStreamingConfig.host()
                 : ZegoUIKitPrebuiltLiveStreamingConfig.audience(),
+
             events: ZegoUIKitPrebuiltLiveStreamingEvents(
               onEnded: (ZegoLiveStreamingEndEvent event, VoidCallback defaultHandle) {
                 _onLeaveLiveStreaming(defaultHandle);
               },
+
             ),
           ),
-
-          // Hidden camera preview
-          if (widget.isHost && _isCameraInitialized)
-            Positioned(
-              top: -1000,
-              left: -1000,
-              child: Opacity(
-                opacity: 0.0,
-                child: SizedBox(
-                  width: 1,
-                  height: 1,
-                  child: CameraPreview(_cameraController!),
-                ),
-              ),
-            ),
 
           // Status indicators
           if (widget.isHost) _buildStatusIndicators(),
@@ -289,15 +584,57 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     );
   }
 
+  void _handleZegoError(int code, String message) {
+    print('🎯 Handling Zego error: $code - $message');
+
+    switch (code) {
+      case 1000001:
+        print('⚠️ Engine not initialized');
+        break;
+      case 1000002:
+        print('⚠️ Not logged in to room');
+        break;
+      case 1000003:
+        print('⚠️ Audio/video module not started');
+        break;
+      default:
+        print('⚠️ Unknown Zego error: $code');
+    }
+
+    // If we're the host and get initialization errors, use fallback recording
+    if (widget.isHost && code >= 1000001 && code <= 1000003) {
+      _handleRecordingFallback('Zego initialization error: $code - $message');
+    }
+  }
+
   Widget _buildStatusIndicators() {
     return Positioned(
-      top: 50,
+      top: 60,
       left: 20,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Zego initialization status
+          if (!_zegoInitialized)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Initializing Zego...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 8),
+
           // Recording indicator
-          if (_isRecording)
+          if (_isRecording && !_usingFallback)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -317,7 +654,31 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
                   ),
                   const SizedBox(width: 6),
                   const Text(
-                    'REC',
+                    'RECORDING',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          if (_usingFallback)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.warning, color: Colors.white, size: 12),
+                  SizedBox(width: 6),
+                  Text(
+                    'FALLBACK MODE',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -330,31 +691,57 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
 
           const SizedBox(height: 8),
 
-          // Camera status
+          // Status message
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.black54,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: _getStatusText(),
+            child: Text(
+              _getStatusMessage(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+            ),
           ),
 
-          // Upload status
-          if (_isUploading)
+          // Task ID
+          if (_recordingTaskId != null)
             Container(
               margin: const EdgeInsets.only(top: 8),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.blue,
+                color: Colors.green,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Text(
-                'Uploading...',
-                style: TextStyle(
+              child: Text(
+                'Task: ${_recordingTaskId!.substring(0, 8)}...',
+                style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 10,
                 ),
+              ),
+            ),
+
+          // Error message
+          if (_recordingError != null)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Error: ${_recordingError!.split('\n').first}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
         ],
@@ -362,43 +749,17 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     );
   }
 
-  Text _getStatusText() {
-    if (!_permissionsChecked) {
-      return const Text(
-        'Checking permissions...',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-        ),
-      );
-    } else if (_isRecording) {
-      return const Text(
-        'Recording...',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-        ),
-      );
-    } else if (_isCameraInitialized) {
-      return const Text(
-        'Camera Ready',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-        ),
-      );
-    } else {
-      return const Text(
-        'Camera Unavailable',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-        ),
-      );
-    }
+  String _getStatusMessage() {
+    if (!_zegoInitialized) return 'Initializing...';
+    if (_usingFallback) return 'Fallback Recording';
+    if (_isRecording) return 'Recording...';
+    if (_recordingUrl != null) return 'Recording Ready';
+    return 'Ready';
   }
 
   Future<void> _onLeaveLiveStreaming(VoidCallback defaultHandle) async {
+    print('🚪 Leaving live stream...');
+
     if (!widget.isHost) {
       try {
         await FirebaseFirestore.instance
@@ -411,40 +772,17 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         print('Error decrementing viewer count: $e');
       }
     } else {
-      await _stopRecording();
-      await _uploadRecordingAndEndLive();
+      print('🛑 Host is leaving - handling recording...');
+      if (!_usingFallback) {
+        await _stopZegoRecording();
+      }
+      await _saveRecordingToFirestore();
     }
 
     defaultHandle();
   }
-  // Add upload progress tracking
-  Future<void> _uploadWithProgress(String s3Url, Uint8List data) async {
-    try {
-      final request = http.MultipartRequest('PUT', Uri.parse(s3Url));
-      request.headers['Content-Type'] = 'video/mp4';
 
-      final multipartFile = http.MultipartFile.fromBytes(
-        'file',
-        data,
-        filename: 'recording.mp4',
-      );
-
-      request.files.add(multipartFile);
-
-      final streamedResponse = await request.send();
-
-      if (streamedResponse.statusCode == 200) {
-        print('✅ Upload completed successfully');
-      } else {
-        throw Exception('Upload failed with status: ${streamedResponse.statusCode}');
-      }
-    } catch (e) {
-      print('❌ Upload error: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _uploadRecordingAndEndLive() async {
+  Future<void> _saveRecordingToFirestore() async {
     if (!widget.isHost) return;
 
     setState(() {
@@ -452,121 +790,14 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     });
 
     try {
-      String s3Url = 'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/fallback_${widget.liveId}.mp4';
-      String uploadStatus = 'failed';
-      String recordingType = 'metadata_only';
+      final liveDoc = await FirebaseFirestore.instance
+          .collection('liveStreams')
+          .doc(widget.liveId)
+          .get();
 
-      // Try to upload actual video
-      if (_recordingFilePath != null && File(_recordingFilePath!).existsSync()) {
-        try {
-          s3Url = await _uploadVideoRecordingToS3();
-          uploadStatus = 'success';
-          recordingType = 'video';
-        } catch (e) {
-          print('⚠️ Video upload failed: $e');
-          // Fallback to metadata
-          try {
-            s3Url = await _createAndUploadRecordingMetadata();
-            uploadStatus = 'partial_success';
-            recordingType = 'metadata_fallback';
-          } catch (e2) {
-            print('⚠️ Metadata upload failed: $e2');
-          }
-        }
-      } else {
-        // Upload metadata only
-        try {
-          s3Url = await _createAndUploadRecordingMetadata();
-          uploadStatus = 'success';
-          recordingType = 'metadata_only';
-        } catch (e) {
-          print('⚠️ Metadata upload failed: $e');
-        }
-      }
+      final liveData = liveDoc.data() as Map<String, dynamic>?;
 
-      await _endLiveStream(s3Url, uploadStatus, recordingType);
-
-    } catch (e) {
-      print('❌ Error in upload process: $e');
-      await _endLiveStream(
-          'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/error_${widget.liveId}.txt',
-          'error',
-          'error'
-      );
-    } finally {
-      setState(() {
-        _isUploading = false;
-      });
-    }
-  }
-
-  Future<String> _uploadVideoRecordingToS3() async {
-    if (_recordingFilePath == null) {
-      throw Exception('No recording file path');
-    }
-
-    final File videoFile = File(_recordingFilePath!);
-    if (!await videoFile.exists()) {
-      throw Exception('Recording file not found');
-    }
-
-    final String fileName = 'videos/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.mp4';
-    final Uint8List videoBytes = await videoFile.readAsBytes();
-
-    print('📤 Uploading video (${videoBytes.length} bytes) to S3...');
-
-
-    final String s3Url = await uploadToS3Improved(
-      fileBytes: videoBytes,
-      accessKey: _awsAccessKey,
-      secretKey: _awsSecretKey,
-      bucket: _awsBucketName,
-      region: _awsRegion,
-      objectKey: fileName,
-      contentType: 'video/mp4',
-    );
-
-
-    await videoFile.delete();
-    print('🧹 Local file cleaned up');
-
-    return s3Url;
-  }
-
-  Future<String> _createAndUploadRecordingMetadata() async {
-    final String recordingContent = '''
-LIVE_STREAM_METADATA
-Live ID: ${widget.liveId}
-Host: ${widget.userName}
-Host ID: ${widget.userId}
-Start Time: ${DateTime.now().toIso8601String()}
-End Time: ${DateTime.now().toIso8601String()}
-Viewers: ${await _getCurrentViewerCount()}
-Status: COMPLETED
-Recording Type: CAMERA_RECORDING
-Total Gifts Value: ${await _getTotalGiftValue()}
-Duration: ${_calculateDuration(await _getStartTime())} seconds
-Note: Camera recording completed
-METADATA_END
-''';
-
-    final String fileName = 'metadata/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.txt';
-
-    final String s3Url = await uploadToS3Improved(
-      content: recordingContent,
-      accessKey: _awsAccessKey,
-      secretKey: _awsSecretKey,
-      bucket: _awsBucketName,
-      region: _awsRegion,
-      objectKey: fileName,
-      contentType: 'text/plain',
-    );
-
-    return s3Url;
-  }
-
-  Future<void> _endLiveStream(String s3Url, String uploadStatus, String recordingType) async {
-    try {
+      // Update live stream status
       await FirebaseFirestore.instance
           .collection('liveStreams')
           .doc(widget.liveId)
@@ -576,13 +807,7 @@ METADATA_END
         'status': 'ended',
       });
 
-      final liveDoc = await FirebaseFirestore.instance
-          .collection('liveStreams')
-          .doc(widget.liveId)
-          .get();
-
-      final liveData = liveDoc.data() as Map<String, dynamic>?;
-
+      // Save to history
       await FirebaseFirestore.instance
           .collection('live_history')
           .doc(widget.liveId)
@@ -596,19 +821,28 @@ METADATA_END
         'status': 'ended',
         'viewer_count': liveData?['viewers'] ?? 0,
         'total_gift_value': liveData?['total_gift_value'] ?? 0,
-        'live_replay_media_url': s3Url,
+        'live_replay_media_url': _recordingUrl,
+        'all_recording_urls': _recordingUrls,
         'storage_bucket': _awsBucketName,
         'storage_region': _awsRegion,
         'uploaded_at': FieldValue.serverTimestamp(),
-        'upload_status': uploadStatus,
-        'recording_type': recordingType,
+        'upload_status': _recordingUrl != null ? 'success' : 'failed',
+        'recording_type': _usingFallback ? 'fallback_metadata' : 'zego_cloud_recording',
+        'zego_task_id': _recordingTaskId,
+        'recording_error': _recordingError,
         'duration_seconds': _calculateDuration(liveData?['startedAt']),
+        'file_count': _recordingUrls.length,
       });
 
-      print('✅ Live ended - Status: $uploadStatus, Type: $recordingType');
+      print('✅ Live ended and recording saved to Firestore');
+      print('🎯 Recording URL: $_recordingUrl');
 
     } catch (e) {
-      print('❌ Error ending live stream: $e');
+      print('❌ Error saving recording to Firestore: $e');
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
     }
   }
 
@@ -616,48 +850,9 @@ METADATA_END
     if (startTime == null) return 0;
     return DateTime.now().difference(startTime.toDate()).inSeconds;
   }
-
-  Future<int> _getCurrentViewerCount() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('liveStreams')
-          .doc(widget.liveId)
-          .get();
-      return (doc.data()?['viewers'] as int?) ?? 0;
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  Future<int> _getTotalGiftValue() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('liveStreams')
-          .doc(widget.liveId)
-          .get();
-      return (doc.data()?['total_gift_value'] as int?) ?? 0;
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  Future<Timestamp?> _getStartTime() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('liveStreams')
-          .doc(widget.liveId)
-          .get();
-      return doc.data()?['startedAt'] as Timestamp?;
-    } catch (e) {
-      return null;
-    }
-  }
-
-
-// Keep the existing AWS S3 upload functions and gift overlay widgets...
 }
 
-// AWS S3 Upload Function (keep the same as before)
+// AWS S3 Upload Function (same as before)
 Future<String> uploadToS3Improved({
   String? content,
   Uint8List? fileBytes,
@@ -672,21 +867,12 @@ Future<String> uploadToS3Improved({
     final host = '$bucket.s3.$region.amazonaws.com';
     final url = Uri.https(host, objectKey);
 
-    // Determine payload based on input
     final Uint8List payload = fileBytes ?? Uint8List.fromList(utf8.encode(content!));
 
     final date = DateTime.now().toUtc();
     final isoDate = _formatAmzDate(date);
     final dateStamp = isoDate.substring(0, 8);
 
-    print('🔧 S3 Upload Debug:');
-    print('  - Host: $host');
-    print('  - Object Key: $objectKey');
-    print('  - Content Type: $contentType');
-    print('  - File Size: ${payload.length} bytes');
-    print('  - Upload Type: ${fileBytes != null ? 'Binary' : 'Text'}');
-
-    // --- Create AWS signature (V4 signing) ---
     final credentialScope = '$dateStamp/$region/s3/aws4_request';
     final payloadHash = sha256.convert(payload).toString();
 
@@ -709,9 +895,6 @@ $isoDate
 $credentialScope
 $canonicalRequestHash''';
 
-    print('  - Canonical Request Hash: $canonicalRequestHash');
-
-    // Derive signing key
     List<int> kSecret = utf8.encode('AWS4$secretKey');
     List<int> kDate = Hmac(sha256, kSecret).convert(utf8.encode(dateStamp)).bytes;
     List<int> kRegion = Hmac(sha256, kDate).convert(utf8.encode(region)).bytes;
@@ -722,9 +905,6 @@ $canonicalRequestHash''';
 
     final authorization = 'AWS4-HMAC-SHA256 Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
 
-    print('  - Signature: ${signature.substring(0, 16)}...');
-
-    // --- Send the request ---
     final response = await http.put(
       url,
       headers: {
@@ -736,18 +916,12 @@ $canonicalRequestHash''';
       body: payload,
     );
 
-    print('  - Response Status: ${response.statusCode}');
-
     if (response.statusCode == 200) {
-      print('✅ Upload successful: $url');
       return 'https://$host/$objectKey';
     } else {
-      print('❌ Upload failed: ${response.statusCode}');
-      print('❌ Response body: ${response.body}');
       throw Exception('S3 Upload failed with status ${response.statusCode}: ${response.body}');
     }
   } catch (e) {
-    print('❌ S3 Upload error: $e');
     rethrow;
   }
 }
@@ -759,7 +933,6 @@ String _formatAmzDate(DateTime date) {
   final hour = date.hour.toString().padLeft(2, '0');
   final minute = date.minute.toString().padLeft(2, '0');
   final second = date.second.toString().padLeft(2, '0');
-
   return '${year}${month}${day}T${hour}${minute}${second}Z';
 }
 
@@ -779,16 +952,16 @@ String _uriEncode(String input, {bool encodeSlash = true}) {
 }
 
 bool _isUnreserved(String char) {
-  return (char.codeUnitAt(0) >= 65 && char.codeUnitAt(0) <= 90) || // A-Z
-      (char.codeUnitAt(0) >= 97 && char.codeUnitAt(0) <= 122) || // a-z
-      (char.codeUnitAt(0) >= 48 && char.codeUnitAt(0) <= 57) || // 0-9
+  return (char.codeUnitAt(0) >= 65 && char.codeUnitAt(0) <= 90) ||
+      (char.codeUnitAt(0) >= 97 && char.codeUnitAt(0) <= 122) ||
+      (char.codeUnitAt(0) >= 48 && char.codeUnitAt(0) <= 57) ||
       char == '-' ||
       char == '.' ||
       char == '_' ||
       char == '~';
 }
 
-// Gift Overlay Widget (keep the same as before)
+// Gift Overlay Widget (same as before)
 class _GiftOverlay extends StatelessWidget {
   final String liveId;
   final String userId;
@@ -881,7 +1054,6 @@ class _GiftOverlay extends StatelessWidget {
 
       Navigator.of(context).pop();
     } catch (e) {
-      print('❌ Error sending gift: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send gift: $e')),
       );
@@ -923,5 +1095,3 @@ class _GiftItem extends StatelessWidget {
     );
   }
 }
-
-
