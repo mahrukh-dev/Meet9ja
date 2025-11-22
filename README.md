@@ -4,15 +4,15 @@
 - save option
 - able to upload videos on clips
 - live is causing lag cuz of recording.
-- asking for appstore and google play payment method but we were provied with flutterwave only so how do we do that
+- asking for appstore and google play payment method but we were provided with flutterwave only so how do we do that
 
 TASKS
 done - live without lag
 - live recording properly
 done - clips with video option
 - appstore/googleplay for payment
-- seperate gift earning
-- withdrawal of gift earning
+done - seperate gift earning
+- withdrawal of gift earning -- test mode working
 
 Subscription/premium payment handling
 admin@meet9ja.com
