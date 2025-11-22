@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:chewie/chewie.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -10,6 +11,7 @@ import 'package:meet9ja/screens/MatchedUserScreen.dart';
 import 'package:meet9ja/screens/activity_screen.dart' hide AppColors;
 import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
+import 'package:video_player/video_player.dart';
 
 import '../constants/app_colors.dart';
 import '../models/user_model.dart';
@@ -351,6 +353,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 
   // Get ALL stories from ALL users except current user
+  // Get ALL stories from ALL users except current user
   Future<List<_ReelItem>> _getAllStories() async {
     try {
       print('🔍 Fetching stories from Firebase...');
@@ -414,7 +417,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               timestamp: data['created_at'] as Timestamp?,
               likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
               comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
-              mediaType: data['media_type'] ?? 'image',
+              mediaType: data['media_type'] ?? 'image', // 'image' or 'video' for stories
             );
           } catch (e) {
             print('❌ Error loading user data for $userId: $e');
@@ -433,7 +436,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-  // Get ALL posts from ALL users except current user
   Future<List<_ReelItem>> _getAllPosts() async {
     try {
       // Get ALL posts from ALL users
@@ -463,20 +465,22 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           if (!userDoc.exists) return null;
 
           final userData = userDoc.data() as Map<String, dynamic>?;
+          final postType = data['type'] ?? 'post';
+          final mediaType = postType == 'video' ? 'video' : 'image';
 
           return _ReelItem(
             user: userData?['username'] ?? 'User',
             title: data['caption'] ?? 'New Post',
             viewers: (data['likes']?.length ?? 0) + (data['comments']?.length ?? 0),
             thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
-            type: data['type'] ?? 'post',
+            type: postType,
             postId: doc.id,
             userId: userId,
             userPhoto: userData?['photo_url'] ?? '',
             timestamp: data['date_time'] as Timestamp?,
             likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
             comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
-            mediaType: data['type'] == 'video' ? 'video' : 'image',
+            mediaType: mediaType,
           );
         }),
       );
@@ -1023,6 +1027,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onComment: _showComments,
                   onShare: _sharePost,
                   onProfileTap: _navigateToUserProfile,
+                  autoPlayVideos: true,
                 ),
 
                 // Live Tab - Shows live streams
@@ -1075,6 +1080,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onComment: _showComments,
                   onShare: _sharePost,
                   onProfileTap: _navigateToUserProfile,
+                  autoPlayVideos: true,
                 ),
               ],
             ),
@@ -1423,7 +1429,6 @@ class _LiveTile extends StatelessWidget {
   }
 }
 
-/* ----------------------- REELS FEED ----------------------- */
 class _ReelsFeed extends StatelessWidget {
   const _ReelsFeed({
     required this.items,
@@ -1432,6 +1437,7 @@ class _ReelsFeed extends StatelessWidget {
     required this.onComment,
     required this.onShare,
     required this.onProfileTap,
+    this.autoPlayVideos = false, // NEW: Add this parameter
   });
 
   final List<_ReelItem> items;
@@ -1440,6 +1446,7 @@ class _ReelsFeed extends StatelessWidget {
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
   final Function(String) onProfileTap;
+  final bool autoPlayVideos; // NEW: Auto-play parameter
 
   @override
   Widget build(BuildContext context) {
@@ -1457,6 +1464,7 @@ class _ReelsFeed extends StatelessWidget {
           onComment: onComment,
           onShare: onShare,
           onProfileTap: onProfileTap,
+          autoPlayVideos: autoPlayVideos, // NEW: Pass the parameter
         );
       },
     );
@@ -1483,14 +1491,14 @@ class _ReelsFeed extends StatelessWidget {
     );
   }
 }
-
-class _ReelContent extends StatelessWidget {
+class _ReelContent extends StatefulWidget {
   final _ReelItem item;
   final bool showStories;
   final Function(_ReelItem) onLike;
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
   final Function(String) onProfileTap;
+  final bool autoPlayVideos; // NEW: Add this parameter
 
   const _ReelContent({
     required this.item,
@@ -1499,18 +1507,194 @@ class _ReelContent extends StatelessWidget {
     required this.onComment,
     required this.onShare,
     required this.onProfileTap,
+    this.autoPlayVideos = false, // NEW: Default to false
   });
+
+  @override
+  State<_ReelContent> createState() => _ReelContentState();
+}
+class _ReelContentState extends State<_ReelContent> {
+  VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
+  bool _isVideoInitialized = false;
+  bool _isVideoPlaying = false;
+  bool _isMuted = false; // NEW: Track mute state
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.item.mediaType == 'video') {
+      _initializeVideo();
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    _chewieController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeVideo() async {
+    try {
+      _videoController = VideoPlayerController.network(widget.item.thumb)
+        ..setLooping(true)
+        ..setVolume(1.0); // CHANGED: Set volume to 1.0 (full volume) instead of 0.0
+
+      await _videoController!.initialize();
+
+      _chewieController = ChewieController(
+        videoPlayerController: _videoController!,
+        autoPlay: widget.autoPlayVideos,
+        looping: true,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControls: false,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: AppColors.primary,
+          handleColor: AppColors.primary,
+          backgroundColor: Colors.grey,
+          bufferedColor: Colors.grey.shade300,
+        ),
+      );
+
+      // Set initial mute state
+      _videoController!.setVolume(_isMuted ? 0.0 : 1.0);
+
+      if (mounted) {
+        setState(() {
+          _isVideoInitialized = true;
+          _isVideoPlaying = widget.autoPlayVideos;
+        });
+      }
+    } catch (e) {
+      print('❌ Error initializing video: $e');
+    }
+  }
+
+  void _toggleVideoPlayback() {
+    if (_videoController == null) return;
+
+    if (_isVideoPlaying) {
+      _videoController!.pause();
+    } else {
+      _videoController!.play();
+    }
+
+    setState(() {
+      _isVideoPlaying = !_isVideoPlaying;
+    });
+  }
+
+  // NEW: Toggle mute/unmute
+  void _toggleMute() {
+    if (_videoController == null) return;
+
+    setState(() {
+      _isMuted = !_isMuted;
+    });
+
+    _videoController!.setVolume(_isMuted ? 0.0 : 1.0);
+  }
+
+  Widget _buildMediaContent() {
+    if (widget.item.mediaType == 'video') {
+      if (!_isVideoInitialized) {
+        return Stack(
+          children: [
+            Image.network(
+              widget.item.thumb,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      return Stack(
+        children: [
+          Chewie(controller: _chewieController!),
+
+          // Custom play/pause button overlay
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _toggleVideoPlayback,
+              child: Container(
+                color: Colors.transparent,
+                child: Center(
+                  child: AnimatedOpacity(
+                    opacity: (!widget.autoPlayVideos || !_isVideoPlaying) ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // NEW: Mute/Unmute button in top right corner
+          // Positioned(
+          //   top: 12,
+          //   right: 12,
+          //   child: GestureDetector(
+          //     onTap: _toggleMute,
+          //     child: Container(
+          //       padding: const EdgeInsets.all(8),
+          //       decoration: BoxDecoration(
+          //         color: Colors.black.withOpacity(0.7),
+          //         shape: BoxShape.circle,
+          //       ),
+          //       child: Icon(
+          //         _isMuted ? Icons.volume_off : Icons.volume_up,
+          //         color: Colors.white,
+          //         size: 20,
+          //       ),
+          //     ),
+          //   ),
+          // ),
+        ],
+      );
+    } else {
+      // Image content
+      return Image.network(
+        widget.item.thumb,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    final isLiked = item.likes.any((like) => like['likerUID'] == currentUserId);
+    final isLiked = widget.item.likes.any((like) => like['likerUID'] == currentUserId);
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Background Image/Video
-        Image.network(item.thumb, fit: BoxFit.cover),
+        // Background Media (Image/Video)
+        _buildMediaContent(),
 
         // Gradient Overlay
         Positioned.fill(
@@ -1525,22 +1709,49 @@ class _ReelContent extends StatelessWidget {
           ),
         ),
 
-        // Content Type Badge
-        Positioned(
-          top: 40,
-          left: 12,
-          child: _ContentTypeBadge(type: item.type),
-        ),
 
         // Story Time Remaining (only for stories)
-        if (showStories && item.type == 'story')
+        if (widget.showStories && widget.item.type == 'story')
           Positioned(
             top: 40,
             right: 12,
-            child: _StoryTimeBadge(timestamp: item.timestamp),
+            child: _StoryTimeBadge(timestamp: widget.item.timestamp),
           ),
 
-        // Right Action Buttons - REMOVED SAVE BUTTON
+        // Video Play Indicator (only for videos)
+        if (widget.item.mediaType == 'video')
+          Positioned(
+            top: 40,
+            right: widget.showStories && widget.item.type == 'story' ? 70 : 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.play_arrow,
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'VIDEO',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // Right Action Buttons
         Positioned(
           right: 12,
           bottom: 110,
@@ -1548,20 +1759,20 @@ class _ReelContent extends StatelessWidget {
             children: [
               _CircleIcon(
                 icon: isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
-                onTap: () => onLike(item),
-                count: item.likes.length,
+                onTap: () => widget.onLike(widget.item),
+                count: widget.item.likes.length,
                 isLiked: isLiked,
               ),
               const SizedBox(height: 16),
               _CircleIcon(
                 icon: FontAwesomeIcons.comment,
-                onTap: () => onComment(context, item),
-                count: item.comments.length,
+                onTap: () => widget.onComment(context, widget.item),
+                count: widget.item.comments.length,
               ),
               const SizedBox(height: 16),
               _CircleIcon(
-                  icon: FontAwesomeIcons.share,
-                  onTap: () => onShare(item)
+                icon: FontAwesomeIcons.share,
+                onTap: () => widget.onShare(widget.item),
               ),
             ],
           ),
@@ -1577,12 +1788,12 @@ class _ReelContent extends StatelessWidget {
             children: [
               // User Info Row - Make tappable
               GestureDetector(
-                onTap: () => onProfileTap(item.userId),
+                onTap: () => widget.onProfileTap(widget.item.userId),
                 child: Row(
                   children: [
                     // User Avatar - Make tappable
                     GestureDetector(
-                      onTap: () => onProfileTap(item.userId),
+                      onTap: () => widget.onProfileTap(widget.item.userId),
                       child: Container(
                         width: 36,
                         height: 36,
@@ -1590,8 +1801,8 @@ class _ReelContent extends StatelessWidget {
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                           image: DecorationImage(
-                            image: NetworkImage(item.userPhoto.isNotEmpty
-                                ? item.userPhoto
+                            image: NetworkImage(widget.item.userPhoto.isNotEmpty
+                                ? widget.item.userPhoto
                                 : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop'),
                             fit: BoxFit.cover,
                           ),
@@ -1604,16 +1815,16 @@ class _ReelContent extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '@${item.user}',
+                            '@${widget.item.user}',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w900,
                               fontSize: 16,
                             ),
                           ),
-                          if (item.timestamp != null)
+                          if (widget.item.timestamp != null)
                             Text(
-                              _formatTimestamp(item.timestamp!),
+                              _formatTimestamp(widget.item.timestamp!),
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
@@ -1629,7 +1840,7 @@ class _ReelContent extends StatelessWidget {
 
               // Content Title
               Text(
-                item.title,
+                widget.item.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -1650,7 +1861,7 @@ class _ReelContent extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    _formatViewers(item.viewers),
+                    _formatViewers(widget.item.viewers),
                     style: const TextStyle(
                       color: Colors.white70,
                       fontWeight: FontWeight.w800,
@@ -1665,7 +1876,7 @@ class _ReelContent extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    '${item.likes.length}',
+                    '${widget.item.likes.length}',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontWeight: FontWeight.w800,
@@ -1680,13 +1891,35 @@ class _ReelContent extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    '${item.comments.length}',
+                    '${widget.item.comments.length}',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
                     ),
                   ),
+
+                  // Video Duration (for videos)
+                  if (widget.item.mediaType == 'video' && _videoController != null && _isVideoInitialized)
+                    Row(
+                      children: [
+                        const SizedBox(width: 16),
+                        const Icon(
+                          Icons.timer_outlined,
+                          color: Colors.white70,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatDuration(_videoController!.value.duration),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ],
@@ -1714,8 +1947,20 @@ class _ReelContent extends StatelessWidget {
     if (v >= 1000) return "${(v / 1000).toStringAsFixed(1)}K";
     return "$v";
   }
-}
 
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+
+    if (duration.inHours > 0) {
+      final hours = twoDigits(duration.inHours);
+      return "$hours:$minutes:$seconds";
+    } else {
+      return "$minutes:$seconds";
+    }
+  }
+}
 /* ----------------------- SHARE BOTTOM SHEET ----------------------- */
 class _ShareBottomSheet extends StatelessWidget {
   final _ReelItem item;
@@ -1862,64 +2107,6 @@ class _StoryTimeBadge extends StatelessWidget {
     );
   }
 }
-
-// Content Type Badge Widget
-class _ContentTypeBadge extends StatelessWidget {
-  final String type;
-
-  const _ContentTypeBadge({required this.type});
-
-  @override
-  Widget build(BuildContext context) {
-    Color badgeColor;
-    String badgeText;
-    IconData badgeIcon;
-
-    switch (type) {
-      case 'story':
-        badgeColor = Colors.purpleAccent;
-        badgeText = 'STORY';
-        badgeIcon = FontAwesomeIcons.circlePlay;
-      case 'live_replay':
-        badgeColor = Colors.redAccent;
-        badgeText = 'REPLAY';
-        badgeIcon = FontAwesomeIcons.video;
-      case 'video':
-        badgeColor = Colors.blueAccent;
-        badgeText = 'VIDEO';
-        badgeIcon = FontAwesomeIcons.video;
-      default:
-        badgeColor = Colors.blueAccent;
-        badgeText = 'POST';
-        badgeIcon = FontAwesomeIcons.image;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: badgeColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(badgeIcon, size: 12, color: Colors.white),
-          const SizedBox(width: 6),
-          Text(
-            badgeText,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // Updated Circle Icon with Count
 class _CircleIcon extends StatefulWidget {
   final IconData icon;
@@ -1997,8 +2184,6 @@ class _CircleIconState extends State<_CircleIcon> {
     return count.toString();
   }
 }
-
-/* ----------------------- MODELS ----------------------- */
 class _ReelItem {
   final String user;
   final String title;
@@ -2011,7 +2196,7 @@ class _ReelItem {
   final Timestamp? timestamp;
   final List<Map<String, dynamic>> likes;
   final List<Map<String, dynamic>> comments;
-  final String mediaType; // 'image' or 'video'
+  final String mediaType; // 'image' or 'video' - THIS IS IMPORTANT
 
   const _ReelItem({
     required this.user,
@@ -2025,7 +2210,7 @@ class _ReelItem {
     this.timestamp,
     required this.likes,
     required this.comments,
-    this.mediaType = 'image',
+    this.mediaType = 'image', // Default to image
   });
 }
 
