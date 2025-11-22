@@ -9,7 +9,7 @@
 TASKS
 done - live without lag
 - live recording properly
-  done - clips with video option
+done - clips with video option
 - appstore/googleplay for payment
 - seperate gift earning
 - withdrawal of gift earning

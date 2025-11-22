@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 
-
 class ZegoRecordingService {
   static const String _baseUrl = 'https://cloudrecord-api.zego.im';
   static const String _signatureVersion = '2.0';
@@ -21,7 +20,8 @@ class ZegoRecordingService {
     try {
       await _checkNetworkConnectivity();
 
-      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
+          .toString();
       final nonce = _generateNonce();
 
       final signature = _generateSignatureV2(
@@ -47,9 +47,7 @@ class ZegoRecordingService {
           "StreamType": 3,
           "MaxIdleTime": 60,
           "RecordStreamList": [
-            {
-              "StreamId": "${userId}_main"
-            }
+            {"StreamId": "${userId}_main"},
           ],
         },
         "RecordOutputParams": {
@@ -62,21 +60,23 @@ class ZegoRecordingService {
           "Bucket": "meet9ja-recordings",
           "AccessKeyId": "AKIAZ44G2F7RDNUFZT6U",
           "AccessKeySecret": "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",
-        }
+        },
       };
 
       print('🌐 Sending recording start request to Zego...');
 
       final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
 
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(requestBody),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode(requestBody),
+          )
+          .timeout(const Duration(seconds: 30));
 
       print('📡 Response status: ${response.statusCode}');
       print('📡 Response body: ${response.body}');
@@ -87,13 +87,17 @@ class ZegoRecordingService {
           print('✅ Zego Cloud Recording started successfully');
           return result;
         } else {
-          throw Exception('Zego API error: Code ${result['Code']} - ${result['Message']}');
+          throw Exception(
+            'Zego API error: Code ${result['Code']} - ${result['Message']}',
+          );
         }
       } else {
         throw HttpException('HTTP ${response.statusCode}: ${response.body}');
       }
     } on SocketException catch (e) {
-      throw Exception('Network error: Cannot connect to Zego servers. Details: $e');
+      throw Exception(
+        'Network error: Cannot connect to Zego servers. Details: $e',
+      );
     } catch (e) {
       throw Exception('Recording start error: $e');
     }
@@ -105,7 +109,8 @@ class ZegoRecordingService {
     required String roomId,
   }) async {
     try {
-      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
+          .toString();
       final nonce = _generateNonce();
 
       final signature = _generateSignatureV2(
@@ -124,20 +129,20 @@ class ZegoRecordingService {
         'Signature': signature,
       };
 
-      final Map<String, dynamic> requestBody = {
-        "RoomId": roomId,
-      };
+      final Map<String, dynamic> requestBody = {"RoomId": roomId};
 
       final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
 
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(requestBody),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode(requestBody),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final result = json.decode(response.body);
@@ -156,7 +161,8 @@ class ZegoRecordingService {
     required String roomId,
   }) async {
     try {
-      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
+          .toString();
       final nonce = _generateNonce();
 
       final signature = _generateSignatureV2(
@@ -175,20 +181,20 @@ class ZegoRecordingService {
         'Signature': signature,
       };
 
-      final Map<String, dynamic> requestBody = {
-        "RoomId": roomId,
-      };
+      final Map<String, dynamic> requestBody = {"RoomId": roomId};
 
       final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
 
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(requestBody),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode(requestBody),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         return json.decode(response.body);
@@ -224,8 +230,9 @@ class ZegoRecordingService {
 
   static Future<void> _checkNetworkConnectivity() async {
     try {
-      final result = await InternetAddress.lookup('cloudrecord-api.zego.im')
-          .timeout(const Duration(seconds: 10));
+      final result = await InternetAddress.lookup(
+        'cloudrecord-api.zego.im',
+      ).timeout(const Duration(seconds: 10));
 
       if (result.isEmpty) {
         throw SocketException('No addresses found for cloudrecord-api.zego.im');
@@ -260,7 +267,8 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   // Zego Configuration
   final int _zegoAppId = 51745598;
   final String _zegoServerSecret = 'd47d53d464da3b6ff8a8141dcb4e8b3b';
-  final String _zegoAppSign = '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4';
+  final String _zegoAppSign =
+      '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4';
 
   // AWS S3 Configuration
   final String _awsBucketName = 'meet9ja-recordings';
@@ -350,7 +358,9 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
           _usingFallback = false;
           _recordingTaskId = result['Data']?['TaskId']?.toString();
         });
-        print('✅ Zego Cloud Recording started successfully. Task ID: $_recordingTaskId');
+        print(
+          '✅ Zego Cloud Recording started successfully. Task ID: $_recordingTaskId',
+        );
         _startRecordingStatusPolling();
       } else {
         throw Exception('Zego recording API error: ${result['Message']}');
@@ -481,7 +491,9 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         }
       }
 
-      _handleRecordingFallback('No recording URLs found after multiple attempts');
+      _handleRecordingFallback(
+        'No recording URLs found after multiple attempts',
+      );
     } catch (e) {
       print('❌ Error getting recording URL: $e');
       _handleRecordingFallback('Error getting recording URL: $e');
@@ -492,7 +504,8 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     print('🔄 Using fallback recording method: $error');
 
     try {
-      final String recordingContent = '''
+      final String recordingContent =
+          '''
 LIVE_STREAM_METADATA
 Live ID: ${widget.liveId}
 Host: ${widget.userName}
@@ -506,7 +519,8 @@ Recording URLs: ${_recordingUrls.join(', ')}
 METADATA_END
 ''';
 
-      final String fileName = 'fallback_recordings/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.txt';
+      final String fileName =
+          'fallback_recordings/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.txt';
 
       final fallbackUrl = await uploadToS3Improved(
         content: recordingContent,
@@ -527,7 +541,8 @@ METADATA_END
       print('✅ Fallback recording created: $fallbackUrl');
     } catch (e) {
       print('❌ Fallback recording also failed: $e');
-      _recordingUrl = 'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/error_${widget.liveId}.txt';
+      _recordingUrl =
+          'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/error_${widget.liveId}.txt';
     }
   }
 
@@ -537,9 +552,7 @@ METADATA_END
         await FirebaseFirestore.instance
             .collection('liveStreams')
             .doc(widget.liveId)
-            .update({
-          'viewers': FieldValue.increment(1),
-        });
+            .update({'viewers': FieldValue.increment(1)});
       } catch (e) {
         print('Error updating viewer count: $e');
       }
@@ -563,10 +576,13 @@ METADATA_END
                 : ZegoUIKitPrebuiltLiveStreamingConfig.audience(),
 
             events: ZegoUIKitPrebuiltLiveStreamingEvents(
-              onEnded: (ZegoLiveStreamingEndEvent event, VoidCallback defaultHandle) {
-                _onLeaveLiveStreaming(defaultHandle);
-              },
-
+              onEnded:
+                  (
+                    ZegoLiveStreamingEndEvent event,
+                    VoidCallback defaultHandle,
+                  ) {
+                    _onLeaveLiveStreaming(defaultHandle);
+                  },
             ),
           ),
 
@@ -575,10 +591,7 @@ METADATA_END
 
           // Gift overlay for audience
           if (!widget.isHost)
-            _GiftOverlay(
-              liveId: widget.liveId,
-              userId: widget.userId,
-            ),
+            _GiftOverlay(liveId: widget.liveId, userId: widget.userId),
         ],
       ),
     );
@@ -624,10 +637,7 @@ METADATA_END
               ),
               child: const Text(
                 'Initializing Zego...',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
 
@@ -700,10 +710,7 @@ METADATA_END
             ),
             child: Text(
               _getStatusMessage(),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
 
@@ -718,10 +725,7 @@ METADATA_END
               ),
               child: Text(
                 'Task: ${_recordingTaskId!.substring(0, 8)}...',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 10),
               ),
             ),
 
@@ -736,10 +740,7 @@ METADATA_END
               ),
               child: Text(
                 'Error: ${_recordingError!.split('\n').first}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 10),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -765,9 +766,7 @@ METADATA_END
         await FirebaseFirestore.instance
             .collection('liveStreams')
             .doc(widget.liveId)
-            .update({
-          'viewers': FieldValue.increment(-1),
-        });
+            .update({'viewers': FieldValue.increment(-1)});
       } catch (e) {
         print('Error decrementing viewer count: $e');
       }
@@ -802,41 +801,42 @@ METADATA_END
           .collection('liveStreams')
           .doc(widget.liveId)
           .update({
-        'isLive': false,
-        'endedAt': FieldValue.serverTimestamp(),
-        'status': 'ended',
-      });
+            'isLive': false,
+            'endedAt': FieldValue.serverTimestamp(),
+            'status': 'ended',
+          });
 
       // Save to history
       await FirebaseFirestore.instance
           .collection('live_history')
           .doc(widget.liveId)
           .set({
-        'live_id': widget.liveId,
-        'UID': widget.userId,
-        'host_name': widget.userName,
-        'start_time': liveData?['startedAt'],
-        'end_time': FieldValue.serverTimestamp(),
-        'title': liveData?['title'] ?? 'Live Stream',
-        'status': 'ended',
-        'viewer_count': liveData?['viewers'] ?? 0,
-        'total_gift_value': liveData?['total_gift_value'] ?? 0,
-        'live_replay_media_url': _recordingUrl,
-        'all_recording_urls': _recordingUrls,
-        'storage_bucket': _awsBucketName,
-        'storage_region': _awsRegion,
-        'uploaded_at': FieldValue.serverTimestamp(),
-        'upload_status': _recordingUrl != null ? 'success' : 'failed',
-        'recording_type': _usingFallback ? 'fallback_metadata' : 'zego_cloud_recording',
-        'zego_task_id': _recordingTaskId,
-        'recording_error': _recordingError,
-        'duration_seconds': _calculateDuration(liveData?['startedAt']),
-        'file_count': _recordingUrls.length,
-      });
+            'live_id': widget.liveId,
+            'UID': widget.userId,
+            'host_name': widget.userName,
+            'start_time': liveData?['startedAt'],
+            'end_time': FieldValue.serverTimestamp(),
+            'title': liveData?['title'] ?? 'Live Stream',
+            'status': 'ended',
+            'viewer_count': liveData?['viewers'] ?? 0,
+            'total_gift_value': liveData?['total_gift_value'] ?? 0,
+            'live_replay_media_url': _recordingUrl,
+            'all_recording_urls': _recordingUrls,
+            'storage_bucket': _awsBucketName,
+            'storage_region': _awsRegion,
+            'uploaded_at': FieldValue.serverTimestamp(),
+            'upload_status': _recordingUrl != null ? 'success' : 'failed',
+            'recording_type': _usingFallback
+                ? 'fallback_metadata'
+                : 'zego_cloud_recording',
+            'zego_task_id': _recordingTaskId,
+            'recording_error': _recordingError,
+            'duration_seconds': _calculateDuration(liveData?['startedAt']),
+            'file_count': _recordingUrls.length,
+          });
 
       print('✅ Live ended and recording saved to Firestore');
       print('🎯 Recording URL: $_recordingUrl');
-
     } catch (e) {
       print('❌ Error saving recording to Firestore: $e');
     } finally {
@@ -867,7 +867,8 @@ Future<String> uploadToS3Improved({
     final host = '$bucket.s3.$region.amazonaws.com';
     final url = Uri.https(host, objectKey);
 
-    final Uint8List payload = fileBytes ?? Uint8List.fromList(utf8.encode(content!));
+    final Uint8List payload =
+        fileBytes ?? Uint8List.fromList(utf8.encode(content!));
 
     final date = DateTime.now().toUtc();
     final isoDate = _formatAmzDate(date);
@@ -876,10 +877,12 @@ Future<String> uploadToS3Improved({
     final credentialScope = '$dateStamp/$region/s3/aws4_request';
     final payloadHash = sha256.convert(payload).toString();
 
-    final canonicalHeaders = 'host:$host\nx-amz-content-sha256:$payloadHash\nx-amz-date:$isoDate\n';
+    final canonicalHeaders =
+        'host:$host\nx-amz-content-sha256:$payloadHash\nx-amz-date:$isoDate\n';
     final signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
 
-    final canonicalRequest = '''
+    final canonicalRequest =
+        '''
 PUT
 /${_uriEncode(objectKey, encodeSlash: false)}
 
@@ -887,23 +890,36 @@ $canonicalHeaders
 $signedHeaders
 $payloadHash''';
 
-    final canonicalRequestHash = sha256.convert(utf8.encode(canonicalRequest)).toString();
+    final canonicalRequestHash = sha256
+        .convert(utf8.encode(canonicalRequest))
+        .toString();
 
-    final stringToSign = '''
+    final stringToSign =
+        '''
 AWS4-HMAC-SHA256
 $isoDate
 $credentialScope
 $canonicalRequestHash''';
 
     List<int> kSecret = utf8.encode('AWS4$secretKey');
-    List<int> kDate = Hmac(sha256, kSecret).convert(utf8.encode(dateStamp)).bytes;
+    List<int> kDate = Hmac(
+      sha256,
+      kSecret,
+    ).convert(utf8.encode(dateStamp)).bytes;
     List<int> kRegion = Hmac(sha256, kDate).convert(utf8.encode(region)).bytes;
     List<int> kService = Hmac(sha256, kRegion).convert(utf8.encode('s3')).bytes;
-    List<int> kSigning = Hmac(sha256, kService).convert(utf8.encode('aws4_request')).bytes;
+    List<int> kSigning = Hmac(
+      sha256,
+      kService,
+    ).convert(utf8.encode('aws4_request')).bytes;
 
-    final signature = Hmac(sha256, kSigning).convert(utf8.encode(stringToSign)).toString();
+    final signature = Hmac(
+      sha256,
+      kSigning,
+    ).convert(utf8.encode(stringToSign)).toString();
 
-    final authorization = 'AWS4-HMAC-SHA256 Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
+    final authorization =
+        'AWS4-HMAC-SHA256 Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
 
     final response = await http.put(
       url,
@@ -919,7 +935,9 @@ $canonicalRequestHash''';
     if (response.statusCode == 200) {
       return 'https://$host/$objectKey';
     } else {
-      throw Exception('S3 Upload failed with status ${response.statusCode}: ${response.body}');
+      throw Exception(
+        'S3 Upload failed with status ${response.statusCode}: ${response.body}',
+      );
     }
   } catch (e) {
     rethrow;
@@ -945,7 +963,9 @@ String _uriEncode(String input, {bool encodeSlash = true}) {
     } else if (char == '/' && !encodeSlash) {
       encoded.write(char);
     } else {
-      encoded.write('%${codeUnit.toRadixString(16).padLeft(2, '0').toUpperCase()}');
+      encoded.write(
+        '%${codeUnit.toRadixString(16).padLeft(2, '0').toUpperCase()}',
+      );
     }
   }
   return encoded.toString();
@@ -980,6 +1000,7 @@ class _GiftOverlay extends StatelessWidget {
     );
   }
 
+  // Update the gift dialog to show diamonds
   void _showGiftDialog(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -988,16 +1009,44 @@ class _GiftOverlay extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Send Gift', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text(
+              'Send Gift',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Gifts are sent using diamonds',
+              style: TextStyle(color: Colors.grey),
+            ),
             const SizedBox(height: 20),
             Wrap(
               spacing: 10,
               runSpacing: 10,
               children: [
-                _GiftItem(icon: '🎁', name: 'Rose', coins: 10, onTap: () => _sendGift(context, 'rose', 10)),
-                _GiftItem(icon: '💝', name: 'Love', coins: 50, onTap: () => _sendGift(context, 'love', 50)),
-                _GiftItem(icon: '🚀', name: 'Rocket', coins: 100, onTap: () => _sendGift(context, 'rocket', 100)),
-                _GiftItem(icon: '👑', name: 'Crown', coins: 500, onTap: () => _sendGift(context, 'crown', 500)),
+                _GiftItem(
+                  icon: '🎁',
+                  name: 'Rose',
+                  diamonds: 10,
+                  onTap: () => _sendGift(context, 'rose', 10),
+                ),
+                _GiftItem(
+                  icon: '💝',
+                  name: 'Love',
+                  diamonds: 50,
+                  onTap: () => _sendGift(context, 'love', 50),
+                ),
+                _GiftItem(
+                  icon: '🚀',
+                  name: 'Rocket',
+                  diamonds: 100,
+                  onTap: () => _sendGift(context, 'rocket', 100),
+                ),
+                _GiftItem(
+                  icon: '👑',
+                  name: 'Crown',
+                  diamonds: 500,
+                  onTap: () => _sendGift(context, 'crown', 500),
+                ),
               ],
             ),
           ],
@@ -1006,7 +1055,12 @@ class _GiftOverlay extends StatelessWidget {
     );
   }
 
-  Future<void> _sendGift(BuildContext context, String giftType, int coins) async {
+  // In the _sendGift method, update to use diamonds instead of coins
+  Future<void> _sendGift(
+    BuildContext context,
+    String giftType,
+    int diamondCost,
+  ) async {
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -1014,63 +1068,121 @@ class _GiftOverlay extends StatelessWidget {
           .get();
 
       final userData = userDoc.data() as Map<String, dynamic>?;
-      final currentBalance = (userData?['wallet']?['coin_balance'] as int?) ?? 0;
+      final currentDiamonds =
+          (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
 
-      if (currentBalance < coins) {
+      if (currentDiamonds < diamondCost) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Not enough coins! You need $coins but have $currentBalance')),
+          SnackBar(
+            content: Text(
+              'Not enough diamonds! You need $diamondCost but have $currentDiamonds',
+            ),
+          ),
         );
         return;
       }
 
+      // Get the host's user ID from the live stream
+      final liveDoc = await FirebaseFirestore.instance
+          .collection('liveStreams')
+          .doc(liveId)
+          .get();
+      final hostUserId = liveDoc.data()?['hostId'] ?? '';
+
+      if (hostUserId.isEmpty) {
+        throw Exception('Host user ID not found');
+      }
+
       final batch = FirebaseFirestore.instance.batch();
 
+      // Deduct diamonds from sender
       batch.update(FirebaseFirestore.instance.collection('users').doc(userId), {
-        'wallet.coin_balance': FieldValue.increment(-coins),
+        'wallet.diamond_balance': FieldValue.increment(-diamondCost),
       });
 
+      // Convert diamonds to coins for receiver (1 diamond = X coins, adjust ratio as needed)
+      final coinValue = diamondCost * 10; // Example: 1 diamond = 10 coins
+
+      // Add coins to host's earnings
+      batch.update(
+        FirebaseFirestore.instance.collection('users').doc(hostUserId),
+        {
+          'wallet.coin_balance': FieldValue.increment(coinValue),
+          'wallet.total_earning': FieldValue.increment(coinValue.toDouble()),
+        },
+      );
+
+      // Record transaction
       batch.set(
-        FirebaseFirestore.instance.collection('transactions').doc('${DateTime.now().millisecondsSinceEpoch}_$userId'),
+        FirebaseFirestore.instance
+            .collection('transactions')
+            .doc('${DateTime.now().millisecondsSinceEpoch}_$userId'),
         {
           'transaction_id': '${DateTime.now().millisecondsSinceEpoch}_$userId',
-          'type': 'gift',
+          'type': 'gift_sent',
           'UID': userId,
-          'amount': coins,
+          'receiver_UID': hostUserId,
+          'diamond_amount': diamondCost,
+          'coin_value': coinValue,
           'date_time': FieldValue.serverTimestamp(),
           'given_live': liveId,
           'gift_type': giftType,
         },
       );
 
-      batch.update(FirebaseFirestore.instance.collection('liveStreams').doc(liveId), {
-        'total_gift_value': FieldValue.increment(coins),
-      });
+      // Record receiver transaction
+      batch.set(
+        FirebaseFirestore.instance
+            .collection('transactions')
+            .doc('${DateTime.now().millisecondsSinceEpoch}_$hostUserId'),
+        {
+          'transaction_id':
+              '${DateTime.now().millisecondsSinceEpoch}_$hostUserId',
+          'type': 'gift_received',
+          'UID': hostUserId,
+          'sender_UID': userId,
+          'diamond_amount': diamondCost,
+          'coin_value': coinValue,
+          'date_time': FieldValue.serverTimestamp(),
+          'received_live': liveId,
+          'gift_type': giftType,
+        },
+      );
+
+      // Update live stream gift total (in coins)
+      batch.update(
+        FirebaseFirestore.instance.collection('liveStreams').doc(liveId),
+        {'total_gift_value': FieldValue.increment(coinValue)},
+      );
 
       await batch.commit();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sent $giftType gift!')),
+        SnackBar(
+          content: Text('Sent $giftType gift worth $diamondCost diamonds!'),
+        ),
       );
 
       Navigator.of(context).pop();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send gift: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to send gift: $e')));
     }
   }
 }
 
+// Update gift items to use diamonds
 class _GiftItem extends StatelessWidget {
   final String icon;
   final String name;
-  final int coins;
+  final int diamonds; // Changed from coins to diamonds
   final VoidCallback onTap;
 
   const _GiftItem({
     required this.icon,
     required this.name,
-    required this.coins,
+    required this.diamonds,
     required this.onTap,
   });
 
@@ -1088,7 +1200,10 @@ class _GiftItem extends StatelessWidget {
           children: [
             Text(icon, style: const TextStyle(fontSize: 30)),
             Text(name),
-            Text('$coins coins', style: const TextStyle(color: Colors.orange)),
+            Text(
+              '$diamonds 💎',
+              style: const TextStyle(color: Colors.blue),
+            ), // Diamond icon
           ],
         ),
       ),

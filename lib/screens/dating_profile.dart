@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/constants/app_colors.dart';
@@ -86,6 +85,22 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
     ).then((_) => _loadUserData());
   }
 
+  void _navigateToTransactionHistory() {
+    // You'll need to create this screen
+    // Navigator.push(
+    //   context,
+    //   MaterialPageRoute(builder: (_) => TransactionHistoryScreen()),
+    // );
+  }
+
+  void _navigateToWithdrawalScreen() {
+    // You'll need to create this screen
+    // Navigator.push(
+    //   context,
+    //   MaterialPageRoute(builder: (_) => WithdrawalScreen()),
+    // );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -117,44 +132,45 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-                        children: [
-                          _Header(
-                            user: _currentUser,
-                            stats: _userStats,
-                            onEditProfile: _navigateToEditProfileScreen,
-                          ),
-                          const SizedBox(height: 12),
-                          _Segments(
-                            current: _tab,
-                            onChanged: (i) => setState(() => _tab = i),
-                          ),
-                          const SizedBox(height: 12),
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                  children: [
+                    _Header(
+                      user: _currentUser,
+                      stats: _userStats,
+                      onEditProfile: _navigateToEditProfileScreen,
+                    ),
+                    const SizedBox(height: 12),
+                    _Segments(
+                      current: _tab,
+                      onChanged: (i) => setState(() => _tab = i),
+                    ),
+                    const SizedBox(height: 12),
 
-                          if (_tab == 0)
-                            _PayPlanTab(
-                              user: _currentUser,
-                              onOpenMyProfile: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ProfileScreen(),
-                                  ),
-                                );
-                              },
-                              onExplorePremium: _navigateToSubscriptionScreen,
-                              onSpotlightTap: _navigateToSubscriptionScreen,
-                              onSuperSwipeTap: _navigateToSubscriptionScreen,
-                              onEarningsTap: _navigateToSubscriptionScreen,
-                            )
-                          else if (_tab == 1)
-                            _AdviceTab()
-                          else
-                            _PhotoInsightsTab(
-                              onFindOutHowTap: _navigateToSubscriptionScreen,
+                    if (_tab == 0)
+                      _PayPlanTab(
+                        user: _currentUser,
+                        onOpenMyProfile: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ProfileScreen(),
                             ),
-                        ],
+                          );
+                        },
+                        onExplorePremium: _navigateToSubscriptionScreen,
+                        onSpotlightTap: _navigateToSubscriptionScreen,
+                        onSuperSwipeTap: _navigateToSubscriptionScreen,
+                        onEarningsTap: _navigateToTransactionHistory,
+                        onWithdrawTap: _navigateToWithdrawalScreen,
+                      )
+                    else if (_tab == 1)
+                      _AdviceTab()
+                    else
+                      _PhotoInsightsTab(
+                        onFindOutHowTap: _navigateToSubscriptionScreen,
                       ),
+                  ],
+                ),
               ),
 
               // Bottom nav — Profile selected
@@ -192,10 +208,10 @@ class _Header extends StatelessWidget {
             CircleAvatar(
               radius: 28,
               backgroundImage:
-                  profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
+              profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
                   ? NetworkImage(profilePhotoUrl)
                   : const NetworkImage("https://i.pravatar.cc/120?img=8")
-                        as ImageProvider,
+              as ImageProvider,
             ),
             Container(
               margin: const EdgeInsets.only(left: 2, bottom: 2),
@@ -318,6 +334,7 @@ class _PayPlanTab extends StatelessWidget {
     required this.onSpotlightTap,
     required this.onSuperSwipeTap,
     required this.onEarningsTap,
+    required this.onWithdrawTap,
     this.user,
   });
 
@@ -326,32 +343,32 @@ class _PayPlanTab extends StatelessWidget {
   final VoidCallback onSpotlightTap;
   final VoidCallback onSuperSwipeTap;
   final VoidCallback onEarningsTap;
+  final VoidCallback onWithdrawTap;
   final UserModel? user;
 
   @override
   Widget build(BuildContext context) {
     final isPremium = user != null ? UserService.isPremium(user!) : false;
+    final diamondBalance = user != null ? UserService.getDiamondBalance(user!) : 0;
     final coinBalance = user != null ? UserService.getCoinBalance(user!) : 0;
     final totalEarnings = user != null
         ? UserService.getTotalEarnings(user!)
-        : 0;
-    final primaryMode = user != null
-        ? UserService.getPrimaryMode(user!)
-        : 'Not Set';
+        : 0.0;
 
     return Column(
       children: [
-        // User Stats Cards
+        // User Stats Cards - Updated with diamonds and coins
         Row(
           children: [
             Expanded(
               child: GestureDetector(
                 onTap: onEarningsTap,
                 child: _UserStatCard(
-                  title: "Coins",
-                  value: coinBalance.toString(),
-                  color: Colors.amber,
-                  icon: Icons.monetization_on_outlined,
+                  title: "Diamonds",
+                  value: diamondBalance.toString(),
+                  color: Colors.blue,
+                  icon: Icons.diamond_outlined,
+                  subtitle: "Purchased",
                 ),
               ),
             ),
@@ -360,14 +377,28 @@ class _PayPlanTab extends StatelessWidget {
               child: GestureDetector(
                 onTap: onEarningsTap,
                 child: _UserStatCard(
-                  title: "Earnings",
-                  value: "₦$totalEarnings",
-                  color: Colors.green,
-                  icon: Icons.attach_money_outlined,
+                  title: "Coins",
+                  value: coinBalance.toString(),
+                  color: Colors.amber,
+                  icon: Icons.monetization_on_outlined,
+                  subtitle: "Earnings",
                 ),
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 14),
+
+        // Earnings Card
+        GestureDetector(
+          onTap: onWithdrawTap,
+          child: _UserStatCard(
+            title: "Total Earnings",
+            value: "₦${totalEarnings.toStringAsFixed(2)}",
+            color: Colors.green,
+            icon: Icons.attach_money_outlined,
+            subtitle: "Available for withdrawal",
+          ),
         ),
         const SizedBox(height: 14),
 
@@ -461,13 +492,13 @@ class _PayPlanTab extends StatelessWidget {
                 ),
                 onPressed: isPremium
                     ? () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SubscriptionManagementScreen(),
-                          ),
-                        );
-                      }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SubscriptionManagementScreen(),
+                    ),
+                  );
+                }
                     : onExplorePremium,
                 child: Text(
                   isPremium ? "Manage Subscription" : "Explore Premium+",
@@ -517,12 +548,14 @@ class _UserStatCard extends StatelessWidget {
     required this.value,
     required this.color,
     required this.icon,
+    this.subtitle = "",
   });
 
   final String title;
   final String value;
   final Color color;
   final IconData icon;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -559,12 +592,28 @@ class _UserStatCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Colors.black45,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -752,57 +801,57 @@ class _AdviceTab extends StatelessWidget {
               category: "Dating Advice for Men",
               title: "How to Make a Great First Impression",
               shortSummary:
-                  "Your first impression decides everything. How you talk, smell, and behave can instantly make a woman feel safe or not.",
+              "Your first impression decides everything. How you talk, smell, and behave can instantly make a woman feel safe or not.",
               fullContent:
-                  "A great first impression starts with preparation. Wear clean clothes that fit well; they don't need to be expensive. Your hygiene matters more than your outfit—fresh breath, trimmed nails, and a light scent make a big difference.\n\nBe confident but not arrogant. Look her in the eye when you speak, but don't stare. Ask genuine questions instead of trying to show off. Women notice how you treat waiters, taxi drivers, and strangers.\n\nDon't rush anything. A calm, relaxed energy shows maturity. And most important: listen more than you talk. Listening beats looks.",
+              "A great first impression starts with preparation. Wear clean clothes that fit well; they don't need to be expensive. Your hygiene matters more than your outfit—fresh breath, trimmed nails, and a light scent make a big difference.\n\nBe confident but not arrogant. Look her in the eye when you speak, but don't stare. Ask genuine questions instead of trying to show off. Women notice how you treat waiters, taxi drivers, and strangers.\n\nDon't rush anything. A calm, relaxed energy shows maturity. And most important: listen more than you talk. Listening beats looks.",
             ),
             _ArticleData(
               category: "Dating Advice for Men",
               title: "How to Text a Woman Without Killing Attraction",
               shortSummary:
-                  "Good texting keeps attraction alive. Don't overthink—be natural, playful, and consistent.",
+              "Good texting keeps attraction alive. Don't overthink—be natural, playful, and consistent.",
               fullContent:
-                  "Texting is the bridge between meeting and the first date. Avoid one-word replies because they kill the vibe. Ask light, open-ended questions. Add small jokes or playful energy, but don't overdo it.\n\nDon't double-text aggressively, but also don't disappear for days. Consistency builds trust.\n\nIf she takes long to reply, relax—people are busy.\n\nWhen the conversation flows well, move forward by suggesting a meet-up. Texting is only a tool; it's not the relationship itself.",
+              "Texting is the bridge between meeting and the first date. Avoid one-word replies because they kill the vibe. Ask light, open-ended questions. Add small jokes or playful energy, but don't overdo it.\n\nDon't double-text aggressively, but also don't disappear for days. Consistency builds trust.\n\nIf she takes long to reply, relax—people are busy.\n\nWhen the conversation flows well, move forward by suggesting a meet-up. Texting is only a tool; it's not the relationship itself.",
             ),
             _ArticleData(
               category: "Dating Advice for Women",
               title: "How to Attract a Genuine, Serious Man",
               shortSummary:
-                  "Attracting a serious man starts with clarity. Know what you want and don't settle for half effort.",
+              "Attracting a serious man starts with clarity. Know what you want and don't settle for half effort.",
               fullContent:
-                  "A serious man is attracted to a woman who values herself. Communicate your standards calmly. A man who wants something real will respect your boundaries.\n\nDon't try to fix or change a man. His intentions are clear from the beginning—effort, consistency, and respect.\n\nPut yourself in environments where serious men exist: professional events, classes, business spaces, hobbies.\n\nRemember: emotional stability and independence naturally attract the right men.",
+              "A serious man is attracted to a woman who values herself. Communicate your standards calmly. A man who wants something real will respect your boundaries.\n\nDon't try to fix or change a man. His intentions are clear from the beginning—effort, consistency, and respect.\n\nPut yourself in environments where serious men exist: professional events, classes, business spaces, hobbies.\n\nRemember: emotional stability and independence naturally attract the right men.",
             ),
             _ArticleData(
               category: "Dating Advice for Women",
               title: "How to Know If a Man Likes You",
               shortSummary:
-                  "Men show interest through actions, not words. Consistency is the real sign.",
+              "Men show interest through actions, not words. Consistency is the real sign.",
               fullContent:
-                  "A man who likes you puts in effort without being forced. He checks on you, plans dates, and stays present.\n\nHe doesn't disappear for days. He remembers small things about you.\n\nPay attention to how he behaves around other women—constant flirting is a red flag.\n\nA serious man will eventually introduce you to his friends or family.\n\nIf you constantly feel confused, that's your answer. Real interest feels clear, not stressful.",
+              "A man who likes you puts in effort without being forced. He checks on you, plans dates, and stays present.\n\nHe doesn't disappear for days. He remembers small things about you.\n\nPay attention to how he behaves around other women—constant flirting is a red flag.\n\nA serious man will eventually introduce you to his friends or family.\n\nIf you constantly feel confused, that's your answer. Real interest feels clear, not stressful.",
             ),
             _ArticleData(
               category: "Relationship Red Flags",
               title: "Red Flags You Should Never Ignore",
               shortSummary:
-                  "Red flags protect you. Ignoring them early leads to pain later.",
+              "Red flags protect you. Ignoring them early leads to pain later.",
               fullContent:
-                  "The biggest red flag is inconsistency—someone who is warm today but cold tomorrow.\n\nAnother red flag is poor communication, especially people who avoid responsibility or refuse to talk during conflict.\n\nWatch out for jealousy disguised as love. Controlling behavior is not affection.\n\nSomeone who lies about small things will eventually lie about big things.\n\nIf a person never apologizes or always blames others, walk away.\n\nTrust your instincts. If something feels off, it usually is.",
+              "The biggest red flag is inconsistency—someone who is warm today but cold tomorrow.\n\nAnother red flag is poor communication, especially people who avoid responsibility or refuse to talk during conflict.\n\nWatch out for jealousy disguised as love. Controlling behavior is not affection.\n\nSomeone who lies about small things will eventually lie about big things.\n\nIf a person never apologizes or always blames others, walk away.\n\nTrust your instincts. If something feels off, it usually is.",
             ),
             _ArticleData(
               category: "Building Confidence",
               title: "How to Build Unshakeable Dating Confidence",
               shortSummary:
-                  "Confidence is built from habits, mindset, and experience, not from perfection.",
+              "Confidence is built from habits, mindset, and experience, not from perfection.",
               fullContent:
-                  "Confidence starts with accepting who you are right now. Fix your posture, walk with purpose, and maintain eye contact.\n\nTake care of your body—exercise improves confidence.\n\nAvoid comparing yourself to others. Everyone has weaknesses.\n\nLearn communication skills: how to speak clearly, how to listen, and how to stay calm.\n\nExpose yourself to more social interactions. Confidence grows with practice, not isolation.",
+              "Confidence starts with accepting who you are right now. Fix your posture, walk with purpose, and maintain eye contact.\n\nTake care of your body—exercise improves confidence.\n\nAvoid comparing yourself to others. Everyone has weaknesses.\n\nLearn communication skills: how to speak clearly, how to listen, and how to stay calm.\n\nExpose yourself to more social interactions. Confidence grows with practice, not isolation.",
             ),
             _ArticleData(
               category: "Dating Safety Tips",
               title: "Safety Rules Everyone Should Follow When Dating",
               shortSummary:
-                  "Safety comes before attraction. Protect yourself in every situation.",
+              "Safety comes before attraction. Protect yourself in every situation.",
               fullContent:
-                  "Always meet in public for the first few dates. Tell a friend or sibling where you are and who you're with.\n\nDon't drink too much—stay aware.\n\nAvoid going to someone's home or hotel room too soon.\n\nProtect your private information: your address, financial details, password, and family issues.\n\nObserve how the person behaves when angry or stressed.\n\nIf someone pressures you into anything, that is your sign to leave.\n\nYour safety matters more than chemistry.",
+              "Always meet in public for the first few dates. Tell a friend or sibling where you are and who you're with.\n\nDon't drink too much—stay aware.\n\nAvoid going to someone's home or hotel room too soon.\n\nProtect your private information: your address, financial details, password, and family issues.\n\nObserve how the person behaves when angry or stressed.\n\nIf someone pressures you into anything, that is your sign to leave.\n\nYour safety matters more than chemistry.",
             ),
           ],
         ),
@@ -2289,7 +2338,7 @@ class _BottomNav extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ActivityScreen()
+                        builder: (_) => ActivityScreen()
                     ),
                   );
                   return;

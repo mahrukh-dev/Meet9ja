@@ -106,7 +106,12 @@ class UserModel {
       'following': following,
       'followers': followers,
       'live_status': liveStatus,
-      'wallet': wallet,
+      // Updated wallet structure in user model
+      'wallet': {
+        'diamond_balance': 0, // Purchased currency - can't withdraw
+        'coin_balance': 0,    // Earned currency - can withdraw
+        'total_earning': 0.0, // Total earnings in coins
+      },
       'interests': interests,
       'first_photos': firstPhotos,
       'bio': bio,

@@ -695,20 +695,20 @@ class UserService {
     if (user.mode['bizz'] == true) return 'Bizz';
     return 'Not Set';
   }
-
-  static int getCoinBalance(UserModel user) {
-    final balance = user.wallet['coin_balance'];
-    if (balance is int) return balance;
-    if (balance is double) return balance.toInt();
-    return 0;
-  }
-
-  static double getTotalEarnings(UserModel user) {
-    final earnings = user.wallet['total_earning'];
-    if (earnings is double) return earnings;
-    if (earnings is int) return earnings.toDouble();
-    return 0.0;
-  }
+  //
+  // static int getCoinBalance(UserModel user) {
+  //   final balance = user.wallet['coin_balance'];
+  //   if (balance is int) return balance;
+  //   if (balance is double) return balance.toInt();
+  //   return 0;
+  // }
+  //
+  // static double getTotalEarnings(UserModel user) {
+  //   final earnings = user.wallet['total_earning'];
+  //   if (earnings is double) return earnings;
+  //   if (earnings is int) return earnings.toDouble();
+  //   return 0.0;
+  // }
 
   static bool isPremium(UserModel user) {
     return user.type == 'premium';
@@ -916,5 +916,40 @@ class UserService {
         .map((doc) => UserModel.fromFirestore(doc as Map<String, dynamic>))
         .toList());
   }
+
+  // Get diamond balance (purchased currency)
+  static int getDiamondBalance(UserModel user) {
+  final balance = user.wallet['diamond_balance'];
+  if (balance is int) return balance;
+  if (balance is double) return balance.toInt();
+  return 0;
+  }
+
+  // Get coin balance (earned currency)
+  static int getCoinBalance(UserModel user) {
+  final balance = user.wallet['coin_balance'];
+  if (balance is int) return balance;
+  if (balance is double) return balance.toInt();
+  return 0;
+  }
+
+  // Get total earnings (coins)
+  static double getTotalEarnings(UserModel user) {
+  final earnings = user.wallet['total_earning'];
+  if (earnings is double) return earnings;
+  if (earnings is int) return earnings.toDouble();
+  return 0.0;
+  }
+
+  // Check if user has enough diamonds
+  static bool hasEnoughDiamonds(UserModel user, int amount) {
+  return getDiamondBalance(user) >= amount;
+  }
+
+  // Check if user has enough coins
+  static bool hasEnoughCoins(UserModel user, int amount) {
+  return getCoinBalance(user) >= amount;
+  }
+
 
 }

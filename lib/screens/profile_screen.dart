@@ -2812,7 +2812,6 @@ class _ClipsTabState extends State<_ClipsTab> {
     );
   }
 }
-
 // Wallet Tab
 class _WalletTab extends StatefulWidget {
   final UserModel userProfile;
@@ -2830,17 +2829,17 @@ class _WalletTabState extends State<_WalletTab> {
   final String secretKey = "FLWSECK_TEST-40e21085dd94e60bb65a13d7987295af-X";
   final String encryptionKey = "FLWSECK_TEST31158107b2db";
 
-  // Coin packages
-  final List<Map<String, dynamic>> _coinPackages = [
-    {'coins': 10, 'price': 1.0, 'label': '10 Diamonds'},
-    {'coins': 50, 'price': 5.0, 'label': '50 Diamonds'},
-    {'coins': 100, 'price': 10.0, 'label': '100 Diamonds'},
-    {'coins': 500, 'price': 45.0, 'label': '500 Diamonds\n(10% OFF)'},
-    {'coins': 1000, 'price': 80.0, 'label': '1000 Diamonds\n(20% OFF)'},
-    {'coins': 2000, 'price': 150.0, 'label': '2000 Diamonds\n(25% OFF)'},
+  // Diamond packages
+  final List<Map<String, dynamic>> _diamondPackages = [
+    {'diamonds': 10, 'price': 1.0, 'label': '10 Diamonds'},
+    {'diamonds': 50, 'price': 5.0, 'label': '50 Diamonds'},
+    {'diamonds': 100, 'price': 10.0, 'label': '100 Diamonds'},
+    {'diamonds': 500, 'price': 45.0, 'label': '500 Diamonds\n(10% OFF)'},
+    {'diamonds': 1000, 'price': 80.0, 'label': '1000 Diamonds\n(20% OFF)'},
+    {'diamonds': 2000, 'price': 150.0, 'label': '2000 Diamonds\n(25% OFF)'},
   ];
 
-  Future<void> _purchaseCoins(int coins, double price) async {
+  Future<void> _purchaseDiamonds(int diamonds, double price) async {
     if (_isLoading) return;
 
     setState(() {
@@ -2863,22 +2862,22 @@ class _WalletTabState extends State<_WalletTab> {
         paymentOptions: "card, ussd, banktransfer",
         customization: Customization(
           title: "Purchase Diamonds",
-          description: "Get ${coins} diamonds for \$$price",
+          description: "Get ${diamonds} diamonds for \$$price",
         ),
         redirectUrl: "https://www.google.com",
         isTestMode: true,
       );
 
-      print('Initiating coin purchase...');
+      print('Initiating diamond purchase...');
       final ChargeResponse response = await flutterwave.charge(context);
 
       print('Payment response: ${response.toJson()}');
 
       if (mounted) {
         if (response.status == 'successful') {
-          // Payment successful - add coins to user's wallet
-          await _addCoinsToWallet(coins);
-          _showSuccessDialog(coins);
+          // Payment successful - add diamonds to user's wallet
+          await _addDiamondsToWallet(diamonds);
+          _showSuccessDialog(diamonds);
         } else {
           _showErrorDialog('Payment failed. Please try again.');
         }
@@ -2899,7 +2898,7 @@ class _WalletTabState extends State<_WalletTab> {
     }
   }
 
-  Future<void> _addCoinsToWallet(int coins) async {
+  Future<void> _addDiamondsToWallet(int diamonds) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not logged in');
@@ -2914,27 +2913,25 @@ class _WalletTabState extends State<_WalletTab> {
         final currentWallet = userData['wallet'] ?? {};
 
         // Handle type conversion safely
-        final currentCoins = (currentWallet['coin_balance'] ?? 0).toInt();
-        final currentEarnings = (currentWallet['total_earning'] ?? 0).toDouble();
+        final currentDiamonds = (currentWallet['diamond_balance'] ?? 0).toInt();
 
         await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .update({
-          'wallet.coin_balance': currentCoins + coins,
-          'wallet.total_earning': currentEarnings + (coins / 10), // $1 = 10 diamonds
+          'wallet.diamond_balance': currentDiamonds + diamonds,
           'updated_at': FieldValue.serverTimestamp(),
         });
 
-        print('✅ Added $coins diamonds to wallet');
+        print('✅ Added $diamonds diamonds to wallet');
       }
     } catch (e) {
-      print('❌ Error adding coins to wallet: $e');
+      print('❌ Error adding diamonds to wallet: $e');
       throw 'Failed to update wallet: $e';
     }
   }
 
-  void _showSuccessDialog(int coins) {
+  void _showSuccessDialog(int diamonds) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -2948,7 +2945,7 @@ class _WalletTabState extends State<_WalletTab> {
             ],
           ),
           content: Text(
-            'You have successfully purchased $coins diamonds! 🎉',
+            'You have successfully purchased $diamonds diamonds! 🎉',
             style: const TextStyle(fontSize: 16),
           ),
           actions: [
@@ -2994,9 +2991,10 @@ class _WalletTabState extends State<_WalletTab> {
 
   Future<void> _withdrawFunds() async {
     final coinBalance = UserService.getCoinBalance(widget.userProfile);
+    final totalEarnings = UserService.getTotalEarnings(widget.userProfile);
 
     if (coinBalance < 100) {
-      _showErrorDialog('You need at least 100 diamonds to withdraw.');
+      _showErrorDialog('You need at least 100 coins to withdraw.');
       return;
     }
 
@@ -3008,9 +3006,10 @@ class _WalletTabState extends State<_WalletTab> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Available Diamonds: $coinBalance 💎'),
+            Text('Available Coins: $coinBalance 🪙'),
+            Text('Total Earnings: ₦${totalEarnings.toStringAsFixed(2)}'),
             const SizedBox(height: 8),
-            const Text('Minimum withdrawal: 100 diamonds (\$10)'),
+            const Text('Minimum withdrawal: 100 coins'),
             const SizedBox(height: 16),
             const Text(
               'Contact support to process your withdrawal. We\'ll transfer funds to your bank account.',
@@ -3026,7 +3025,7 @@ class _WalletTabState extends State<_WalletTab> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _contactSupport();
+              _contactSupport(coinBalance, totalEarnings);
             },
             child: const Text('Contact Support'),
           ),
@@ -3035,20 +3034,28 @@ class _WalletTabState extends State<_WalletTab> {
     );
   }
 
-  void _contactSupport() {
+  void _contactSupport(int coinBalance, double totalEarnings) {
     final Uri emailLaunchUri = Uri(
       scheme: 'mailto',
       path: 'support@meet9ja.com',
       queryParameters: {
         'subject': 'Withdrawal Request - ${widget.userProfile.name}',
-        'body': 'Hello Support,\n\nI would like to withdraw my diamonds.\n\nUser ID: ${widget.userProfile.uid}\nCurrent Diamonds: ${UserService.getCoinBalance(widget.userProfile)}\n\nPlease process my withdrawal.',
+        'body': 'Hello Support,\n\nI would like to withdraw my earnings.\n\nUser ID: ${widget.userProfile.uid}\nAvailable Coins: $coinBalance\nTotal Earnings: ₦${totalEarnings.toStringAsFixed(2)}\n\nPlease process my withdrawal.',
       },
     );
 
     launchUrl(emailLaunchUri, mode: LaunchMode.externalApplication);
   }
 
-  Widget _coinPackageCard(Map<String, dynamic> package) {
+  void _viewTransactionHistory() {
+    // Navigate to transaction history screen
+    // Navigator.push(
+    //   context,
+    //   MaterialPageRoute(builder: (_) => TransactionHistoryScreen()),
+    // );
+  }
+
+  Widget _diamondPackageCard(Map<String, dynamic> package) {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(
@@ -3059,7 +3066,7 @@ class _WalletTabState extends State<_WalletTab> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [AppColors.primary.withOpacity(0.1), Colors.white],
+            colors: [Colors.blue.withOpacity(0.1), Colors.white],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -3069,7 +3076,7 @@ class _WalletTabState extends State<_WalletTab> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              '${package['coins']}',
+              '${package['diamonds']}',
               style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
@@ -3077,8 +3084,8 @@ class _WalletTabState extends State<_WalletTab> {
               ),
             ),
             const SizedBox(height: 4),
-            const Icon(FontAwesomeIcons.solidGem,
-                color: AppColors.primary, size: 20),
+            const Icon(FontAwesomeIcons.diamond,
+                color: Colors.blue, size: 20),
             const SizedBox(height: 8),
             Text(
               '\$${package['price']}',
@@ -3102,9 +3109,9 @@ class _WalletTabState extends State<_WalletTab> {
             ElevatedButton(
               onPressed: _isLoading
                   ? null
-                  : () => _purchaseCoins(package['coins'], package['price']),
+                  : () => _purchaseDiamonds(package['diamonds'], package['price']),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
+                backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 shape: RoundedRectangleBorder(
@@ -3136,6 +3143,7 @@ class _WalletTabState extends State<_WalletTab> {
 
   @override
   Widget build(BuildContext context) {
+    final diamondBalance = UserService.getDiamondBalance(widget.userProfile);
     final coinBalance = UserService.getCoinBalance(widget.userProfile);
     final totalEarnings = UserService.getTotalEarnings(widget.userProfile);
 
@@ -3144,7 +3152,7 @@ class _WalletTabState extends State<_WalletTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Current Balance Section
+          // Balance Overview Section
           Card(
             elevation: 4,
             shape: RoundedRectangleBorder(
@@ -3155,7 +3163,7 @@ class _WalletTabState extends State<_WalletTab> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [AppColors.primary, Colors.purple],
+                  colors: [Colors.blue, Colors.purple],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -3164,29 +3172,58 @@ class _WalletTabState extends State<_WalletTab> {
               child: Column(
                 children: [
                   const Text(
-                    'Current Balance',
+                    'Wallet Balance',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '$coinBalance 💎',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 36,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  const SizedBox(height: 16),
+
+                  // Diamonds Balance
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _BalanceItem(
+                        label: 'Diamonds',
+                        value: '$diamondBalance 💎',
+                        subtitle: 'Purchased',
+                        color: Colors.white,
+                      ),
+                      _BalanceItem(
+                        label: 'Coins',
+                        value: '$coinBalance 🪙',
+                        subtitle: 'Earned',
+                        color: Colors.white,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '≈ \$${(coinBalance / 10).toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+
+                  const SizedBox(height: 16),
+
+                  // Total Earnings
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(FontAwesomeIcons.sackDollar,
+                            color: Colors.white, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Total Earnings: ₦${totalEarnings.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -3213,15 +3250,15 @@ class _WalletTabState extends State<_WalletTab> {
           ),
           const SizedBox(height: 16),
 
-          // Coin Packages Grid
+          // Diamond Packages Grid
           SizedBox(
             height: 200,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              children: _coinPackages.map((package) {
+              children: _diamondPackages.map((package) {
                 return Padding(
                   padding: const EdgeInsets.only(right: 12),
-                  child: _coinPackageCard(package),
+                  child: _diamondPackageCard(package),
                 );
               }).toList(),
             ),
@@ -3239,16 +3276,83 @@ class _WalletTabState extends State<_WalletTab> {
           const SizedBox(height: 12),
 
           _walletTile(
+            title: "Diamonds Balance",
+            value: "$diamondBalance 💎",
+            subtitle: "Purchased currency for sending gifts",
+            icon: FontAwesomeIcons.diamond,
+            iconColor: Colors.blue,
+          ),
+
+          _walletTile(
+            title: "Coins Balance",
+            value: "$coinBalance 🪙",
+            subtitle: "Earned from gifts received",
+            icon: FontAwesomeIcons.coins,
+            iconColor: Colors.amber,
+          ),
+
+          _walletTile(
             title: "Total Earnings",
-            value: "\$$totalEarnings",
+            value: "₦${totalEarnings.toStringAsFixed(2)}",
+            subtitle: "Available for withdrawal",
             icon: FontAwesomeIcons.sackDollar,
             iconColor: Colors.green,
           ),
+
           _walletTile(
             title: "Withdraw Funds",
             value: "Cash Out",
+            subtitle: "Withdraw your coin earnings",
             icon: FontAwesomeIcons.moneyBillTransfer,
             onTap: _withdrawFunds,
+          ),
+
+          _walletTile(
+            title: "Transaction History",
+            value: "View All",
+            subtitle: "See your purchase and earning history",
+            icon: FontAwesomeIcons.clockRotateLeft,
+            onTap: _viewTransactionHistory,
+          ),
+
+          // Info Section
+          Container(
+            margin: const EdgeInsets.only(top: 20),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '💡 How it works:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _InfoBullet(
+                  icon: '💎',
+                  text: 'Diamonds: Purchased currency for sending gifts',
+                ),
+                _InfoBullet(
+                  icon: '🪙',
+                  text: 'Coins: Earned from gifts received from others',
+                ),
+                _InfoBullet(
+                  icon: '💰',
+                  text: 'Earnings: Only coins can be withdrawn as cash',
+                ),
+                _InfoBullet(
+                  icon: '🎁',
+                  text: 'Send gifts using diamonds, receive coins as earnings',
+                ),
+              ],
+            ),
           ),
 
           // Test Mode Indicator
@@ -3285,6 +3389,7 @@ class _WalletTabState extends State<_WalletTab> {
   Widget _walletTile({
     required String title,
     required String value,
+    required String subtitle,
     required IconData icon,
     Color iconColor = Colors.black87,
     VoidCallback? onTap,
@@ -3302,7 +3407,14 @@ class _WalletTabState extends State<_WalletTab> {
           vertical: 12,
         ),
         leading: Icon(icon, color: iconColor, size: 24),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800)
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(fontSize: 12, color: Colors.black54),
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -3319,6 +3431,82 @@ class _WalletTabState extends State<_WalletTab> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _BalanceItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final String subtitle;
+  final Color color;
+
+  const _BalanceItem({
+    required this.label,
+    required this.value,
+    required this.subtitle,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: color.withOpacity(0.9),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          subtitle,
+          style: TextStyle(
+            color: color.withOpacity(0.7),
+            fontSize: 10,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoBullet extends StatelessWidget {
+  final String icon;
+  final String text;
+
+  const _InfoBullet({
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ),
+        ],
       ),
     );
   }
