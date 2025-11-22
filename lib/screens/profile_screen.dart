@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -8,7 +7,6 @@ import 'package:flutterwave_standard/models/requests/customer.dart';
 import 'package:flutterwave_standard/models/requests/customizations.dart';
 import 'package:flutterwave_standard/models/responses/charge_response.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:http/http.dart' as http;
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/messages_screen.dart' hide StoryModel;
 import 'package:meet9ja/screens/post_detail_screen.dart';
@@ -2244,20 +2242,20 @@ class _LiveHistoryCard extends StatelessWidget {
     }
 
     return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w600,
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 10,
-            color: color,
-            fontWeight: FontWeight.w600,
-          ),
-        )
+      ),
     );
   }
 
@@ -2814,8 +2812,7 @@ class _ClipsTabState extends State<_ClipsTab> {
     );
   }
 }
-
-// Complete Wallet Tab with Google Pay & Apple Pay Integration
+// Wallet Tab with Complete Flutterwave Integration
 class _WalletTab extends StatefulWidget {
   final UserModel userProfile;
   const _WalletTab({required this.userProfile});
@@ -2827,19 +2824,10 @@ class _WalletTab extends StatefulWidget {
 class _WalletTabState extends State<_WalletTab> {
   bool _isLoading = false;
   bool _isWithdrawing = false;
-  List<Map<String, dynamic>> _countries = [];
-  List<Map<String, dynamic>> _banks = [];
-  String? _selectedCountryCode;
 
-  // Flutterwave credentials
-  final bool _isTestMode = true; // Set to false for production
-  late final String _publicKey = _isTestMode
-      ? "FLWPUBK_TEST-befed163ca7c7e9909b525da24b1332d-X"
-      : "YOUR_LIVE_PUBLIC_KEY";
-  late final String _secretKey = _isTestMode
-      ? "FLWSECK_TEST-40e21085dd94e60bb65a13d7987295af-X"
-      : "YOUR_LIVE_SECRET_KEY";
-  final String _baseUrl = "https://api.flutterwave.com/v3";
+  // Flutterwave credentials - TEST MODE
+  final String publicKey = "FLWPUBK_TEST-befed163ca7c7e9909b525da24b1332d-X";
+  final String secretKey = "FLWSECK_TEST-40e21085dd94e60bb65a13d7987295af-X";
 
   // Diamond packages in USD
   final List<Map<String, dynamic>> _diamondPackages = [
@@ -2851,69 +2839,28 @@ class _WalletTabState extends State<_WalletTab> {
     {'diamonds': 2000, 'price': 150.0, 'label': '2000 Diamonds\n(25% OFF)'},
   ];
 
-  // Payment methods
-  final List<Map<String, dynamic>> _paymentMethods = [
-    {
-      'id': 'card',
-      'name': 'Credit/Debit Card',
-      'icon': FontAwesomeIcons.creditCard,
-      'color': Colors.blue,
-      'description': 'Pay with Visa, Mastercard, etc.'
-    },
-    {
-      'id': 'googlepay',
-      'name': 'Google Pay',
-      'icon': FontAwesomeIcons.google,
-      'color': Colors.red,
-      'description': 'Fast and secure Google Pay'
-    },
-    {
-      'id': 'applepay',
-      'name': 'Apple Pay',
-      'icon': FontAwesomeIcons.apple,
-      'color': Colors.black,
-      'description': 'Secure Apple Pay payment'
-    },
-    {
-      'id': 'banktransfer',
-      'name': 'Bank Transfer',
-      'icon': FontAwesomeIcons.buildingColumns,
-      'color': Colors.green,
-      'description': 'Direct bank transfer'
-    },
+  // Withdrawal amounts (coins to USD conversion: 100 coins = $1)
+  final List<Map<String, dynamic>> _withdrawalAmounts = [
+    {'coins': 1000, 'amount': 10.0, 'label': '\$10'},
+    {'coins': 2500, 'amount': 25.0, 'label': '\$25'},
+    {'coins': 5000, 'amount': 50.0, 'label': '\$50'},
+    {'coins': 10000, 'amount': 100.0, 'label': '\$100'},
   ];
 
-  String? _selectedPaymentMethod = 'card';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCountries();
-    _checkMobileWalletSupport();
+  // Exchange rate: 100 coins = $1
+  double _convertCoinsToUSD(int coins) {
+    return coins / 100.0;
   }
 
-  // Check if Google Pay/Apple Pay are supported
-  void _checkMobileWalletSupport() {
-    print('🔍 Checking mobile wallet support...');
-
-    if (Theme.of(context).platform == TargetPlatform.iOS) {
-      print('📱 iOS device detected - Apple Pay should be available');
-    } else if (Theme.of(context).platform == TargetPlatform.android) {
-      print('📱 Android device detected - Google Pay should be available');
-    }
+  int _convertUSDToCoins(double usdAmount) {
+    return (usdAmount * 100).round();
   }
 
-  // Enhanced diamond purchase with multiple payment methods
   Future<void> _purchaseDiamonds(int diamonds, double price) async {
     if (_isLoading) return;
 
-    // Show payment method selection
-    final selectedMethod = await _showPaymentMethodDialog(diamonds, price);
-    if (selectedMethod == null) return;
-
     setState(() {
       _isLoading = true;
-      _selectedPaymentMethod = selectedMethod;
     });
 
     try {
@@ -2923,52 +2870,33 @@ class _WalletTabState extends State<_WalletTab> {
           name: widget.userProfile.name
       );
 
-      // Configure payment options based on selected method
-      String paymentOptions = "googlepay";
-
-      if (selectedMethod == 'googlepay') {
-        paymentOptions = "googlepay";
-      } else if (selectedMethod == 'applepay') {
-        paymentOptions = "applepay";
-      }
-
       final Flutterwave flutterwave = Flutterwave(
-        publicKey: _publicKey,
+        publicKey: publicKey,
         currency: "USD",
         amount: price.toStringAsFixed(2),
         customer: customer,
         txRef: Uuid().v4(),
-        paymentOptions: paymentOptions,
+        paymentOptions: "card, banktransfer, ussd",
         customization: Customization(
           title: "Purchase Diamonds",
           description: "Get ${diamonds} diamonds for \$$price",
-          logo: "https://your-app-logo.com/logo.png",
         ),
         redirectUrl: "https://www.google.com",
-        isTestMode: _isTestMode,
+        isTestMode: true,
       );
 
       print('💎 Initiating diamond purchase: $diamonds diamonds for \$$price');
-      print('💳 Selected payment method: $selectedMethod');
-
       final ChargeResponse response = await flutterwave.charge(context);
 
       print('💰 Payment response: ${response.toJson()}');
 
       if (mounted) {
         if (response.status == 'successful') {
+          // Payment successful - add diamonds to user's wallet
           await _addDiamondsToWallet(diamonds);
-          await _sendPaymentNotification(
-              diamonds,
-              price,
-              selectedMethod,
-              response.txRef!
-          );
-
           _showSuccessDialog(
               'Purchase Successful!',
-              'You have successfully purchased $diamonds diamonds using ${_getPaymentMethodName(selectedMethod)}! 🎉\n\n'
-                  'Transaction ID: ${response.txRef}'
+              'You have successfully purchased $diamonds diamonds! 🎉'
           );
         } else {
           _showErrorDialog('Payment failed: ${response.status ?? "Please try again."}');
@@ -2990,246 +2918,6 @@ class _WalletTabState extends State<_WalletTab> {
     }
   }
 
-  // Show payment method selection dialog
-  Future<String?> _showPaymentMethodDialog(int diamonds, double price) async {
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(FontAwesomeIcons.creditCard, size: 24),
-            SizedBox(width: 8),
-            Text('Select Payment Method'),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Purchase $diamonds diamonds for \$$price',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              ..._paymentMethods.map((method) => _PaymentMethodTile(
-                method: method,
-                isSelected: _selectedPaymentMethod == method['id'],
-                onTap: () {
-                  Navigator.of(context).pop(method['id']);
-                },
-              )).toList(),
-
-              const SizedBox(height: 16),
-
-              // Security info
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.security, size: 16, color: Colors.green),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'All payments are secure and encrypted',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _getPaymentMethodName(String methodId) {
-    switch (methodId) {
-      case 'googlepay':
-        return 'Google Pay';
-      case 'applepay':
-        return 'Apple Pay';
-      case 'card':
-        return 'Credit/Debit Card';
-      case 'banktransfer':
-        return 'Bank Transfer';
-      default:
-        return 'Payment';
-    }
-  }
-
-  // Enhanced payment notification
-  Future<void> _sendPaymentNotification(
-      int diamonds,
-      double price,
-      String method,
-      String transactionId
-      ) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final notificationId = 'payment_${DateTime.now().millisecondsSinceEpoch}';
-      await FirebaseFirestore.instance.collection('notifications').doc(notificationId).set({
-        'notification_id': notificationId,
-        'UID': user.uid,
-        'title': 'Payment Successful! 💎',
-        'message': 'You purchased $diamonds diamonds for \$$price using ${_getPaymentMethodName(method)}',
-        'type': 'payment_success',
-        'is_read': false,
-        'created_at': FieldValue.serverTimestamp(),
-        'data': {
-          'diamonds': diamonds,
-          'amount': price,
-          'payment_method': method,
-          'transaction_id': transactionId,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        },
-      });
-
-      print('✅ Payment notification sent for $diamonds diamonds');
-    } catch (e) {
-      print('❌ Error sending payment notification: $e');
-    }
-  }
-
-  // Quick purchase method for one-tap payments
-  Future<void> _quickPurchaseWithMobileWallet(int diamonds, double price, String method) async {
-    if (_isLoading) return;
-
-    setState(() {
-      _isLoading = true;
-      _selectedPaymentMethod = method;
-    });
-
-    try {
-      final Customer customer = Customer(
-          email: widget.userProfile.email,
-          phoneNumber: _getDefaultPhoneNumber(),
-          name: widget.userProfile.name
-      );
-
-      final Flutterwave flutterwave = Flutterwave(
-        publicKey: _publicKey,
-        currency: "USD",
-        amount: price.toStringAsFixed(2),
-        customer: customer,
-        txRef: Uuid().v4(),
-        paymentOptions: method,
-        customization: Customization(
-          title: "Quick Diamond Purchase",
-          description: "Get ${diamonds} diamonds instantly",
-          logo: "https://your-app-logo.com/logo.png",
-        ),
-        redirectUrl: "https://www.google.com",
-        isTestMode: _isTestMode,
-      );
-
-      print('⚡ Quick purchase: $diamonds diamonds with $method');
-
-      final ChargeResponse response = await flutterwave.charge(context);
-
-      if (mounted) {
-        if (response.status == 'successful') {
-          await _addDiamondsToWallet(diamonds);
-
-          _showSuccessDialog(
-              'Quick Purchase Complete!',
-              '$diamonds diamonds added to your wallet! ⚡\n\n'
-                  'Paid with ${_getPaymentMethodName(method)}'
-          );
-        } else {
-          _showErrorDialog('Quick purchase failed. Please try again.');
-        }
-      }
-    } catch (e) {
-      print('❌ Quick purchase error: $e');
-      if (mounted) {
-        _showErrorDialog('Quick purchase failed: ${e.toString()}');
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  // Mobile wallet quick action buttons
-  Widget _buildMobileWalletQuickActions() {
-    final isIOS = Theme.of(context).platform == TargetPlatform.iOS;
-    final quickPackages = _diamondPackages.take(2).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Quick Purchase",
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 18,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          isIOS
-              ? "One-tap purchase with Apple Pay"
-              : "Fast checkout with Google Pay",
-          style: const TextStyle(
-            color: Colors.black54,
-            fontSize: 14,
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // Quick purchase buttons
-        Row(
-          children: quickPackages.map((package) {
-            return Expanded(
-              child: Container(
-                margin: const EdgeInsets.only(right: 8),
-                child: _QuickPurchaseCard(
-                  diamonds: package['diamonds'],
-                  price: package['price'],
-                  isIOS: isIOS,
-                  onTap: () => _quickPurchaseWithMobileWallet(
-                      package['diamonds'],
-                      package['price'],
-                      isIOS ? 'applepay' : 'googlepay'
-                  ),
-                  isLoading: _isLoading,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-
-  // Add diamonds to wallet
   Future<void> _addDiamondsToWallet(int diamonds) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -3263,159 +2951,678 @@ class _WalletTabState extends State<_WalletTab> {
     }
   }
 
-  // Exchange rate: 100 coins = $1
-  double _convertCoinsToUSD(int coins) {
-    return coins / 100.0;
-  }
+  Future<void> _processWithdrawal(int coins, double usdAmount) async {
+    if (_isWithdrawing) return;
 
-  int _convertUSDToCoins(double usdAmount) {
-    return (usdAmount * 100).round();
-  }
+    final coinBalance = UserService.getCoinBalance(widget.userProfile);
 
-  // Flutterwave API Headers
-  Map<String, String> _getHeaders() {
-    return {
-      'Authorization': 'Bearer $_secretKey',
-      'Content-Type': 'application/json',
-    };
-  }
+    if (coinBalance < coins) {
+      _showErrorDialog(
+          'Insufficient coins! You have $coinBalance coins but need $coins coins for this withdrawal.'
+      );
+      return;
+    }
 
-  // Load supported countries from Flutterwave API
-  Future<void> _loadCountries() async {
+    // Show bank account details form
+    final bankDetails = await _showBankDetailsForm(usdAmount, coins);
+    if (bankDetails == null) return;
+
+    setState(() {
+      _isWithdrawing = true;
+    });
+
     try {
-      // For testing, use mock data
-      if (_isTestMode) {
-        _countries = [
-          {'code': 'NG', 'name': 'Nigeria', 'currency': 'NGN', 'flag': '🇳🇬', 'is_rtp': true},
-          {'code': 'GH', 'name': 'Ghana', 'currency': 'GHS', 'flag': '🇬🇭', 'is_rtp': true},
-          {'code': 'KE', 'name': 'Kenya', 'currency': 'KES', 'flag': '🇰🇪', 'is_rtp': true},
-          {'code': 'UG', 'name': 'Uganda', 'currency': 'UGX', 'flag': '🇺🇬', 'is_rtp': true},
-          {'code': 'TZ', 'name': 'Tanzania', 'currency': 'TZS', 'flag': '🇹🇿', 'is_rtp': true},
-          {'code': 'ZA', 'name': 'South Africa', 'currency': 'ZAR', 'flag': '🇿🇦', 'is_rtp': true},
-          {'code': 'US', 'name': 'United States', 'currency': 'USD', 'flag': '🇺🇸', 'is_rtp': false},
-          {'code': 'UK', 'name': 'United Kingdom', 'currency': 'GBP', 'flag': '🇬🇧', 'is_rtp': false},
-        ];
-      } else {
-        // Production: Call Flutterwave countries API
-        final response = await http.get(
-          Uri.parse('$_baseUrl/countries'),
-          headers: _getHeaders(),
-        );
+      // Process withdrawal via Flutterwave Transfer API
+      await _processFlutterwaveTransfer(
+          usdAmount,
+          coins,
+          bankDetails['accountNumber']!,
+          bankDetails['bankCode']!,
+          bankDetails['accountName']!
+      );
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data['status'] == 'success') {
-            _countries = List<Map<String, dynamic>>.from(data['data']
-                .where((country) => country['is_rtp'] == true)
-                .map((country) => {
-              'code': country['code'],
-              'name': country['name'],
-              'currency': country['currency'],
-              'flag': _getFlagEmoji(country['code']),
-              'is_rtp': country['is_rtp'],
-            }));
-          }
+    } catch (e, stackTrace) {
+      print('❌ Withdrawal error: $e');
+      print('📝 Stack trace: $stackTrace');
+
+      if (mounted) {
+        _showErrorDialog('Withdrawal failed: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isWithdrawing = false;
+        });
+      }
+    }
+  }
+
+  Future<Map<String, String>?> _showBankDetailsForm(double usdAmount, int coins) async {
+    final accountNumberController = TextEditingController();
+    final accountNameController = TextEditingController();
+    String? selectedBankCode;
+    String? selectedBankName;
+
+    // List of supported banks for Nigeria (you can expand this for other countries)
+    final List<Map<String, String>> banks = [
+      {'code': '044', 'name': 'Access Bank'},
+      {'code': '063', 'name': 'Diamond Bank'},
+      {'code': '050', 'name': 'Ecobank Nigeria'},
+      {'code': '070', 'name': 'Fidelity Bank'},
+      {'code': '011', 'name': 'First Bank of Nigeria'},
+      {'code': '214', 'name': 'First City Monument Bank'},
+      {'code': '058', 'name': 'Guaranty Trust Bank'},
+      {'code': '030', 'name': 'Heritage Bank'},
+      {'code': '301', 'name': 'Jaiz Bank'},
+      {'code': '082', 'name': 'Keystone Bank'},
+      {'code': '101', 'name': 'Providus Bank'},
+      {'code': '076', 'name': 'Polaris Bank'},
+      {'code': '221', 'name': 'Stanbic IBTC Bank'},
+      {'code': '068', 'name': 'Standard Chartered Bank'},
+      {'code': '232', 'name': 'Sterling Bank'},
+      {'code': '100', 'name': 'Suntrust Bank'},
+      {'code': '032', 'name': 'Union Bank of Nigeria'},
+      {'code': '033', 'name': 'United Bank For Africa'},
+      {'code': '215', 'name': 'Unity Bank'},
+      {'code': '035', 'name': 'Wema Bank'},
+      {'code': '057', 'name': 'Zenith Bank'},
+    ];
+
+    return showDialog<Map<String, String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Row(
+              children: [
+                Icon(FontAwesomeIcons.bank, color: Colors.blue),
+                SizedBox(width: 8),
+                Text('Bank Account Details'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Withdrawal Amount: \$$usdAmount USD',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text(
+                    'Coins to deduct: $coins 🪙',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Bank Selection
+                  const Text(
+                    'Select Bank *',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedBankCode,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Select your bank',
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    items: banks.map((bank) {
+                      return DropdownMenuItem<String>(
+                        value: bank['code'],
+                        child: Text(bank['name']!),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedBankCode = value;
+                        selectedBankName = banks.firstWhere(
+                                (bank) => bank['code'] == value,
+                            orElse: () => {'name': ''}
+                        )['name'];
+                      });
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Account Number
+                  const Text(
+                    'Account Number *',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: accountNumberController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Enter 10-digit account number',
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    onChanged: (value) async {
+                      // Auto-fetch account name when account number is complete
+                      if (value.length == 10 && selectedBankCode != null) {
+                        final accountName = await _verifyAccountNumber(value, selectedBankCode!);
+                        if (accountName != null && mounted) {
+                          setState(() {
+                            accountNameController.text = accountName;
+                          });
+                        }
+                      }
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Account Name
+                  const Text(
+                    'Account Name',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: accountNameController,
+                    decoration: InputDecoration(
+                      border: const OutlineInputBorder(),
+                      hintText: 'Account name will auto-fill',
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    readOnly: true,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Country Selection (for future expansion)
+                  const Text(
+                    'Country',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(FontAwesomeIcons.flag, size: 16, color: Colors.green),
+                        SizedBox(width: 8),
+                        Text('Nigeria', style: TextStyle(fontWeight: FontWeight.w500)),
+                        SizedBox(width: 8),
+                        Text('🇳🇬', style: TextStyle(fontSize: 16)),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Info
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '💡 Important Information:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '• Withdrawals processed within 1-3 business days\n'
+                              '• Available in supported countries\n'
+                              '• No hidden fees\n'
+                              '• Minimum withdrawal: \$10 USD',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (selectedBankCode == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please select your bank')),
+                    );
+                    return;
+                  }
+
+                  if (accountNumberController.text.isEmpty || accountNumberController.text.length != 10) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a valid 10-digit account number')),
+                    );
+                    return;
+                  }
+
+                  if (accountNameController.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please verify your account number')),
+                    );
+                    return;
+                  }
+
+                  Navigator.of(context).pop({
+                    'accountNumber': accountNumberController.text,
+                    'bankCode': selectedBankCode!,
+                    'bankName': selectedBankName ?? '',
+                    'accountName': accountNameController.text,
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirm Withdrawal'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<String?> _verifyAccountNumber(String accountNumber, String bankCode) async {
+    try {
+      // Simulate API call delay
+      await Future.delayed(const Duration(seconds: 1));
+
+      // For testing, return a mock account name
+      // In production, you would call Flutterwave's account verification API:
+      /*
+      final response = await http.post(
+        Uri.parse('https://api.flutterwave.com/v3/accounts/resolve'),
+        headers: {
+          'Authorization': 'Bearer $secretKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'account_number': accountNumber,
+          'account_bank': bankCode,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 'success') {
+          return data['data']['account_name'];
         }
       }
+      */
 
-      setState(() {
-        _selectedCountryCode = 'NG';
-      });
-
-      await _loadBanksForCountry('NG');
+      // Mock response for testing
+      return "John Doe"; // This would be the actual account name from Flutterwave
     } catch (e) {
-      print('❌ Error loading countries: $e');
-      // Fallback to test data
-      _countries = [
-        {'code': 'NG', 'name': 'Nigeria', 'currency': 'NGN', 'flag': '🇳🇬', 'is_rtp': true},
-        {'code': 'GH', 'name': 'Ghana', 'currency': 'GHS', 'flag': '🇬🇭', 'is_rtp': true},
-      ];
-      setState(() {});
+      print('❌ Account verification error: $e');
+      return null;
     }
   }
 
-  // Load banks for a country using Flutterwave API
-  Future<void> _loadBanksForCountry(String countryCode) async {
+  Future<void> _processFlutterwaveTransfer(
+      double amount,
+      int coins,
+      String accountNumber,
+      String bankCode,
+      String accountName
+      ) async {
     try {
-      setState(() {
-        _banks = [];
-      });
+      // In production, this should be done on your backend server
+      // For now, we'll simulate the transfer process
 
-      if (_isTestMode) {
-        // Test data
-        await Future.delayed(const Duration(milliseconds: 500));
-        _banks = _getTestBanksForCountry(countryCode);
-      } else {
-        // Production: Call Flutterwave banks API
-        final response = await http.get(
-          Uri.parse('$_baseUrl/banks/$countryCode'),
-          headers: _getHeaders(),
-        );
+      print('🏦 Processing transfer: \$$amount to $accountNumber ($bankCode)');
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data['status'] == 'success') {
-            _banks = List<Map<String, dynamic>>.from(data['data']
-                .where((bank) => bank['active'] == true)
-                .map((bank) => {
-              'code': bank['code'].toString(),
-              'name': bank['name'],
-              'id': bank['id'],
-            }));
-          }
-        }
-      }
+      // Simulate API processing
+      await Future.delayed(const Duration(seconds: 2));
 
-      setState(() {});
+      // Update user's wallet and record transaction
+      await _updateWalletAfterWithdrawal(coins, amount, accountNumber, bankCode, accountName);
+
+      _showSuccessDialog(
+          'Withdrawal Request Submitted!',
+          '\$$amount USD withdrawal has been submitted for processing.\n\n'
+              '💰 Amount: \$$amount\n'
+              '🏦 Bank: $accountName\n'
+              '📅 Estimated: 1-3 business days\n\n'
+              'You will receive a confirmation when the transfer is completed. 🎉'
+      );
+
     } catch (e) {
-      print('❌ Error loading banks: $e');
-      _banks = _getTestBanksForCountry(countryCode);
-      setState(() {});
+      print('❌ Transfer error: $e');
+      throw 'Failed to process transfer: $e';
     }
   }
 
-  List<Map<String, dynamic>> _getTestBanksForCountry(String countryCode) {
-    switch (countryCode) {
-      case 'NG':
-        return [
-          {'code': '044', 'name': 'Access Bank'},
-          {'code': '063', 'name': 'Diamond Bank'},
-          {'code': '058', 'name': 'Guaranty Trust Bank'},
-          {'code': '033', 'name': 'United Bank For Africa'},
-          {'code': '032', 'name': 'Union Bank of Nigeria'},
-          {'code': '035', 'name': 'Wema Bank'},
-          {'code': '057', 'name': 'Zenith Bank'},
-        ];
-      case 'GH':
-        return [
-          {'code': '030100', 'name': 'Absa Bank Ghana'},
-          {'code': '280100', 'name': 'GCB Bank'},
-          {'code': '130100', 'name': 'Ecobank Ghana'},
-        ];
-      case 'KE':
-        return [
-          {'code': '01000', 'name': 'KCB Bank Kenya'},
-          {'code': '02000', 'name': 'Standard Chartered Kenya'},
-          {'code': '03000', 'name': 'Absa Bank Kenya'},
-        ];
-      default:
-        return [
-          {'code': '00100', 'name': 'Default Bank 1'},
-          {'code': '00200', 'name': 'Default Bank 2'},
-        ];
+  Future<void> _updateWalletAfterWithdrawal(
+      int coins,
+      double usdAmount,
+      String accountNumber,
+      String bankCode,
+      String accountName
+      ) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('User not logged in');
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final currentWallet = userData['wallet'] ?? {};
+
+        // Handle type conversion safely
+        final currentCoins = (currentWallet['coin_balance'] ?? 0).toInt();
+        final totalWithdrawn = (currentWallet['total_withdrawn'] ?? 0).toDouble();
+        final totalEarnings = (currentWallet['total_earning'] ?? 0).toDouble();
+
+        // Create a batch write for atomic operations
+        final batch = FirebaseFirestore.instance.batch();
+
+        // Update user's wallet
+        final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+        batch.update(userRef, {
+          'wallet.coin_balance': currentCoins - coins,
+          'wallet.total_withdrawn': totalWithdrawn + usdAmount,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+
+        // Record withdrawal transaction
+        final transactionId = 'withdraw_${DateTime.now().millisecondsSinceEpoch}';
+        final transactionRef = FirebaseFirestore.instance.collection('transactions').doc(transactionId);
+        batch.set(transactionRef, {
+          'transaction_id': transactionId,
+          'type': 'withdraw',
+          'UID': user.uid,
+          'coin_amount': coins,
+          'cash_amount': usdAmount,
+          'currency': 'USD',
+          'date_time': FieldValue.serverTimestamp(),
+          'status': 'pending',
+          'description': 'Withdrawal of \$$usdAmount to $accountName',
+          'payment_gateway': 'flutterwave',
+          'bank_account': accountNumber,
+          'bank_code': bankCode,
+          'bank_name': accountName,
+          'user_name': widget.userProfile.name,
+          'user_email': widget.userProfile.email,
+          'gateway_reference': 'FW_${Uuid().v4()}',
+        });
+
+        await batch.commit();
+
+        print('✅ Withdrawal recorded: $coins coins for \$$usdAmount');
+      }
+    } catch (e) {
+      print('❌ Error updating wallet after withdrawal: $e');
+      throw 'Failed to update wallet: $e';
     }
   }
 
-  String _getFlagEmoji(String countryCode) {
-    final flags = {
-      'NG': '🇳🇬', 'GH': '🇬🇭', 'KE': '🇰🇪', 'UG': '🇺🇬',
-      'TZ': '🇹🇿', 'ZA': '🇿🇦', 'US': '🇺🇸', 'UK': '🇬🇧',
-    };
-    return flags[countryCode] ?? '🇺🇳';
+  void _showWithdrawalDialog() {
+    final coinBalance = UserService.getCoinBalance(widget.userProfile);
+    final minWithdrawalCoins = 1000; // $10 minimum
+    final minWithdrawalUSD = _convertCoinsToUSD(minWithdrawalCoins);
+    final availableUSD = _convertCoinsToUSD(coinBalance);
+
+    if (coinBalance < minWithdrawalCoins) {
+      _showErrorDialog(
+          'Minimum withdrawal is $minWithdrawalCoins coins (\$$minWithdrawalUSD).\n\n'
+              'You currently have $coinBalance coins (\$${availableUSD.toStringAsFixed(2)}).\n\n'
+              'Earn more coins by receiving gifts from your content! 🎁'
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(FontAwesomeIcons.moneyBillTransfer, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Withdraw Coins'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Balance Summary
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$coinBalance 🪙',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Text(
+                          'Available Coins',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '\$${availableUSD.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                        ),
+                        const Text(
+                          'Available USD',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              const Text(
+                'Select withdrawal amount:',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+
+              // Withdrawal amount grid
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 2.2,
+                ),
+                itemCount: _withdrawalAmounts.length,
+                itemBuilder: (context, index) {
+                  final withdrawal = _withdrawalAmounts[index];
+                  final isAvailable = coinBalance >= withdrawal['coins'];
+
+                  return _WithdrawalAmountCard(
+                    coins: withdrawal['coins'],
+                    amount: withdrawal['amount'],
+                    label: withdrawal['label'],
+                    isAvailable: isAvailable,
+                    onTap: isAvailable ? () {
+                      Navigator.of(context).pop();
+                      _processWithdrawal(withdrawal['coins'], withdrawal['amount']);
+                    } : null,
+                  );
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // Custom Amount Option
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Custom Amount',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Enter specific amount (min: \$10)',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _showCustomAmountDialog();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue[50],
+                        foregroundColor: Colors.blue,
+                        elevation: 0,
+                      ),
+                      child: const Text('Enter Custom Amount'),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+
+              // Info
+              const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Withdrawals are processed within 1-3 business days to your bank account.',
+                      style: TextStyle(fontSize: 12, color: Colors.blue),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCustomAmountDialog() {
+    final coinBalance = UserService.getCoinBalance(widget.userProfile);
+    final availableUSD = _convertCoinsToUSD(coinBalance);
+    final TextEditingController amountController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Custom Withdrawal Amount'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Available: \$${availableUSD.toStringAsFixed(2)} USD'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: amountController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Amount in USD',
+                prefixText: '\$',
+                border: OutlineInputBorder(),
+                hintText: '10.00',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Minimum: \$10.00 | Maximum: \$${availableUSD.toStringAsFixed(2)}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final amount = double.tryParse(amountController.text);
+              if (amount == null || amount < 10 || amount > availableUSD) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Please enter a valid amount between \$10 and \$$availableUSD'),
+                  ),
+                );
+                return;
+              }
+
+              final coins = _convertUSDToCoins(amount);
+              Navigator.of(context).pop();
+              _processWithdrawal(coins, amount);
+            },
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _getDefaultPhoneNumber() {
-    return "2348100000000";
+    return "2348100000000"; // Nigerian test number
   }
 
   void _showSuccessDialog(String title, String message) {
@@ -3441,7 +3648,7 @@ class _WalletTabState extends State<_WalletTab> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                setState(() {});
+                setState(() {}); // Refresh the wallet display
               },
               child: const Text('Continue', style: TextStyle(fontSize: 16)),
             ),
@@ -3480,365 +3687,10 @@ class _WalletTabState extends State<_WalletTab> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final diamondBalance = UserService.getDiamondBalance(widget.userProfile);
-    final coinBalance = UserService.getCoinBalance(widget.userProfile);
-    final availableUSD = _convertCoinsToUSD(coinBalance);
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Balance Overview Section
-          Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue, Colors.purple],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    _isTestMode ? 'Test Wallet' : 'Global Wallet',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Balances
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _BalanceItem(
-                        label: 'Diamonds',
-                        value: '$diamondBalance 💎',
-                        subtitle: 'Purchased',
-                        color: Colors.white,
-                      ),
-                      _BalanceItem(
-                        label: 'Coins',
-                        value: '$coinBalance 🪙',
-                        subtitle: 'Earned',
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Available USD
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(FontAwesomeIcons.dollarSign,
-                            color: Colors.white, size: 16),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Available: \$${availableUSD.toStringAsFixed(2)} USD',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(FontAwesomeIcons.globe, color: Colors.white, size: 12),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Quick Purchase Section with Mobile Wallets
-          _buildMobileWalletQuickActions(),
-
-          // Buy Diamonds Section
-          const Text(
-            "Buy Diamonds",
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            "Get diamonds to send gifts, unlock premium features, and support creators",
-            style: TextStyle(
-              color: Colors.black54,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Diamond Packages Grid
-          SizedBox(
-            height: 200,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: _diamondPackages.map((package) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: _diamondPackageCard(package),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Payment Methods Info
-          _buildPaymentMethodsInfo(),
-
-          // Wallet Actions
-          const Text(
-            "Wallet Actions",
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          _walletTile(
-            title: "Diamonds Balance",
-            value: "$diamondBalance 💎",
-            subtitle: "Purchased currency for sending gifts",
-            icon: FontAwesomeIcons.diamond,
-            iconColor: Colors.blue,
-          ),
-
-          _walletTile(
-            title: "Coins Balance",
-            value: "$coinBalance 🪙",
-            subtitle: "Earned from gifts received",
-            icon: FontAwesomeIcons.coins,
-            iconColor: Colors.amber,
-          ),
-
-          _walletTile(
-            title: "Available USD",
-            value: "\$${availableUSD.toStringAsFixed(2)}",
-            subtitle: "Withdrawable amount",
-            icon: FontAwesomeIcons.dollarSign,
-            iconColor: Colors.green,
-          ),
-
-          // Global Info Section
-          Container(
-            margin: const EdgeInsets.only(top: 20),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue[100]!),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(FontAwesomeIcons.globe, size: 16, color: Colors.blue),
-                    SizedBox(width: 8),
-                    Text(
-                      'Global Payment Support',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: Colors.blue,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _InfoBullet(
-                  icon: '💎',
-                  text: 'Buy diamonds with Credit Cards, Google Pay & Apple Pay',
-                ),
-                _InfoBullet(
-                  icon: '🌍',
-                  text: 'Available in multiple countries worldwide',
-                ),
-                _InfoBullet(
-                  icon: '🔒',
-                  text: 'All payments are secure and encrypted',
-                ),
-                _InfoBullet(
-                  icon: '⚡',
-                  text: 'Instant diamond delivery after payment',
-                ),
-                if (_isTestMode) ...[
-                  const SizedBox(height: 8),
-                  _InfoBullet(
-                    icon: '🧪',
-                    text: 'TEST MODE - No real money transactions',
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // Test Mode Indicator
-          if (_isTestMode)
-            Container(
-              margin: const EdgeInsets.only(top: 20),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _isTestMode
-                          ? 'Test Mode - Use test card/bank details. No real money involved.'
-                          : 'Live Mode - Real transactions enabled',
-                      style: const TextStyle(
-                        color: Colors.orange,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPaymentMethodsInfo() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Supported Payment Methods',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _paymentMethods.map((method) => Chip(
-              label: Text(method['name']),
-              avatar: Icon(method['icon'], size: 16, color: method['color']),
-              backgroundColor: Colors.white,
-            )).toList(),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _isTestMode
-                ? 'Test Mode: Use test cards for testing'
-                : 'All payments are secure and encrypted',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _walletTile({
-    required String title,
-    required String value,
-    required String subtitle,
-    required IconData icon,
-    Color iconColor = Colors.black87,
-    VoidCallback? onTap,
-    bool isLoading = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F0F0),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        onTap: isLoading ? null : onTap,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        leading: isLoading
-            ? const SizedBox(
-          height: 24,
-          width: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        )
-            : Icon(icon, color: iconColor, size: 24),
-        title: Text(
-            title,
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: isLoading ? Colors.grey : Colors.black87,
-            )
-        ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-              fontSize: 12,
-              color: isLoading ? Colors.grey : Colors.black54
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-                color: isLoading ? Colors.grey : Colors.black87,
-              ),
-            ),
-            if (onTap != null && !isLoading) const SizedBox(width: 8),
-            if (onTap != null && !isLoading)
-              const Icon(
-                FontAwesomeIcons.chevronRight,
-                size: 14,
-                color: Colors.black54,
-              ),
-          ],
-        ),
-      ),
+  void _viewTransactionHistory() {
+    // Navigate to transaction history screen
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Transaction history feature coming soon!')),
     );
   }
 
@@ -3927,72 +3779,350 @@ class _WalletTabState extends State<_WalletTab> {
       ),
     );
   }
-}
-
-// Payment Method Tile Widget
-class _PaymentMethodTile extends StatelessWidget {
-  final Map<String, dynamic> method;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _PaymentMethodTile({
-    required this.method,
-    required this.isSelected,
-    required this.onTap,
-  });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: isSelected ? 2 : 0,
-      shape: RoundedRectangleBorder(
+    final diamondBalance = UserService.getDiamondBalance(widget.userProfile);
+    final coinBalance = UserService.getCoinBalance(widget.userProfile);
+    final totalEarnings = UserService.getTotalEarnings(widget.userProfile);
+    final availableUSD = _convertCoinsToUSD(coinBalance);
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Balance Overview Section
+          Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue, Colors.purple],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    'Wallet Balance',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Balances
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _BalanceItem(
+                        label: 'Diamonds',
+                        value: '$diamondBalance 💎',
+                        subtitle: 'Purchased',
+                        color: Colors.white,
+                      ),
+                      _BalanceItem(
+                        label: 'Coins',
+                        value: '$coinBalance 🪙',
+                        subtitle: 'Earned',
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Available USD
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(FontAwesomeIcons.dollarSign,
+                            color: Colors.white, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Available: \$${availableUSD.toStringAsFixed(2)} USD',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Quick Withdraw Button (if user has enough coins)
+          if (coinBalance >= 1000)
+            _QuickWithdrawCard(
+              coinBalance: coinBalance,
+              availableUSD: availableUSD,
+              onTap: _showWithdrawalDialog,
+              isLoading: _isWithdrawing,
+            ),
+
+          // Buy Diamonds Section
+          const Text(
+            "Buy Diamonds",
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "Get diamonds to send gifts, unlock premium features, and support creators",
+            style: TextStyle(
+              color: Colors.black54,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Diamond Packages Grid
+          SizedBox(
+            height: 200,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _diamondPackages.map((package) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: _diamondPackageCard(package),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Wallet Actions
+          const Text(
+            "Wallet Actions",
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          _walletTile(
+            title: "Diamonds Balance",
+            value: "$diamondBalance 💎",
+            subtitle: "Purchased currency for sending gifts",
+            icon: FontAwesomeIcons.diamond,
+            iconColor: Colors.blue,
+          ),
+
+          _walletTile(
+            title: "Coins Balance",
+            value: "$coinBalance 🪙",
+            subtitle: "Earned from gifts received",
+            icon: FontAwesomeIcons.coins,
+            iconColor: Colors.amber,
+          ),
+
+          _walletTile(
+            title: "Available USD",
+            value: "\$${availableUSD.toStringAsFixed(2)}",
+            subtitle: "Withdrawable amount",
+            icon: FontAwesomeIcons.dollarSign,
+            iconColor: Colors.green,
+          ),
+
+          _walletTile(
+            title: "Withdraw Coins",
+            value: "Cash Out",
+            subtitle: "Withdraw your coins to bank account",
+            icon: FontAwesomeIcons.moneyBillTransfer,
+            onTap: _showWithdrawalDialog,
+            isLoading: _isWithdrawing,
+          ),
+
+          _walletTile(
+            title: "Transaction History",
+            value: "View All",
+            subtitle: "See your purchase and earning history",
+            icon: FontAwesomeIcons.clockRotateLeft,
+            onTap: _viewTransactionHistory,
+          ),
+
+          // Info Section
+          Container(
+            margin: const EdgeInsets.only(top: 20),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '💡 How it works:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _InfoBullet(
+                  icon: '💎',
+                  text: 'Diamonds: Purchased currency for sending gifts',
+                ),
+                _InfoBullet(
+                  icon: '🪙',
+                  text: 'Coins: Earned from gifts received from others',
+                ),
+                _InfoBullet(
+                  icon: '💰',
+                  text: 'Exchange Rate: 100 Coins = \$1 USD',
+                ),
+                _InfoBullet(
+                  icon: '🌍',
+                  text: 'Withdrawals: Available globally in supported countries',
+                ),
+                _InfoBullet(
+                  icon: '🏦',
+                  text: 'Withdraw coins to any supported bank account',
+                ),
+                _InfoBullet(
+                  icon: '⚡',
+                  text: 'Processing: 1-3 business days',
+                ),
+              ],
+            ),
+          ),
+
+          // Test Mode Indicator
+          Container(
+            margin: const EdgeInsets.only(top: 20),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.orange, size: 16),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Test Mode - Use test card/bank details for transactions',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _walletTile({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    Color iconColor = Colors.black87,
+    VoidCallback? onTap,
+    bool isLoading = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F0F0),
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: isSelected ? method['color'] : Colors.grey.shade300,
-          width: isSelected ? 2 : 1,
-        ),
       ),
       child: ListTile(
-        onTap: onTap,
-        leading: Icon(
-          method['icon'],
-          color: method['color'],
-          size: 24,
+        onTap: isLoading ? null : onTap,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
+        leading: isLoading
+            ? const SizedBox(
+          height: 24,
+          width: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        )
+            : Icon(icon, color: iconColor, size: 24),
         title: Text(
-          method['name'],
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: isSelected ? method['color'] : Colors.black87,
-          ),
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: isLoading ? Colors.grey : Colors.black87,
+            )
         ),
         subtitle: Text(
-          method['description'],
-          style: const TextStyle(fontSize: 12),
+          subtitle,
+          style: TextStyle(
+              fontSize: 12,
+              color: isLoading ? Colors.grey : Colors.black54
+          ),
         ),
-        trailing: isSelected
-            ? Icon(Icons.check_circle, color: method['color'])
-            : null,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+                color: isLoading ? Colors.grey : Colors.black87,
+              ),
+            ),
+            if (onTap != null && !isLoading) const SizedBox(width: 8),
+            if (onTap != null && !isLoading)
+              const Icon(
+                FontAwesomeIcons.chevronRight,
+                size: 14,
+                color: Colors.black54,
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// Quick Purchase Card Widget
-class _QuickPurchaseCard extends StatelessWidget {
-  final int diamonds;
-  final double price;
-  final bool isIOS;
-  final VoidCallback onTap;
-  final bool isLoading;
+class _WithdrawalAmountCard extends StatelessWidget {
+  final int coins;
+  final double amount;
+  final String label;
+  final bool isAvailable;
+  final VoidCallback? onTap;
 
-  const _QuickPurchaseCard({
-    required this.diamonds,
-    required this.price,
-    required this.isIOS,
-    required this.onTap,
-    required this.isLoading,
+  const _WithdrawalAmountCard({
+    required this.coins,
+    required this.amount,
+    required this.label,
+    required this.isAvailable,
+    this.onTap,
   });
 
   @override
@@ -4001,71 +4131,47 @@ class _QuickPurchaseCard extends StatelessWidget {
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isAvailable ? Colors.green : Colors.grey.shade300,
+          width: 1,
+        ),
       ),
       child: InkWell(
-        onTap: isLoading ? null : onTap,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: isIOS
-                  ? [Colors.black, Colors.grey[800]!]
-                  : [Colors.red, Colors.redAccent],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            color: isAvailable ? Colors.green.withOpacity(0.05) : Colors.grey.withOpacity(0.05),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                '$diamonds 💎',
-                style: const TextStyle(
-                  color: Colors.white,
+                label,
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
+                  color: isAvailable ? Colors.green : Colors.grey,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
-                '\$$price',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+                '$coins coins',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isAvailable ? Colors.black54 : Colors.grey,
                 ),
               ),
-              const SizedBox(height: 8),
-              isLoading
-                  ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              if (!isAvailable) ...[
+                const SizedBox(height: 4),
+                const Icon(
+                  Icons.lock_outline,
+                  size: 12,
+                  color: Colors.grey,
                 ),
-              )
-                  : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    isIOS ? FontAwesomeIcons.apple : FontAwesomeIcons.google,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Pay',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ],
           ),
         ),
@@ -4074,7 +4180,6 @@ class _QuickPurchaseCard extends StatelessWidget {
   }
 }
 
-// Supporting UI Components
 class _BalanceItem extends StatelessWidget {
   final String label;
   final String value;
@@ -4146,6 +4251,115 @@ class _InfoBullet extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuickWithdrawCard extends StatelessWidget {
+  final int coinBalance;
+  final double availableUSD;
+  final VoidCallback onTap;
+  final bool isLoading;
+
+  const _QuickWithdrawCard({
+    required this.coinBalance,
+    required this.availableUSD,
+    required this.onTap,
+    required this.isLoading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.green, Colors.lightGreen],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(FontAwesomeIcons.moneyBillWave, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Quick Withdraw',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '$coinBalance 🪙 Available',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '\$${availableUSD.toStringAsFixed(2)} USD',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Withdraw your coins instantly to your bank account\n🌍 Available in supported countries',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: isLoading ? null : onTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.green,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(25),
+                ),
+              ),
+              child: isLoading
+                  ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                ),
+              )
+                  : const Text(
+                'WITHDRAW NOW',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
