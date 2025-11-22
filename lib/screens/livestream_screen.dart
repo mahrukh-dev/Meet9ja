@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_streaming.dart';
@@ -7,241 +9,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 
-class ZegoRecordingService {
-  static const String _baseUrl = 'https://cloudrecord-api.zego.im';
-  static const String _signatureVersion = '2.0';
+import '../aws/zego_recording_service.dart';
 
-  static Future<Map<String, dynamic>> startRecording({
-    required int appId,
-    required String serverSecret,
-    required String roomId,
-    required String userId,
-  }) async {
-    try {
-      await _checkNetworkConnectivity();
-
-      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
-          .toString();
-      final nonce = _generateNonce();
-
-      final signature = _generateSignatureV2(
-        appId: appId,
-        serverSecret: serverSecret,
-        timestamp: timestamp,
-        nonce: nonce,
-      );
-
-      final queryParams = {
-        'Action': 'StartRecord',
-        'AppId': appId.toString(),
-        'SignatureNonce': nonce,
-        'Timestamp': timestamp,
-        'SignatureVersion': _signatureVersion,
-        'Signature': signature,
-      };
-
-      final Map<String, dynamic> requestBody = {
-        "RoomId": roomId,
-        "RecordInputParams": {
-          "RecordMode": 1,
-          "StreamType": 3,
-          "MaxIdleTime": 60,
-          "RecordStreamList": [
-            {"StreamId": "${userId}_main"},
-          ],
-        },
-        "RecordOutputParams": {
-          "OutputFileFormat": "mp4",
-          "OutputFolder": "zego_recordings/",
-        },
-        "StorageParams": {
-          "Vendor": 1,
-          "Region": "eu-north-1",
-          "Bucket": "meet9ja-recordings",
-          "AccessKeyId": "AKIAZ44G2F7RDNUFZT6U",
-          "AccessKeySecret": "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",
-        },
-      };
-
-      print('🌐 Sending recording start request to Zego...');
-
-      final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
-
-      final response = await http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: json.encode(requestBody),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      print('📡 Response status: ${response.statusCode}');
-      print('📡 Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final result = json.decode(response.body);
-        if (result['Code'] == 0) {
-          print('✅ Zego Cloud Recording started successfully');
-          return result;
-        } else {
-          throw Exception(
-            'Zego API error: Code ${result['Code']} - ${result['Message']}',
-          );
-        }
-      } else {
-        throw HttpException('HTTP ${response.statusCode}: ${response.body}');
-      }
-    } on SocketException catch (e) {
-      throw Exception(
-        'Network error: Cannot connect to Zego servers. Details: $e',
-      );
-    } catch (e) {
-      throw Exception('Recording start error: $e');
-    }
-  }
-
-  static Future<Map<String, dynamic>> stopRecording({
-    required int appId,
-    required String serverSecret,
-    required String roomId,
-  }) async {
-    try {
-      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
-          .toString();
-      final nonce = _generateNonce();
-
-      final signature = _generateSignatureV2(
-        appId: appId,
-        serverSecret: serverSecret,
-        timestamp: timestamp,
-        nonce: nonce,
-      );
-
-      final queryParams = {
-        'Action': 'StopRecord',
-        'AppId': appId.toString(),
-        'SignatureNonce': nonce,
-        'Timestamp': timestamp,
-        'SignatureVersion': _signatureVersion,
-        'Signature': signature,
-      };
-
-      final Map<String, dynamic> requestBody = {"RoomId": roomId};
-
-      final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
-
-      final response = await http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: json.encode(requestBody),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        final result = json.decode(response.body);
-        return result;
-      } else {
-        throw Exception('HTTP ${response.statusCode}: ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Recording stop error: $e');
-    }
-  }
-
-  static Future<Map<String, dynamic>> queryRecordingStatus({
-    required int appId,
-    required String serverSecret,
-    required String roomId,
-  }) async {
-    try {
-      final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
-          .toString();
-      final nonce = _generateNonce();
-
-      final signature = _generateSignatureV2(
-        appId: appId,
-        serverSecret: serverSecret,
-        timestamp: timestamp,
-        nonce: nonce,
-      );
-
-      final queryParams = {
-        'Action': 'QueryRecord',
-        'AppId': appId.toString(),
-        'SignatureNonce': nonce,
-        'Timestamp': timestamp,
-        'SignatureVersion': _signatureVersion,
-        'Signature': signature,
-      };
-
-      final Map<String, dynamic> requestBody = {"RoomId": roomId};
-
-      final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
-
-      final response = await http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: json.encode(requestBody),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        throw Exception('HTTP ${response.statusCode}: ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Recording query error: $e');
-    }
-  }
-
-  static String _generateNonce() {
-    return 'm8pb55tp79n${DateTime.now().millisecondsSinceEpoch}';
-  }
-
-  static String _generateSignatureV2({
-    required int appId,
-    required String serverSecret,
-    required String timestamp,
-    required String nonce,
-  }) {
-    try {
-      final payload = '$appId$timestamp$nonce';
-      final key = utf8.encode(serverSecret);
-      final bytes = utf8.encode(payload);
-      final hmac = Hmac(sha256, key);
-      final digest = hmac.convert(bytes);
-      return digest.toString();
-    } catch (e) {
-      throw Exception('Signature generation error: $e');
-    }
-  }
-
-  static Future<void> _checkNetworkConnectivity() async {
-    try {
-      final result = await InternetAddress.lookup(
-        'cloudrecord-api.zego.im',
-      ).timeout(const Duration(seconds: 10));
-
-      if (result.isEmpty) {
-        throw SocketException('No addresses found for cloudrecord-api.zego.im');
-      }
-    } on SocketException catch (e) {
-      throw SocketException('Cannot resolve Zego server address. Details: $e');
-    }
-  }
-}
 
 class LiveStreamScreen extends StatefulWidget {
   final String liveId;
@@ -267,8 +36,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   // Zego Configuration
   final int _zegoAppId = 51745598;
   final String _zegoServerSecret = 'd47d53d464da3b6ff8a8141dcb4e8b3b';
-  final String _zegoAppSign =
-      '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4';
+  final String _zegoAppSign = '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4';
 
   // AWS S3 Configuration
   final String _awsBucketName = 'meet9ja-recordings';
@@ -279,12 +47,22 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   // Recording state
   bool _isRecording = false;
   bool _isUploading = false;
+  bool _isLeaving = false;
   String? _recordingUrl;
   List<String> _recordingUrls = [];
   String? _recordingError;
   String? _recordingTaskId;
   bool _usingFallback = false;
   bool _zegoInitialized = false;
+  Timer? _statusPollingTimer;
+  Timer? _recordingCheckTimer;
+  int _signatureAttempt = 0;
+  int _recordingCheckAttempts = 0;
+  static const int _maxRecordingCheckAttempts = 30; // 15 minutes total
+
+  // Navigation control
+  bool _canNavigate = false;
+  Completer<void>? _recordingCompleter;
 
   @override
   void initState() {
@@ -293,15 +71,20 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     _updateViewerCount();
   }
 
+  @override
+  void dispose() {
+    _statusPollingTimer?.cancel();
+    _recordingCheckTimer?.cancel();
+    super.dispose();
+  }
+
   void _initializeZego() {
-    // Zego UIKit should be initialized automatically, but we set a flag
     Future.delayed(const Duration(seconds: 2), () {
       setState(() {
         _zegoInitialized = true;
       });
 
       if (widget.isHost) {
-        // Wait for Zego to fully initialize before starting recording
         Future.delayed(const Duration(seconds: 3), () {
           _startZegoRecordingWithRetry();
         });
@@ -313,11 +96,15 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     if (!widget.isHost || !_zegoInitialized) return;
 
     print('🎥 Attempting to start Zego Cloud Recording...');
-    print('✅ Zego initialized: $_zegoInitialized');
-    print('👤 Is host: ${widget.isHost}');
 
     for (int attempt = 1; attempt <= 3; attempt++) {
       try {
+        setState(() {
+          _signatureAttempt = attempt;
+        });
+
+        print('🔄 Attempt $attempt...');
+
         await _startZegoRecording();
         return;
       } catch (e) {
@@ -325,7 +112,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         print('❌ Recording attempt $attempt failed: $e');
 
         if (attempt < 3) {
-          final delay = Duration(seconds: attempt * 3);
+          final delay = Duration(seconds: attempt * 2);
           print('⏳ Retrying in ${delay.inSeconds} seconds...');
           await Future.delayed(delay);
         } else {
@@ -349,18 +136,28 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         serverSecret: _zegoServerSecret,
         roomId: widget.liveId,
         userId: widget.userId,
+        bucket: _awsBucketName,
+        region: _awsRegion,
+        accessKeyId: _awsAccessKey,
+        accessKeySecret: _awsSecretKey,
       );
 
       if (result['Code'] == 0) {
+        final taskId = result['Data']?['TaskId']?.toString();
+
+        if (taskId == null || taskId.isEmpty) {
+          throw Exception('No TaskId returned from Zego API');
+        }
+
         setState(() {
           _isRecording = true;
           _recordingError = null;
           _usingFallback = false;
-          _recordingTaskId = result['Data']?['TaskId']?.toString();
+          _recordingTaskId = taskId;
         });
+
         print(
-          '✅ Zego Cloud Recording started successfully. Task ID: $_recordingTaskId',
-        );
+            '✅ Zego Cloud Recording started successfully. Task ID: $_recordingTaskId');
         _startRecordingStatusPolling();
       } else {
         throw Exception('Zego recording API error: ${result['Message']}');
@@ -374,15 +171,18 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   }
 
   Future<void> _stopZegoRecording() async {
-    if (!_isRecording || _usingFallback) return;
+    if (!_isRecording || _usingFallback || _recordingTaskId == null) {
+      print('⚠️ Cannot stop recording - not recording or no task ID');
+      return;
+    }
 
     try {
-      print('🛑 Stopping Zego recording...');
+      print('🛑 Stopping Zego recording with Task ID: $_recordingTaskId');
 
       final result = await ZegoRecordingService.stopRecording(
         appId: _zegoAppId,
         serverSecret: _zegoServerSecret,
-        roomId: widget.liveId,
+        taskId: _recordingTaskId!,
       );
 
       if (result['Code'] == 0) {
@@ -391,42 +191,51 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         });
         print('✅ Zego recording stopped successfully');
 
-        // Wait for recording to be processed
-        await Future.delayed(const Duration(seconds: 10));
-        await _getRecordingUrl();
+        // Stop status polling
+        _statusPollingTimer?.cancel();
+
+        // Start checking for final recording files
+        _startFinalRecordingCheck();
       } else {
         throw Exception('Stop recording failed: ${result['Message']}');
       }
     } catch (e) {
       print('❌ Error stopping Zego recording: $e');
-      _handleRecordingFallback('Failed to stop Zego recording: $e');
+      // Even if stop fails, try to get final URLs
+      _startFinalRecordingCheck();
     }
   }
 
   void _startRecordingStatusPolling() {
-    if (!_isRecording || _usingFallback) return;
+    _statusPollingTimer?.cancel();
 
-    Future.delayed(const Duration(seconds: 30), () {
+    _statusPollingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (!_isRecording || _usingFallback) {
+        timer.cancel();
+        return;
+      }
       _queryRecordingStatus();
-      _startRecordingStatusPolling();
     });
   }
 
   Future<void> _queryRecordingStatus() async {
-    if (!_isRecording || _usingFallback) return;
+    if (!_isRecording || _usingFallback || _recordingTaskId == null) return;
 
     try {
       final status = await ZegoRecordingService.queryRecordingStatus(
         appId: _zegoAppId,
         serverSecret: _zegoServerSecret,
-        roomId: widget.liveId,
+        taskId: _recordingTaskId!, // Use the actual task ID
       );
 
-      print('📊 Recording status: ${status['Code']}');
+      print('📊 Recording status query: ${status['Code']}');
 
       if (status['Code'] == 0 && status['Data'] != null) {
         final recordingData = status['Data'];
+        final taskStatus = recordingData['Status']?.toString();
         final files = recordingData['FileList'] as List<dynamic>?;
+
+        print('📊 Recording task status: $taskStatus');
 
         if (files != null && files.isNotEmpty) {
           final List<String> urls = [];
@@ -445,37 +254,79 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
             print('🎯 Recording URLs found: ${urls.length}');
           }
         }
+      } else if (status['Code'] != 0) {
+        print('⚠️ Recording status query failed: ${status['Message']}');
       }
     } catch (e) {
       print('❌ Error querying recording status: $e');
     }
   }
 
-  Future<void> _getRecordingUrl() async {
+  void _startFinalRecordingCheck() {
+    _recordingCheckAttempts = 0;
+    _recordingCheckTimer?.cancel();
+
+    _recordingCheckTimer =
+        Timer.periodic(const Duration(seconds: 30), (timer) async {
+          if (_recordingCheckAttempts >= _maxRecordingCheckAttempts) {
+            timer.cancel();
+            print('⏰ Max recording check attempts reached');
+            _handleRecordingFallback(
+                'Recording files not available after multiple checks');
+            _completeRecordingProcess();
+            return;
+          }
+
+          _recordingCheckAttempts++;
+          print(
+              '🔍 Checking for recording files (attempt $_recordingCheckAttempts)...');
+
+          await _getFinalRecordingUrls();
+
+          // If we have URLs, stop checking and complete the process
+          if (_recordingUrls.isNotEmpty || _usingFallback) {
+            timer.cancel();
+            print('✅ Recording process completed, stopping checks');
+            _completeRecordingProcess();
+          }
+        });
+
+    // Also do an immediate check
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _getFinalRecordingUrls();
+    });
+  }
+
+  Future<void> _getFinalRecordingUrls() async {
     try {
-      print('🔍 Querying for final recording URL...');
+      print('🔍 Querying for final recording URLs...');
+      print('📋 Current Task ID: $_recordingTaskId');
 
-      for (int attempt = 1; attempt <= 5; attempt++) {
-        print('🔄 Attempt $attempt to get recording URL...');
-
-        await Future.delayed(const Duration(seconds: 5));
-
+      if (_recordingTaskId != null && _recordingTaskId!.isNotEmpty) {
         final status = await ZegoRecordingService.queryRecordingStatus(
           appId: _zegoAppId,
           serverSecret: _zegoServerSecret,
-          roomId: widget.liveId,
+          taskId: _recordingTaskId!,
         );
+
+        print('📊 Recording status query result: ${status['Code']}');
 
         if (status['Code'] == 0 && status['Data'] != null) {
           final recordingData = status['Data'];
+          final taskStatus = recordingData['Status']?.toString();
           final files = recordingData['FileList'] as List<dynamic>?;
+
+          print('📊 Recording task status: $taskStatus');
+          print('📁 Files found: ${files?.length ?? 0}');
 
           if (files != null && files.isNotEmpty) {
             final List<String> urls = [];
             for (final file in files) {
               final fileUrl = file['FileUrl'] as String?;
+              final fileName = file['FileName'] as String?;
               if (fileUrl != null && fileUrl.isNotEmpty) {
                 urls.add(fileUrl);
+                print('📹 Found recording file: $fileName -> $fileUrl');
               }
             }
 
@@ -487,17 +338,35 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
               print('✅ Final recording URLs obtained: ${urls.length} files');
               return;
             }
+          } else {
+            print('📭 No recording files found yet');
           }
+        } else {
+          print('⚠️ Recording status query failed: ${status['Message']}');
         }
+      } else {
+        print('⚠️ No task ID available for query');
       }
-
-      _handleRecordingFallback(
-        'No recording URLs found after multiple attempts',
-      );
     } catch (e) {
-      print('❌ Error getting recording URL: $e');
-      _handleRecordingFallback('Error getting recording URL: $e');
+      print('❌ Error getting final recording URLs: $e');
     }
+  }
+
+  void _completeRecordingProcess() {
+    print('🎊 Recording process completed!');
+    print('📹 Recording URL: $_recordingUrl');
+    print('📁 Total files: ${_recordingUrls.length}');
+    print('🔄 Using fallback: $_usingFallback');
+
+    setState(() {
+      _canNavigate = true;
+    });
+
+    // Complete the completer if it exists
+    _recordingCompleter?.complete();
+
+    // Save to Firestore
+    _saveRecordingToFirestore();
   }
 
   Future<void> _handleRecordingFallback(String error) async {
@@ -505,7 +374,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
 
     try {
       final String recordingContent =
-          '''
+      '''
 LIVE_STREAM_METADATA
 Live ID: ${widget.liveId}
 Host: ${widget.userName}
@@ -520,7 +389,9 @@ METADATA_END
 ''';
 
       final String fileName =
-          'fallback_recordings/${widget.liveId}_${DateTime.now().millisecondsSinceEpoch}.txt';
+          'fallback_recordings/${widget.liveId}_${DateTime
+          .now()
+          .millisecondsSinceEpoch}.txt';
 
       final fallbackUrl = await uploadToS3Improved(
         content: recordingContent,
@@ -541,8 +412,13 @@ METADATA_END
       print('✅ Fallback recording created: $fallbackUrl');
     } catch (e) {
       print('❌ Fallback recording also failed: $e');
-      _recordingUrl =
-          'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/error_${widget.liveId}.txt';
+      setState(() {
+        _recordingUrl =
+        'https://$_awsBucketName.s3.$_awsRegion.amazonaws.com/error_${widget
+            .liveId}.txt';
+        _usingFallback = true;
+        _isRecording = false;
+      });
     }
   }
 
@@ -559,65 +435,72 @@ METADATA_END
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Zego UI Kit with proper configuration
-          ZegoUIKitPrebuiltLiveStreaming(
-            appID: _zegoAppId,
-            appSign: _zegoAppSign,
-            userID: widget.userId,
-            userName: widget.userName,
-            liveID: widget.liveId,
-            config: widget.isHost
-                ? ZegoUIKitPrebuiltLiveStreamingConfig.host()
-                : ZegoUIKitPrebuiltLiveStreamingConfig.audience(),
+  Future<bool> _onWillPop() async {
+    if (_isLeaving || _canNavigate) {
+      return true;
+    }
 
-            events: ZegoUIKitPrebuiltLiveStreamingEvents(
-              onEnded:
-                  (
-                    ZegoLiveStreamingEndEvent event,
-                    VoidCallback defaultHandle,
-                  ) {
-                    _onLeaveLiveStreaming(defaultHandle);
-                  },
-            ),
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (context) =>
+          AlertDialog(
+            title: const Text('Leave Live Stream?'),
+            content: const Text(
+                'Recording is still being processed. Are you sure you want to leave?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Stay'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Leave Anyway'),
+              ),
+            ],
           ),
-
-          // Status indicators
-          if (widget.isHost) _buildStatusIndicators(),
-
-          // Gift overlay for audience
-          if (!widget.isHost)
-            _GiftOverlay(liveId: widget.liveId, userId: widget.userId),
-        ],
-      ),
     );
+
+    return shouldLeave ?? false;
   }
 
-  void _handleZegoError(int code, String message) {
-    print('🎯 Handling Zego error: $code - $message');
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // Zego UI Kit with proper configuration
+            ZegoUIKitPrebuiltLiveStreaming(
+              appID: _zegoAppId,
+              appSign: _zegoAppSign,
+              userID: widget.userId,
+              userName: widget.userName,
+              liveID: widget.liveId,
+              config: widget.isHost
+                  ? ZegoUIKitPrebuiltLiveStreamingConfig.host()
+                  : ZegoUIKitPrebuiltLiveStreamingConfig.audience(),
+              events: ZegoUIKitPrebuiltLiveStreamingEvents(
+                onEnded: (ZegoLiveStreamingEndEvent event,
+                    VoidCallback defaultHandle) {
+                  _onLeaveLiveStreaming(defaultHandle);
+                },
+              ),
+            ),
 
-    switch (code) {
-      case 1000001:
-        print('⚠️ Engine not initialized');
-        break;
-      case 1000002:
-        print('⚠️ Not logged in to room');
-        break;
-      case 1000003:
-        print('⚠️ Audio/video module not started');
-        break;
-      default:
-        print('⚠️ Unknown Zego error: $code');
-    }
+            // Status indicators
+            if (widget.isHost) _buildStatusIndicators(),
 
-    // If we're the host and get initialization errors, use fallback recording
-    if (widget.isHost && code >= 1000001 && code <= 1000003) {
-      _handleRecordingFallback('Zego initialization error: $code - $message');
-    }
+            // Gift overlay for audience
+            if (!widget.isHost)
+              _GiftOverlay(liveId: widget.liveId, userId: widget.userId),
+
+            // Loading overlay when leaving and waiting for recording
+            if (_isLeaving && !_canNavigate) _buildLeavingOverlay(),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildStatusIndicators() {
@@ -723,8 +606,34 @@ METADATA_END
                 color: Colors.green,
                 borderRadius: BorderRadius.circular(20),
               ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Task ID:',
+                    style: TextStyle(color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    _recordingTaskId!,
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+
+          // File count
+          if (_recordingUrls.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                borderRadius: BorderRadius.circular(20),
+              ),
               child: Text(
-                'Task: ${_recordingTaskId!.substring(0, 8)}...',
+                'Files: ${_recordingUrls.length}',
                 style: const TextStyle(color: Colors.white, fontSize: 10),
               ),
             ),
@@ -745,7 +654,81 @@ METADATA_END
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+
+          // Recording check progress
+          if (_isLeaving && !_canNavigate)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Checking recording... $_recordingCheckAttempts/$_maxRecordingCheckAttempts',
+                style: const TextStyle(color: Colors.white, fontSize: 10),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLeavingOverlay() {
+    return Container(
+      color: Colors.black54,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Processing Recording...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Please wait while we save your recording\nThis may take a few minutes...',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Attempt $_recordingCheckAttempts of $_maxRecordingCheckAttempts',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 12,
+              ),
+            ),
+            if (_recordingUrl != null) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  '✅ Recording URL obtained!',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -755,11 +738,24 @@ METADATA_END
     if (_usingFallback) return 'Fallback Recording';
     if (_isRecording) return 'Recording...';
     if (_recordingUrl != null) return 'Recording Ready';
+    if (_isLeaving) return 'Processing...';
     return 'Ready';
   }
 
   Future<void> _onLeaveLiveStreaming(VoidCallback defaultHandle) async {
+    if (_isLeaving) return;
+
     print('🚪 Leaving live stream...');
+    print('📊 Current recording state:');
+    print('   - Is Recording: $_isRecording');
+    print('   - Task ID: $_recordingTaskId');
+    print('   - Using Fallback: $_usingFallback');
+    print('   - Recording URLs: ${_recordingUrls.length}');
+    print('   - Can Navigate: $_canNavigate');
+
+    setState(() {
+      _isLeaving = true;
+    });
 
     if (!widget.isHost) {
       try {
@@ -770,14 +766,43 @@ METADATA_END
       } catch (e) {
         print('Error decrementing viewer count: $e');
       }
+
+      // Audience can leave immediately
+      setState(() {
+        _canNavigate = true;
+      });
+      _performNavigation(defaultHandle);
     } else {
       print('🛑 Host is leaving - handling recording...');
-      if (!_usingFallback) {
-        await _stopZegoRecording();
-      }
-      await _saveRecordingToFirestore();
-    }
 
+      // Stop recording if it's active
+      if (_isRecording && !_usingFallback && _recordingTaskId != null) {
+        await _stopZegoRecording();
+      } else {
+        // If recording wasn't started properly, just save what we have
+        _completeRecordingProcess();
+      }
+
+      // Wait for recording process to complete
+      if (!_canNavigate) {
+        _recordingCompleter = Completer<void>();
+        await _recordingCompleter!.future;
+      }
+
+      _performNavigation(defaultHandle);
+    }
+  }
+
+  void _performNavigation(VoidCallback defaultHandle) {
+    print('🎯 Performing navigation...');
+    print('📹 Final Recording URL: $_recordingUrl');
+    print('📁 Total files: ${_recordingUrls.length}');
+
+    // Clean up timers
+    _statusPollingTimer?.cancel();
+    _recordingCheckTimer?.cancel();
+
+    // Navigate
     defaultHandle();
   }
 
@@ -801,42 +826,57 @@ METADATA_END
           .collection('liveStreams')
           .doc(widget.liveId)
           .update({
-            'isLive': false,
-            'endedAt': FieldValue.serverTimestamp(),
-            'status': 'ended',
-          });
+        'isLive': false,
+        'endedAt': FieldValue.serverTimestamp(),
+        'status': 'ended',
+      });
+
+      // Calculate duration
+      final startTime = liveData?['startedAt'] as Timestamp?;
+      final durationSeconds = startTime != null
+          ? DateTime
+          .now()
+          .difference(startTime.toDate())
+          .inSeconds
+          : 0;
 
       // Save to history
+      final historyData = {
+        'live_id': widget.liveId,
+        'UID': widget.userId,
+        'host_name': widget.userName,
+        'start_time': startTime,
+        'end_time': FieldValue.serverTimestamp(),
+        'title': liveData?['title'] ?? 'Live Stream',
+        'status': 'ended',
+        'viewer_count': liveData?['viewers'] ?? 0,
+        'total_gift_value': liveData?['total_gift_value'] ?? 0,
+        'live_replay_media_url': _recordingUrl,
+        'all_recording_urls': _recordingUrls,
+        'storage_bucket': _awsBucketName,
+        'storage_region': _awsRegion,
+        'uploaded_at': FieldValue.serverTimestamp(),
+        'upload_status': _recordingUrl != null ? 'success' : 'failed',
+        'recording_type': _usingFallback
+            ? 'fallback_metadata'
+            : 'zego_cloud_recording',
+        'zego_task_id': _recordingTaskId,
+        'recording_error': _recordingError,
+        'duration_seconds': durationSeconds,
+        'file_count': _recordingUrls.length,
+        'recording_checked_at': FieldValue.serverTimestamp(),
+        'final_check_attempts': _recordingCheckAttempts,
+      };
+
       await FirebaseFirestore.instance
           .collection('live_history')
           .doc(widget.liveId)
-          .set({
-            'live_id': widget.liveId,
-            'UID': widget.userId,
-            'host_name': widget.userName,
-            'start_time': liveData?['startedAt'],
-            'end_time': FieldValue.serverTimestamp(),
-            'title': liveData?['title'] ?? 'Live Stream',
-            'status': 'ended',
-            'viewer_count': liveData?['viewers'] ?? 0,
-            'total_gift_value': liveData?['total_gift_value'] ?? 0,
-            'live_replay_media_url': _recordingUrl,
-            'all_recording_urls': _recordingUrls,
-            'storage_bucket': _awsBucketName,
-            'storage_region': _awsRegion,
-            'uploaded_at': FieldValue.serverTimestamp(),
-            'upload_status': _recordingUrl != null ? 'success' : 'failed',
-            'recording_type': _usingFallback
-                ? 'fallback_metadata'
-                : 'zego_cloud_recording',
-            'zego_task_id': _recordingTaskId,
-            'recording_error': _recordingError,
-            'duration_seconds': _calculateDuration(liveData?['startedAt']),
-            'file_count': _recordingUrls.length,
-          });
+          .set(historyData);
 
       print('✅ Live ended and recording saved to Firestore');
       print('🎯 Recording URL: $_recordingUrl');
+      print('📁 Total files: ${_recordingUrls.length}');
+      print('⏱️ Duration: $durationSeconds seconds');
     } catch (e) {
       print('❌ Error saving recording to Firestore: $e');
     } finally {
@@ -845,14 +885,9 @@ METADATA_END
       });
     }
   }
-
-  int _calculateDuration(Timestamp? startTime) {
-    if (startTime == null) return 0;
-    return DateTime.now().difference(startTime.toDate()).inSeconds;
-  }
 }
 
-// AWS S3 Upload Function (same as before)
+// AWS S3 Upload Function
 Future<String> uploadToS3Improved({
   String? content,
   Uint8List? fileBytes,
@@ -882,7 +917,7 @@ Future<String> uploadToS3Improved({
     final signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
 
     final canonicalRequest =
-        '''
+    '''
 PUT
 /${_uriEncode(objectKey, encodeSlash: false)}
 
@@ -895,7 +930,7 @@ $payloadHash''';
         .toString();
 
     final stringToSign =
-        '''
+    '''
 AWS4-HMAC-SHA256
 $isoDate
 $credentialScope
@@ -921,6 +956,13 @@ $canonicalRequestHash''';
     final authorization =
         'AWS4-HMAC-SHA256 Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
 
+    print('🌐 Uploading to S3...');
+    print('📦 Bucket: $bucket');
+    print('📍 Region: $region');
+    print('📁 Object Key: $objectKey');
+    print('📄 Content Type: $contentType');
+    print('📏 Payload Size: ${payload.length} bytes');
+
     final response = await http.put(
       url,
       headers: {
@@ -932,14 +974,20 @@ $canonicalRequestHash''';
       body: payload,
     );
 
+    print('📡 S3 Upload Response: ${response.statusCode}');
+
     if (response.statusCode == 200) {
-      return 'https://$host/$objectKey';
+      final fileUrl = 'https://$host/$objectKey';
+      print('✅ File uploaded successfully: $fileUrl');
+      return fileUrl;
     } else {
+      print('❌ S3 Upload failed: ${response.body}');
       throw Exception(
         'S3 Upload failed with status ${response.statusCode}: ${response.body}',
       );
     }
   } catch (e) {
+    print('❌ S3 Upload error: $e');
     rethrow;
   }
 }
@@ -981,7 +1029,67 @@ bool _isUnreserved(String char) {
       char == '~';
 }
 
-// Gift Overlay Widget (same as before)
+// Alternative simplified S3 upload using pre-signed URLs (if you prefer)
+Future<String> uploadToS3Simple({
+  required String content,
+  required String bucket,
+  required String region,
+  required String objectKey,
+}) async {
+  try {
+    // For simple text content, you can use this alternative approach
+    final url = 'https://$bucket.s3.$region.amazonaws.com/$objectKey';
+
+    print('🌐 Uploading to S3 (simple method)...');
+    print('📁 Object Key: $objectKey');
+
+    final response = await http.put(
+      Uri.parse(url),
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+      body: content,
+    );
+
+    print('📡 S3 Simple Upload Response: ${response.statusCode}');
+
+    if (response.statusCode == 200) {
+      print('✅ File uploaded successfully: $url');
+      return url;
+    } else {
+      throw Exception('S3 Upload failed: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ S3 Simple Upload error: $e');
+    rethrow;
+  }
+}
+
+// Helper function to create fallback recording content
+String createFallbackRecordingContent({
+  required String liveId,
+  required String hostName,
+  required String hostId,
+  required String error,
+  String? taskId,
+  List<String> recordingUrls = const [],
+}) {
+  return '''
+LIVE_STREAM_METADATA
+Live ID: $liveId
+Host: $hostName
+Host ID: $hostId
+Start Time: ${DateTime.now().toIso8601String()}
+Recording Type: FALLBACK_METADATA
+Status: COMPLETED
+Error: $error
+Task ID: $taskId
+Recording URLs: ${recordingUrls.join(', ')}
+Fallback Created: ${DateTime.now().toIso8601String()}
+METADATA_END
+''';
+}
+// Gift Overlay Widget
 class _GiftOverlay extends StatelessWidget {
   final String liveId;
   final String userId;
@@ -1000,7 +1108,6 @@ class _GiftOverlay extends StatelessWidget {
     );
   }
 
-  // Update the gift dialog to show diamonds
   void _showGiftDialog(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -1055,12 +1162,11 @@ class _GiftOverlay extends StatelessWidget {
     );
   }
 
-  // In the _sendGift method, update to use diamonds instead of coins
   Future<void> _sendGift(
-    BuildContext context,
-    String giftType,
-    int diamondCost,
-  ) async {
+      BuildContext context,
+      String giftType,
+      int diamondCost,
+      ) async {
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -1137,7 +1243,7 @@ class _GiftOverlay extends StatelessWidget {
             .doc('${DateTime.now().millisecondsSinceEpoch}_$hostUserId'),
         {
           'transaction_id':
-              '${DateTime.now().millisecondsSinceEpoch}_$hostUserId',
+          '${DateTime.now().millisecondsSinceEpoch}_$hostUserId',
           'type': 'gift_received',
           'UID': hostUserId,
           'sender_UID': userId,
@@ -1172,11 +1278,10 @@ class _GiftOverlay extends StatelessWidget {
   }
 }
 
-// Update gift items to use diamonds
 class _GiftItem extends StatelessWidget {
   final String icon;
   final String name;
-  final int diamonds; // Changed from coins to diamonds
+  final int diamonds;
   final VoidCallback onTap;
 
   const _GiftItem({
@@ -1203,7 +1308,7 @@ class _GiftItem extends StatelessWidget {
             Text(
               '$diamonds 💎',
               style: const TextStyle(color: Colors.blue),
-            ), // Diamond icon
+            ),
           ],
         ),
       ),
