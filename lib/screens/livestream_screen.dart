@@ -225,7 +225,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
       final status = await ZegoRecordingService.queryRecordingStatus(
         appId: _zegoAppId,
         serverSecret: _zegoServerSecret,
-        taskId: _recordingTaskId!, // Use the actual task ID
+        taskId: _recordingTaskId!,
       );
 
       print('📊 Recording status query: ${status['Code']}');
@@ -233,7 +233,8 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
       if (status['Code'] == 0 && status['Data'] != null) {
         final recordingData = status['Data'];
         final taskStatus = recordingData['Status']?.toString();
-        final files = recordingData['FileList'] as List<dynamic>?;
+        // FIX: Changed from 'FileList' to 'RecordFiles'
+        final files = recordingData['RecordFiles'] as List<dynamic>?;
 
         print('📊 Recording task status: $taskStatus');
 
@@ -252,6 +253,9 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
               _recordingUrl = urls.first;
             });
             print('🎯 Recording URLs found: ${urls.length}');
+
+            // FIX: Stop polling immediately when URLs are found
+            _statusPollingTimer?.cancel();
           }
         }
       } else if (status['Code'] != 0) {
@@ -260,41 +264,6 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     } catch (e) {
       print('❌ Error querying recording status: $e');
     }
-  }
-
-  void _startFinalRecordingCheck() {
-    _recordingCheckAttempts = 0;
-    _recordingCheckTimer?.cancel();
-
-    _recordingCheckTimer =
-        Timer.periodic(const Duration(seconds: 30), (timer) async {
-          if (_recordingCheckAttempts >= _maxRecordingCheckAttempts) {
-            timer.cancel();
-            print('⏰ Max recording check attempts reached');
-            _handleRecordingFallback(
-                'Recording files not available after multiple checks');
-            _completeRecordingProcess();
-            return;
-          }
-
-          _recordingCheckAttempts++;
-          print(
-              '🔍 Checking for recording files (attempt $_recordingCheckAttempts)...');
-
-          await _getFinalRecordingUrls();
-
-          // If we have URLs, stop checking and complete the process
-          if (_recordingUrls.isNotEmpty || _usingFallback) {
-            timer.cancel();
-            print('✅ Recording process completed, stopping checks');
-            _completeRecordingProcess();
-          }
-        });
-
-    // Also do an immediate check
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _getFinalRecordingUrls();
-    });
   }
 
   Future<void> _getFinalRecordingUrls() async {
@@ -314,7 +283,8 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         if (status['Code'] == 0 && status['Data'] != null) {
           final recordingData = status['Data'];
           final taskStatus = recordingData['Status']?.toString();
-          final files = recordingData['FileList'] as List<dynamic>?;
+          // FIX: Changed from 'FileList' to 'RecordFiles'
+          final files = recordingData['RecordFiles'] as List<dynamic>?;
 
           print('📊 Recording task status: $taskStatus');
           print('📁 Files found: ${files?.length ?? 0}');
@@ -323,7 +293,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
             final List<String> urls = [];
             for (final file in files) {
               final fileUrl = file['FileUrl'] as String?;
-              final fileName = file['FileName'] as String?;
+              final fileName = file['FileId'] as String?; // FIX: Changed from 'FileName' to 'FileId'
               if (fileUrl != null && fileUrl.isNotEmpty) {
                 urls.add(fileUrl);
                 print('📹 Found recording file: $fileName -> $fileUrl');
@@ -336,6 +306,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
                 _recordingUrl = urls.first;
               });
               print('✅ Final recording URLs obtained: ${urls.length} files');
+              _recordingCheckTimer?.cancel();
               return;
             }
           } else {
@@ -350,6 +321,45 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     } catch (e) {
       print('❌ Error getting final recording URLs: $e');
     }
+  }
+
+  void _startFinalRecordingCheck() {
+    _recordingCheckAttempts = 0;
+    _recordingCheckTimer?.cancel();
+
+    _recordingCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      if (_recordingCheckAttempts >= 6) { // Reduced from 30 to 6 (1 minute total)
+        timer.cancel();
+        print('⏰ Max recording check attempts reached');
+        if (_recordingUrls.isEmpty) {
+          _handleRecordingFallback('Recording files not available after 1 minute of checking');
+        }
+        _completeRecordingProcess();
+        return;
+      }
+
+      _recordingCheckAttempts++;
+      print('🔍 Checking for recording files (attempt $_recordingCheckAttempts)...');
+
+      await _getFinalRecordingUrls();
+
+      // If we have URLs, stop checking and complete the process immediately
+      if (_recordingUrls.isNotEmpty) {
+        timer.cancel();
+        print('✅ Recording URLs found, stopping checks');
+        _completeRecordingProcess();
+      } else if (_recordingCheckAttempts >= 6) {
+        // If we reach max attempts without URLs, use fallback
+        timer.cancel();
+        _handleRecordingFallback('No recording URLs found after 6 attempts');
+        _completeRecordingProcess();
+      }
+    });
+
+    // Also do an immediate check
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _getFinalRecordingUrls();
+    });
   }
 
   void _completeRecordingProcess() {
@@ -512,116 +522,116 @@ METADATA_END
         children: [
           // Zego initialization status
           if (!_zegoInitialized)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.orange,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'Initializing Zego...',
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
+            // Container(
+            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            //   decoration: BoxDecoration(
+            //     color: Colors.orange,
+            //     borderRadius: BorderRadius.circular(20),
+            //   ),
+            //   child: const Text(
+            //     'Initializing Zego...',
+            //     style: TextStyle(color: Colors.white, fontSize: 12),
+            //   ),
+            // ),
 
           const SizedBox(height: 8),
 
           // Recording indicator
           if (_isRecording && !_usingFallback)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'RECORDING',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // Container(
+            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            //   decoration: BoxDecoration(
+            //     color: Colors.red,
+            //     borderRadius: BorderRadius.circular(20),
+            //   ),
+            //   child: Row(
+            //     mainAxisSize: MainAxisSize.min,
+            //     children: [
+            //       Container(
+            //         width: 8,
+            //         height: 8,
+            //         decoration: const BoxDecoration(
+            //           color: Colors.white,
+            //           shape: BoxShape.circle,
+            //         ),
+            //       ),
+            //       const SizedBox(width: 6),
+            //       const Text(
+            //         'RECORDING',
+            //         style: TextStyle(
+            //           color: Colors.white,
+            //           fontSize: 12,
+            //           fontWeight: FontWeight.bold,
+            //         ),
+            //       ),
+            //     ],
+            //   ),
+            // ),
 
           if (_usingFallback)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.orange,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.warning, color: Colors.white, size: 12),
-                  SizedBox(width: 6),
-                  Text(
-                    'FALLBACK MODE',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // Container(
+            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            //   decoration: BoxDecoration(
+            //     color: Colors.orange,
+            //     borderRadius: BorderRadius.circular(20),
+            //   ),
+            //   child: const Row(
+            //     mainAxisSize: MainAxisSize.min,
+            //     children: [
+            //       Icon(Icons.warning, color: Colors.white, size: 12),
+            //       SizedBox(width: 6),
+            //       Text(
+            //         'FALLBACK MODE',
+            //         style: TextStyle(
+            //           color: Colors.white,
+            //           fontSize: 12,
+            //           fontWeight: FontWeight.bold,
+            //         ),
+            //       ),
+            //     ],
+            //   ),
+            // ),
 
           const SizedBox(height: 8),
-
-          // Status message
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              _getStatusMessage(),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
+          //
+          // // Status message
+          // Container(
+          //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          //   decoration: BoxDecoration(
+          //     color: Colors.black54,
+          //     borderRadius: BorderRadius.circular(20),
+          //   ),
+          //   child: Text(
+          //     _getStatusMessage(),
+          //     style: const TextStyle(color: Colors.white, fontSize: 12),
+          //   ),
+          // ),
 
           // Task ID
           if (_recordingTaskId != null)
-            Container(
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.green,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Task ID:',
-                    style: TextStyle(color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    _recordingTaskId!,
-                    style: const TextStyle(color: Colors.white, fontSize: 10),
-                  ),
-                ],
-              ),
-            ),
+            // Container(
+            //   margin: const EdgeInsets.only(top: 8),
+            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            //   decoration: BoxDecoration(
+            //     color: Colors.green,
+            //     borderRadius: BorderRadius.circular(20),
+            //   ),
+            //   child: Column(
+            //     crossAxisAlignment: CrossAxisAlignment.start,
+            //     children: [
+            //       const Text(
+            //         'Task ID:',
+            //         style: TextStyle(color: Colors.white,
+            //             fontSize: 10,
+            //             fontWeight: FontWeight.bold),
+            //       ),
+            //       Text(
+            //         _recordingTaskId!,
+            //         style: const TextStyle(color: Colors.white, fontSize: 10),
+            //       ),
+            //     ],
+            //   ),
+            // ),
 
           // File count
           if (_recordingUrls.isNotEmpty)
@@ -703,13 +713,13 @@ METADATA_END
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              'Attempt $_recordingCheckAttempts of $_maxRecordingCheckAttempts',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontSize: 12,
-              ),
-            ),
+            // Text(
+            //   // 'Attempt $_recordingCheckAttempts of $_maxRecordingCheckAttempts',
+            //   style: TextStyle(
+            //     color: Colors.white.withOpacity(0.7),
+            //     fontSize: 12,
+            //   ),
+            // ),
             if (_recordingUrl != null) ...[
               const SizedBox(height: 20),
               Container(
