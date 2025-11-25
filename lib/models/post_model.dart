@@ -6,6 +6,7 @@ class PostModel {
   final String caption;
   final String type; // 'image' or 'video'
   final String mediaUrl;
+  final String? thumbnailUrl;
   final DateTime dateTime;
   final List<Comment> comments;
   final List<Like> likes;
@@ -16,6 +17,7 @@ class PostModel {
     required this.caption,
     required this.type,
     required this.mediaUrl,
+    this.thumbnailUrl,
     required this.dateTime,
     required this.comments,
     required this.likes,
@@ -28,6 +30,7 @@ class PostModel {
       caption: data['caption'] ?? '',
       type: data['type'] ?? 'image', // Default to image for backward compatibility
       mediaUrl: data['media_url'] ?? '',
+      thumbnailUrl: data['thumbnail_url'],
       dateTime: (data['date_time'] as Timestamp).toDate(),
       comments: (data['comments'] as List<dynamic>? ?? [])
           .map((comment) => Comment.fromMap(comment))
@@ -44,6 +47,7 @@ class PostModel {
       'caption': caption,
       'type': type,
       'media_url': mediaUrl,
+      'thumbnail_url': thumbnailUrl,
       'date_time': Timestamp.fromDate(dateTime),
       'comments': comments.map((comment) => comment.toMap()).toList(),
       'likes': likes.map((like) => like.toMap()).toList(),
@@ -55,6 +59,8 @@ class PostModel {
 
   // Helper method to check if post is an image
   bool get isImage => type == 'image';
+
+  String get displayUrl => isVideo ? (thumbnailUrl ?? mediaUrl) : mediaUrl;
 }
 
 class Comment {

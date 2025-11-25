@@ -95,11 +95,13 @@ class UserService {
   }
 
   // Create a new post
+  // Create a new post - UPDATED VERSION
   static Future<void> createPost({
     required String userId,
     required String caption,
     required String mediaUrl,
     required String type, // 'image' or 'video'
+    String? thumbnailUrl, // Add this parameter
   }) async {
     try {
       final postRef = _firestore.collection('user_feed').doc();
@@ -109,11 +111,12 @@ class UserService {
         'ID': postRef.id,
         'UID': userId,
         'caption': caption,
-        'type': type, // 'image' or 'video'
+        'type': type,
         'media_url': mediaUrl,
+        'thumbnail_url': thumbnailUrl, // Include thumbnail URL
         'date_time': FieldValue.serverTimestamp(),
-        'comments': [], // Initialize empty comments array
-        'likes': [],    // Initialize empty likes array
+        'comments': [],
+        'likes': [],
       };
 
       await postRef.set(postData);

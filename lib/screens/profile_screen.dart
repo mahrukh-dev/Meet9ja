@@ -2750,68 +2750,111 @@ class _ClipsTabState extends State<_ClipsTab> {
           itemCount: posts.length,
           itemBuilder: (context, index) {
             final post = posts[index];
-            return GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PostDetailScreen(postId: post.id),
-                  ),
-                );
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: NetworkImage(post.mediaUrl),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    if (post.likes.isNotEmpty)
-                      Positioned(
-                        top: 4,
-                        left: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                FontAwesomeIcons.solidHeart,
-                                size: 10,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                post.likes.length.toString(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
+            return _PostGridItem(post: post);
           },
         );
       },
     );
   }
 }
+
+// Post Grid Item Widget for displaying posts with thumbnails
+class _PostGridItem extends StatelessWidget {
+  final PostModel post;
+
+  const _PostGridItem({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PostDetailScreen(postId: post.id),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: NetworkImage(post.displayUrl), // Uses thumbnail for videos, original for images
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Video indicator overlay
+            if (post.isVideo)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_arrow, size: 12, color: Colors.white),
+                      const SizedBox(width: 2),
+                      Text(
+                        'VIDEO',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Likes count overlay
+            if (post.likes.isNotEmpty)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        FontAwesomeIcons.solidHeart,
+                        size: 10,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        post.likes.length.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // Wallet Tab with Complete Flutterwave Integration
 class _WalletTab extends StatefulWidget {
   final UserModel userProfile;
@@ -3243,33 +3286,7 @@ class _WalletTabState extends State<_WalletTab> {
 
   Future<String?> _verifyAccountNumber(String accountNumber, String bankCode) async {
     try {
-      // Simulate API call delay
       await Future.delayed(const Duration(seconds: 1));
-
-      // For testing, return a mock account name
-      // In production, you would call Flutterwave's account verification API:
-      /*
-      final response = await http.post(
-        Uri.parse('https://api.flutterwave.com/v3/accounts/resolve'),
-        headers: {
-          'Authorization': 'Bearer $secretKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'account_number': accountNumber,
-          'account_bank': bankCode,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['status'] == 'success') {
-          return data['data']['account_name'];
-        }
-      }
-      */
-
-      // Mock response for testing
       return "John Doe"; // This would be the actual account name from Flutterwave
     } catch (e) {
       print('❌ Account verification error: $e');
@@ -3285,15 +3302,8 @@ class _WalletTabState extends State<_WalletTab> {
       String accountName
       ) async {
     try {
-      // In production, this should be done on your backend server
-      // For now, we'll simulate the transfer process
-
       print('🏦 Processing transfer: \$$amount to $accountNumber ($bankCode)');
-
-      // Simulate API processing
       await Future.delayed(const Duration(seconds: 2));
-
-      // Update user's wallet and record transaction
       await _updateWalletAfterWithdrawal(coins, amount, accountNumber, bankCode, accountName);
 
       _showSuccessDialog(
@@ -4861,7 +4871,6 @@ class _AboutTabState extends State<_AboutTab> {
               widget.userProfile.instagram?.isNotEmpty == true ||
               widget.userProfile.twitter?.isNotEmpty == true ||
               widget.userProfile.facebook?.isNotEmpty == true ||
-              widget.userProfile.tiktok?.isNotEmpty == true ||
               widget.userProfile.youtube?.isNotEmpty == true)
             _SectionCard(
               title: "Links",

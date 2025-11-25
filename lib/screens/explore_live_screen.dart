@@ -442,19 +442,28 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       final snapshot = await FirebaseFirestore.instance
           .collection('user_feed')
           .orderBy('date_time', descending: true)
-          .limit(50) // Limit to 50 most recent posts
+          .limit(50)
           .get();
 
       if (snapshot.docs.isEmpty) return [];
 
-      // Get user details for each post and filter out current user's posts
+      // Get user details for each post and filter out current user's posts AND non-video posts
       final reels = await Future.wait(
         snapshot.docs.map((doc) async {
           final data = doc.data() as Map<String, dynamic>;
           final userId = data['UID'] as String?;
 
-          // Filter out current user's posts
+          // Filter out current user's posts AND non-video posts
           if (userId == null || userId == _currentUserId) return null;
+
+          // ADD THIS FILTER - only include video posts
+          final mediaUrl = data['media_url']?.toString() ?? '';
+          final isVideo = mediaUrl.contains('.mp4') ||
+              mediaUrl.contains('.mov') ||
+              mediaUrl.contains('.avi') ||
+              data['media_type'] == 'video';
+
+          if (!isVideo) return null;
 
           // Get user details
           final userDoc = await FirebaseFirestore.instance
@@ -465,22 +474,20 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           if (!userDoc.exists) return null;
 
           final userData = userDoc.data() as Map<String, dynamic>?;
-          final postType = data['type'] ?? 'post';
-          final mediaType = postType == 'video' ? 'video' : 'image';
 
           return _ReelItem(
             user: userData?['username'] ?? 'User',
             title: data['caption'] ?? 'New Post',
             viewers: (data['likes']?.length ?? 0) + (data['comments']?.length ?? 0),
             thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
-            type: postType,
+            type: 'video', // Force type to video
             postId: doc.id,
             userId: userId,
             userPhoto: userData?['photo_url'] ?? '',
             timestamp: data['date_time'] as Timestamp?,
             likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
             comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
-            mediaType: mediaType,
+            mediaType: 'video', // Force mediaType to video
           );
         }),
       );
@@ -491,7 +498,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return [];
     }
   }
-
   // Real-time listener for live streams
   void _setupLiveStreamListener() {
     _liveStreamSubscription = FirebaseFirestore.instance
@@ -1718,38 +1724,7 @@ class _ReelContentState extends State<_ReelContent> {
             child: _StoryTimeBadge(timestamp: widget.item.timestamp),
           ),
 
-        // Video Play Indicator (only for videos)
-        if (widget.item.mediaType == 'video')
-          Positioned(
-            top: 40,
-            right: widget.showStories && widget.item.type == 'story' ? 70 : 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.play_arrow,
-                    color: Colors.white,
-                    size: 12,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'VIDEO',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+
 
         // Right Action Buttons
         Positioned(

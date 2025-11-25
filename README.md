@@ -9,11 +9,11 @@
 
 TASKS
 done - live without lag
-- live recording properly
+done - live recording properly
 done - clips with video option
-- appstore/googleplay for payment
 done - seperate gift earning
 done - withdrawal of gift earning -- test mode working
+- appstore/googleplay for payment
 
 Subscription/premium payment handling
 admin@meet9ja.com

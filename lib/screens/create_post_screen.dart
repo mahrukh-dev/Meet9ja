@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../aws/video_thumbnail_service.dart';
 import '../constants/app_colors.dart';
 import '../db_functions/user_service.dart';
 import '../db_functions/image_service.dart';
@@ -104,6 +105,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     try {
       String mediaUrl;
+      String? thumbnailUrl;
 
       if (_mediaType == 'image') {
         // Upload image to Firebase Storage
@@ -117,14 +119,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           videoFile: _selectedMedia!,
           userId: widget.userId,
         );
+
+        // Generate and upload thumbnail for video
+        final thumbnailFile = await VideoThumbnailService.generateThumbnailFromFile(_selectedMedia!);
+        if (thumbnailFile != null) {
+          thumbnailUrl = await VideoThumbnailService.uploadThumbnail(
+            thumbnailFile,
+            widget.userId,
+            'temp_${DateTime.now().millisecondsSinceEpoch}',
+          );
+        } else {
+          print('⚠️ Could not generate thumbnail for video');
+        }
       }
 
-      // Create post in Firestore
+      // Create post in Firestore with thumbnail URL
       await UserService.createPost(
         userId: widget.userId,
         caption: _captionController.text.trim(),
         mediaUrl: mediaUrl,
-        type: _mediaType, // 'image' or 'video'
+        type: _mediaType,
+        thumbnailUrl: thumbnailUrl,
       );
 
       if (mounted) {
@@ -205,28 +220,51 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return Stack(
         fit: StackFit.expand,
         children: [
-          Container(
-            color: Colors.black,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.play_circle_filled,
-                    size: 60,
-                    color: Colors.white.withOpacity(0.8),
+          // Try to show video thumbnail preview
+          FutureBuilder<File?>(
+            future: VideoThumbnailService.generateThumbnailFromFile(_selectedMedia!),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Video Post',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 16,
-                    ),
+                );
+              }
+
+              if (snapshot.hasData && snapshot.data != null) {
+                return Image.file(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                );
+              }
+
+              // Fallback to video icon if thumbnail generation fails
+              return Container(
+                color: Colors.black,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.play_circle_filled,
+                        size: 60,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Video Preview',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
           Positioned(
             top: 8,
@@ -351,6 +389,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       fontSize: 14,
                     ),
                   ),
+                  if (_mediaType == 'video') ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.auto_awesome,
+                      size: 14,
+                      color: Colors.blue[600],
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Thumbnail will be auto-generated',
+                      style: TextStyle(
+                        color: Colors.blue[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ],
               ),
 
