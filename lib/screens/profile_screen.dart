@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ import 'create_post_screen.dart';
 import 'create_story_screen.dart';
 import 'edit_profile_screen.dart';
 import 'package:intl/intl.dart';
+import 'live_history_screen.dart';
 import 'livestream_screen.dart';
 import 'create_schedule_screen.dart';
 
@@ -1411,8 +1413,7 @@ class _ReportReasonTile extends StatelessWidget {
     );
   }
 }
-
-// Home Tab with Live Streams
+// Home Tab with Live Streams Grid
 class _HomeTab extends StatefulWidget {
   final String userId;
   final bool isMyProfile;
@@ -1427,12 +1428,23 @@ class _HomeTabState extends State<_HomeTab> {
   bool _isLoading = true;
   String? _error;
   Map<String, bool> _currentLiveStatus = {};
+  Map<String, VideoPlayerController?> _thumbnailControllers = {};
 
   @override
   void initState() {
     super.initState();
     _loadLiveHistory();
     _subscribeToLiveStatus();
+  }
+
+  @override
+  void dispose() {
+    // Dispose all video controllers
+    for (final controller in _thumbnailControllers.values) {
+      controller?.dispose();
+    }
+    _thumbnailControllers.clear();
+    super.dispose();
   }
 
   Future<void> _loadLiveHistory() async {
@@ -1448,11 +1460,46 @@ class _HomeTabState extends State<_HomeTab> {
         _liveHistory = history;
         _isLoading = false;
       });
+
+      // Preload thumbnails for videos with replay URLs
+      _preloadThumbnails();
     } catch (e) {
       setState(() {
         _error = 'Failed to load live history: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  void _preloadThumbnails() async {
+    for (final live in _liveHistory) {
+      if (live.liveReplayMediaUrl.isNotEmpty &&
+          (live.liveReplayMediaUrl.endsWith('.mp4') ||
+              live.liveReplayMediaUrl.contains('.mp4?'))) {
+        await _loadThumbnailForVideo(live);
+      }
+    }
+  }
+
+  Future<void> _loadThumbnailForVideo(LiveHistory live) async {
+    try {
+      final controller = VideoPlayerController.network(live.liveReplayMediaUrl);
+      await controller.initialize();
+
+      // Seek to a random position for thumbnail (between 10% and 30% of video)
+      final duration = controller.value.duration;
+      if (duration.inSeconds > 0) {
+        final random = Random();
+        final randomPosition = duration * (0.1 + random.nextDouble() * 0.2);
+        await controller.seekTo(randomPosition);
+      }
+
+      setState(() {
+        _thumbnailControllers[live.uid] = controller;
+      });
+    } catch (e) {
+      print('❌ Error loading thumbnail for video ${live.uid}: $e');
+      // Don't set controller if there's an error
     }
   }
 
@@ -1511,7 +1558,7 @@ class _HomeTabState extends State<_HomeTab> {
           if (_liveHistory.isEmpty)
             _buildEmptyState()
           else
-            _buildLiveHistoryList(),
+            _buildLiveHistoryGrid(),
 
           const SliverToBoxAdapter(
             child: SizedBox(height: 20),
@@ -1673,7 +1720,7 @@ class _HomeTabState extends State<_HomeTab> {
         child: Row(
           children: [
             const Text(
-              'Live History',
+              'Past Live Streams',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -1723,7 +1770,7 @@ class _HomeTabState extends State<_HomeTab> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              'When this user goes live, their streams will appear here',
+              'When this user goes live, their past streams will appear here',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -1736,17 +1783,27 @@ class _HomeTabState extends State<_HomeTab> {
     );
   }
 
-  Widget _buildLiveHistoryList() {
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-            (context, index) {
-          final live = _liveHistory[index];
-          return _LiveHistoryCard(
-            liveHistory: live,
-            onTap: () => _viewLiveReplay(live),
-          );
-        },
-        childCount: _liveHistory.length,
+  Widget _buildLiveHistoryGrid() {
+    return SliverPadding(
+      padding: const EdgeInsets.all(8),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+          childAspectRatio: 0.8,
+        ),
+        delegate: SliverChildBuilderDelegate(
+              (context, index) {
+            final live = _liveHistory[index];
+            return _LiveStreamGridItem(
+              liveHistory: live,
+              thumbnailController: _thumbnailControllers[live.uid],
+              onTap: () => _viewLiveReplay(live),
+            );
+          },
+          childCount: _liveHistory.length,
+        ),
       ),
     );
   }
@@ -1790,75 +1847,11 @@ class _HomeTabState extends State<_HomeTab> {
       return;
     }
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(live.title),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildInfoRow('Duration', '${live.durationSeconds} seconds'),
-              _buildInfoRow('Viewers', '${live.viewerCount}'),
-              _buildInfoRow('Gifts', '${live.totalGiftValue} coins'),
-              _buildInfoRow('Status', live.uploadStatus),
-              _buildInfoRow('Recording', live.recordingType),
-
-              const SizedBox(height: 16),
-
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Replay URL:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      live.liveReplayMediaUrl,
-                      style: const TextStyle(fontSize: 10, color: Colors.blue),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              if (live.liveReplayMediaUrl.isNotEmpty) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => _launchReplayUrl(live.liveReplayMediaUrl),
-                    child: const Text('Watch Replay'),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () => _copyToClipboard(live.liveReplayMediaUrl),
-                    child: const Text('Copy URL'),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
+    // Navigate to the new LiveHistoryScreen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LiveHistoryScreen(liveHistory: live),
       ),
     );
   }
@@ -2119,6 +2112,190 @@ class _HomeTabState extends State<_HomeTab> {
   }
 }
 
+// Live Stream Grid Item Widget for displaying past streams with thumbnails
+class _LiveStreamGridItem extends StatelessWidget {
+  final LiveHistory liveHistory;
+  final VideoPlayerController? thumbnailController;
+  final VoidCallback onTap;
+
+  const _LiveStreamGridItem({
+    required this.liveHistory,
+    this.thumbnailController,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasReplay = liveHistory.liveReplayMediaUrl.isNotEmpty;
+    final isVideo = hasReplay &&
+        (liveHistory.liveReplayMediaUrl.endsWith('.mp4') ||
+            liveHistory.liveReplayMediaUrl.contains('.mp4?'));
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.grey[200],
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Thumbnail or placeholder
+            if (isVideo && thumbnailController != null)
+              VideoPlayer(thumbnailController!)
+            else
+              Container(
+                color: Colors.grey[300],
+                child: const Icon(
+                  Icons.live_tv_rounded,
+                  size: 40,
+                  color: Colors.grey,
+                ),
+              ),
+
+            // Gradient overlay for better text visibility
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.7),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+
+            // Content info
+            Positioned(
+              bottom: 4,
+              left: 4,
+              right: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    liveHistory.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.people, size: 8, color: Colors.white),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${liveHistory.viewerCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.timer, size: 8, color: Colors.white),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${liveHistory.durationSeconds}s',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Replay indicator
+            if (hasReplay)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_arrow, size: 10, color: Colors.white),
+                      SizedBox(width: 2),
+                      Text(
+                        'REPLAY',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Status indicator
+            Positioned(
+              top: 4,
+              left: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(liveHistory.uploadStatus).withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  _getStatusText(liveHistory.uploadStatus),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'success':
+        return Colors.green;
+      case 'partial_success':
+        return Colors.orange;
+      case 'failed':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status) {
+      case 'success':
+        return 'COMPLETE';
+      case 'partial_success':
+        return 'PARTIAL';
+      case 'failed':
+        return 'FAILED';
+      default:
+        return 'UNKNOWN';
+    }
+  }
+}
 class _LiveHistoryCard extends StatelessWidget {
   final LiveHistory liveHistory;
   final VoidCallback onTap;
