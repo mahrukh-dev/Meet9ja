@@ -1,19 +1,29 @@
-- gift earning seperate. diamonds seperate. only withdraw gift earnings
-- withdrawal also through flutterwave
-- live is lagging
-- save option
-- able to upload videos on clips
-- live is causing lag cuz of recording.
-- asking for appstore and google play store payment method but we were provided with flutterwave only so how do we do that
-- do we need playstore purchases or using flutterwave-googlepay-applepay
+Changes im accomodating
+clips section pause play on tap
+- live end properly if we navigate out of the screen
+clip vido playing in the bg
+- clip section loading slowly
+- live replay some format issue
+- withdraw using flutterwave
+- in app purchases when buy
+- logo is fine, ill share the display screenshot
+- if followed + matched option to message on profile
+- dating profile life button not working
+- chats not displaying
+- my profile buttons are cards, they arent supposed to work or take you anywhere
+- remove spotlight and superswipe
+- people screen lag when load
+- if already preium doesnt show go premium screen
+- premium management remove credit/debit
+- contact support navigate to support email 
+- following - live of following users should appear here
+- currency should be either dollar or naira
 
-TASKS
-done - live without lag
-done - live recording properly
-done - clips with video option
-done - seperate gift earning
-done - withdrawal of gift earning -- test mode working
-- appstore/googleplay for payment
+UI changes that i wont be doing
+- splash screen bg should be white
+- remove copy URL and share button on live replay screen
+- list of followers/following screen - not including that
+- profile screen gift/message/sub buttons - made us change the UI im not changing it back to what it was previously again
 
 Subscription/premium payment handling
 admin@meet9ja.com

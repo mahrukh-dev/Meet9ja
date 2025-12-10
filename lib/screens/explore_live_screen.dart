@@ -28,7 +28,7 @@ class ExploreLiveScreen extends StatefulWidget {
 }
 
 class _ExploreLiveScreenState extends State<ExploreLiveScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tab;
 
   final List<String> _liveFilters = const [
@@ -51,20 +51,157 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   // Bottom navigation state
   int _currentBottomNavIndex = 0;
 
+  // Track active video controllers
+  final Map<String, VideoPlayerController> _videoControllers = {};
+  final Map<String, ChewieController> _chewieControllers = {};
+  String? _currentPlayingVideoId;
+
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this, initialIndex: 1);
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+    // Add observer for app lifecycle
+    WidgetsBinding.instance.addObserver(this);
+
     _loadLiveData();
     _setupLiveStreamListener();
     _loadMatchedUsers();
+
+    // Listen to tab changes to pause videos when switching tabs
+    _tab.addListener(_handleTabChange);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      // Pause all videos when app goes to background
+        _pauseAllVideos();
+        break;
+      case AppLifecycleState.resumed:
+      // Resume current video when app comes to foreground
+        if (_currentPlayingVideoId != null && _videoControllers.containsKey(_currentPlayingVideoId)) {
+          _videoControllers[_currentPlayingVideoId]?.play();
+        }
+        break;
+      case AppLifecycleState.detached:
+      // Dispose all controllers when app is detached
+        _disposeAllVideoControllers();
+        break;
+      case AppLifecycleState.hidden:
+      // Pause videos when app is hidden
+        _pauseAllVideos();
+        break;
+    }
+  }
+
+  void _handleTabChange() {
+    // Pause videos when switching away from clips or following tabs
+    if (_tab.index != 0 && _tab.index != 2) {
+      _pauseAllVideos();
+    }
+  }
+
+  void _pauseAllVideos() {
+    for (var controller in _videoControllers.values) {
+      if (controller.value.isPlaying) {
+        controller.pause();
+      }
+    }
+  }
+
+  void _disposeAllVideoControllers() {
+    for (var controller in _chewieControllers.values) {
+      controller.dispose();
+    }
+    for (var controller in _videoControllers.values) {
+      controller.dispose();
+    }
+    _videoControllers.clear();
+    _chewieControllers.clear();
+  }
+
+  Future<void> _initializeVideoController(_ReelItem item) async {
+    if (item.mediaType != 'video' || _videoControllers.containsKey(item.postId)) {
+      return;
+    }
+
+    try {
+      final videoController = VideoPlayerController.network(item.thumb)
+        ..setLooping(true)
+        ..setVolume(1.0);
+
+      await videoController.initialize();
+
+      final chewieController = ChewieController(
+        videoPlayerController: videoController,
+        autoPlay: false, // Don't autoplay by default
+        looping: true,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControls: false,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: AppColors.primary,
+          handleColor: AppColors.primary,
+          backgroundColor: Colors.grey,
+          bufferedColor: Colors.grey.shade300,
+        ),
+      );
+
+      if (mounted) {
+        setState(() {
+          _videoControllers[item.postId] = videoController;
+          _chewieControllers[item.postId] = chewieController;
+        });
+      }
+    } catch (e) {
+      print('❌ Error initializing video for ${item.postId}: $e');
+    }
+  }
+
+  void _playVideo(String postId) {
+    // Pause current playing video
+    if (_currentPlayingVideoId != null && _currentPlayingVideoId != postId) {
+      _pauseVideo(_currentPlayingVideoId!);
+    }
+
+    // Play new video
+    if (_videoControllers.containsKey(postId)) {
+      _videoControllers[postId]!.play();
+      setState(() {
+        _currentPlayingVideoId = postId;
+      });
+    }
+  }
+
+  void _pauseVideo(String postId) {
+    if (_videoControllers.containsKey(postId)) {
+      _videoControllers[postId]!.pause();
+      if (_currentPlayingVideoId == postId) {
+        setState(() {
+          _currentPlayingVideoId = null;
+        });
+      }
+    }
+  }
+
+  bool _isVideoPlaying(String postId) {
+    return _videoControllers.containsKey(postId) &&
+        _videoControllers[postId]!.value.isPlaying;
   }
 
   @override
   void dispose() {
     _liveStreamSubscription?.cancel();
+    _tab.removeListener(_handleTabChange);
     _tab.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _disposeAllVideoControllers();
     super.dispose();
   }
 
@@ -309,6 +446,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       // Load ALL posts from ALL users except current user
       final clipsReels = await _getAllPosts();
 
+      // Initialize video controllers for clips
+      for (var clip in clipsReels) {
+        if (clip.mediaType == 'video') {
+          await _initializeVideoController(clip);
+        }
+      }
+
       if (mounted) {
         setState(() {
           _liveRooms = liveStreams;
@@ -352,7 +496,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-  // Get ALL stories from ALL users except current user
   // Get ALL stories from ALL users except current user
   Future<List<_ReelItem>> _getAllStories() async {
     try {
@@ -480,14 +623,14 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
             title: data['caption'] ?? 'New Post',
             viewers: (data['likes']?.length ?? 0) + (data['comments']?.length ?? 0),
             thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
-            type: 'video', // Force type to video
+            type: 'video',
             postId: doc.id,
             userId: userId,
             userPhoto: userData?['photo_url'] ?? '',
             timestamp: data['date_time'] as Timestamp?,
             likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
             comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
-            mediaType: 'video', // Force mediaType to video
+            mediaType: 'video',
           );
         }),
       );
@@ -498,6 +641,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return [];
     }
   }
+
   // Real-time listener for live streams
   void _setupLiveStreamListener() {
     _liveStreamSubscription = FirebaseFirestore.instance
@@ -547,7 +691,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       }
 
       // Update UI immediately without showing loading state
-        _loadLiveData(); // This will refresh the data in background
+      _loadLiveData(); // This will refresh the data in background
     } catch (e) {
       print('Error liking post: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -793,6 +937,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   // Navigate to user profile
   void _navigateToUserProfile(String userId) async {
     try {
+      // Pause video before navigating away
+      if (_currentPlayingVideoId != null) {
+        _pauseVideo(_currentPlayingVideoId!);
+      }
+
       // Check if it's the current user's profile
       final currentUserId = _currentUserId;
       if (currentUserId == userId) {
@@ -887,6 +1036,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
+      // Pause video before starting live stream
+      if (_currentPlayingVideoId != null) {
+        _pauseVideo(_currentPlayingVideoId!);
+      }
+
       // Create a new live stream document
       final liveId = DateTime.now().millisecondsSinceEpoch.toString();
       final userDoc = await FirebaseFirestore.instance
@@ -941,6 +1095,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return;
     }
 
+    // Pause video before joining live stream
+    if (_currentPlayingVideoId != null) {
+      _pauseVideo(_currentPlayingVideoId!);
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -957,6 +1116,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
   // Handle bottom navigation
   void _onBottomNavTapped(int index) {
+    // Pause video before navigating
+    if (_currentPlayingVideoId != null) {
+      _pauseVideo(_currentPlayingVideoId!);
+    }
+
     setState(() {
       _currentBottomNavIndex = index;
     });
@@ -1005,7 +1169,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         titleSpacing: 0,
         leading: IconButton(
           icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            // Pause video before going back
+            if (_currentPlayingVideoId != null) {
+              _pauseVideo(_currentPlayingVideoId!);
+            }
+            Navigator.pop(context);
+          },
         ),
         // TikTok-style transparent tabs
         title: Container(
@@ -1033,7 +1203,16 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onComment: _showComments,
                   onShare: _sharePost,
                   onProfileTap: _navigateToUserProfile,
-                  autoPlayVideos: true,
+                  onPlayPause: (item) {
+                    if (item.mediaType == 'video') {
+                      if (_isVideoPlaying(item.postId)) {
+                        _pauseVideo(item.postId);
+                      } else {
+                        _playVideo(item.postId);
+                      }
+                    }
+                  },
+                  isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
                 ),
 
                 // Live Tab - Shows live streams
@@ -1086,7 +1265,16 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onComment: _showComments,
                   onShare: _sharePost,
                   onProfileTap: _navigateToUserProfile,
-                  autoPlayVideos: true,
+                  onPlayPause: (item) {
+                    if (item.mediaType == 'video') {
+                      if (_isVideoPlaying(item.postId)) {
+                        _pauseVideo(item.postId);
+                      } else {
+                        _playVideo(item.postId);
+                      }
+                    }
+                  },
+                  isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
                 ),
               ],
             ),
@@ -1138,22 +1326,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       ),
     );
   }
-
-  // Widget _buildLoadingState() {
-  //   return const Center(
-  //     child: Column(
-  //       mainAxisAlignment: MainAxisAlignment.center,
-  //       children: [
-  //         CircularProgressIndicator(color: Colors.white),
-  //         SizedBox(height: 16),
-  //         Text(
-  //           'Loading content...',
-  //           style: TextStyle(color: Colors.white),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
 
   Widget _buildEmptyLiveState() {
     return Center(
@@ -1443,7 +1615,8 @@ class _ReelsFeed extends StatelessWidget {
     required this.onComment,
     required this.onShare,
     required this.onProfileTap,
-    this.autoPlayVideos = false, // NEW: Add this parameter
+    required this.onPlayPause, // NEW: Added play/pause callback
+    required this.isVideoPlaying, // NEW: Added video playing status callback
   });
 
   final List<_ReelItem> items;
@@ -1452,7 +1625,8 @@ class _ReelsFeed extends StatelessWidget {
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
   final Function(String) onProfileTap;
-  final bool autoPlayVideos; // NEW: Auto-play parameter
+  final Function(_ReelItem) onPlayPause; // NEW: Play/pause callback
+  final bool Function(_ReelItem) isVideoPlaying; // NEW: Video playing status
 
   @override
   Widget build(BuildContext context) {
@@ -1470,7 +1644,8 @@ class _ReelsFeed extends StatelessWidget {
           onComment: onComment,
           onShare: onShare,
           onProfileTap: onProfileTap,
-          autoPlayVideos: autoPlayVideos, // NEW: Pass the parameter
+          onPlayPause: onPlayPause, // NEW: Pass the callback
+          isVideoPlaying: isVideoPlaying(it), // NEW: Pass playing status
         );
       },
     );
@@ -1497,6 +1672,7 @@ class _ReelsFeed extends StatelessWidget {
     );
   }
 }
+
 class _ReelContent extends StatefulWidget {
   final _ReelItem item;
   final bool showStories;
@@ -1504,7 +1680,8 @@ class _ReelContent extends StatefulWidget {
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
   final Function(String) onProfileTap;
-  final bool autoPlayVideos; // NEW: Add this parameter
+  final Function(_ReelItem) onPlayPause; // NEW: Play/pause callback
+  final bool isVideoPlaying; // NEW: Video playing status
 
   const _ReelContent({
     required this.item,
@@ -1513,183 +1690,16 @@ class _ReelContent extends StatefulWidget {
     required this.onComment,
     required this.onShare,
     required this.onProfileTap,
-    this.autoPlayVideos = false, // NEW: Default to false
+    required this.onPlayPause, // NEW: Add this parameter
+    required this.isVideoPlaying, // NEW: Add this parameter
   });
 
   @override
   State<_ReelContent> createState() => _ReelContentState();
 }
+
 class _ReelContentState extends State<_ReelContent> {
-  VideoPlayerController? _videoController;
-  ChewieController? _chewieController;
-  bool _isVideoInitialized = false;
-  bool _isVideoPlaying = false;
   bool _isMuted = false; // NEW: Track mute state
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.item.mediaType == 'video') {
-      _initializeVideo();
-    }
-  }
-
-  @override
-  void dispose() {
-    _videoController?.dispose();
-    _chewieController?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _initializeVideo() async {
-    try {
-      _videoController = VideoPlayerController.network(widget.item.thumb)
-        ..setLooping(true)
-        ..setVolume(1.0); // CHANGED: Set volume to 1.0 (full volume) instead of 0.0
-
-      await _videoController!.initialize();
-
-      _chewieController = ChewieController(
-        videoPlayerController: _videoController!,
-        autoPlay: widget.autoPlayVideos,
-        looping: true,
-        allowFullScreen: true,
-        allowMuting: true,
-        showControls: false,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: AppColors.primary,
-          handleColor: AppColors.primary,
-          backgroundColor: Colors.grey,
-          bufferedColor: Colors.grey.shade300,
-        ),
-      );
-
-      // Set initial mute state
-      _videoController!.setVolume(_isMuted ? 0.0 : 1.0);
-
-      if (mounted) {
-        setState(() {
-          _isVideoInitialized = true;
-          _isVideoPlaying = widget.autoPlayVideos;
-        });
-      }
-    } catch (e) {
-      print('❌ Error initializing video: $e');
-    }
-  }
-
-  void _toggleVideoPlayback() {
-    if (_videoController == null) return;
-
-    if (_isVideoPlaying) {
-      _videoController!.pause();
-    } else {
-      _videoController!.play();
-    }
-
-    setState(() {
-      _isVideoPlaying = !_isVideoPlaying;
-    });
-  }
-
-  // NEW: Toggle mute/unmute
-  void _toggleMute() {
-    if (_videoController == null) return;
-
-    setState(() {
-      _isMuted = !_isMuted;
-    });
-
-    _videoController!.setVolume(_isMuted ? 0.0 : 1.0);
-  }
-
-  Widget _buildMediaContent() {
-    if (widget.item.mediaType == 'video') {
-      if (!_isVideoInitialized) {
-        return Stack(
-          children: [
-            Image.network(
-              widget.item.thumb,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-            ),
-            Container(
-              color: Colors.black.withOpacity(0.3),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-            ),
-          ],
-        );
-      }
-
-      return Stack(
-        children: [
-          Chewie(controller: _chewieController!),
-
-          // Custom play/pause button overlay
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _toggleVideoPlayback,
-              child: Container(
-                color: Colors.transparent,
-                child: Center(
-                  child: AnimatedOpacity(
-                    opacity: (!widget.autoPlayVideos || !_isVideoPlaying) ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        _isVideoPlaying ? Icons.pause : Icons.play_arrow,
-                        color: Colors.white,
-                        size: 40,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // NEW: Mute/Unmute button in top right corner
-          // Positioned(
-          //   top: 12,
-          //   right: 12,
-          //   child: GestureDetector(
-          //     onTap: _toggleMute,
-          //     child: Container(
-          //       padding: const EdgeInsets.all(8),
-          //       decoration: BoxDecoration(
-          //         color: Colors.black.withOpacity(0.7),
-          //         shape: BoxShape.circle,
-          //       ),
-          //       child: Icon(
-          //         _isMuted ? Icons.volume_off : Icons.volume_up,
-          //         color: Colors.white,
-          //         size: 20,
-          //       ),
-          //     ),
-          //   ),
-          // ),
-        ],
-      );
-    } else {
-      // Image content
-      return Image.network(
-        widget.item.thumb,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1700,7 +1710,15 @@ class _ReelContentState extends State<_ReelContent> {
       fit: StackFit.expand,
       children: [
         // Background Media (Image/Video)
-        _buildMediaContent(),
+        if (widget.item.mediaType == 'video')
+          _buildVideoContent()
+        else
+          Image.network(
+            widget.item.thumb,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          ),
 
         // Gradient Overlay
         Positioned.fill(
@@ -1715,7 +1733,6 @@ class _ReelContentState extends State<_ReelContent> {
           ),
         ),
 
-
         // Story Time Remaining (only for stories)
         if (widget.showStories && widget.item.type == 'story')
           Positioned(
@@ -1724,14 +1741,25 @@ class _ReelContentState extends State<_ReelContent> {
             child: _StoryTimeBadge(timestamp: widget.item.timestamp),
           ),
 
-
-
-        // Right Action Buttons
+        // Right Action Buttons - UPDATED with play/pause button for videos
         Positioned(
           right: 12,
           bottom: 110,
           child: Column(
             children: [
+              // Play/Pause Button for Videos (only show for video content)
+              if (widget.item.mediaType == 'video')
+                Column(
+                  children: [
+                    _CircleIcon(
+                      icon: widget.isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                      onTap: () => widget.onPlayPause(widget.item),
+                      showCount: false,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+
               _CircleIcon(
                 icon: isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
                 onTap: () => widget.onLike(widget.item),
@@ -1873,28 +1901,6 @@ class _ReelContentState extends State<_ReelContent> {
                       fontSize: 12,
                     ),
                   ),
-
-                  // Video Duration (for videos)
-                  if (widget.item.mediaType == 'video' && _videoController != null && _isVideoInitialized)
-                    Row(
-                      children: [
-                        const SizedBox(width: 16),
-                        const Icon(
-                          Icons.timer_outlined,
-                          color: Colors.white70,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _formatDuration(_videoController!.value.duration),
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
                 ],
               ),
             ],
@@ -1902,6 +1908,42 @@ class _ReelContentState extends State<_ReelContent> {
         ),
       ],
     );
+  }
+
+  Widget _buildVideoContent() {
+    final exploreState = context.findAncestorStateOfType<_ExploreLiveScreenState>();
+    if (exploreState == null || !exploreState._videoControllers.containsKey(widget.item.postId)) {
+      return Stack(
+        children: [
+          Image.network(
+            widget.item.thumb,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          ),
+          Container(
+            color: Colors.black.withOpacity(0.3),
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final chewieController = exploreState._chewieControllers[widget.item.postId];
+    if (chewieController == null) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
+    return Chewie(controller: chewieController);
   }
 
   String _formatTimestamp(Timestamp timestamp) {
@@ -1922,20 +1964,8 @@ class _ReelContentState extends State<_ReelContent> {
     if (v >= 1000) return "${(v / 1000).toStringAsFixed(1)}K";
     return "$v";
   }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, "0");
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-
-    if (duration.inHours > 0) {
-      final hours = twoDigits(duration.inHours);
-      return "$hours:$minutes:$seconds";
-    } else {
-      return "$minutes:$seconds";
-    }
-  }
 }
+
 /* ----------------------- SHARE BOTTOM SHEET ----------------------- */
 class _ShareBottomSheet extends StatelessWidget {
   final _ReelItem item;
@@ -2082,18 +2112,21 @@ class _StoryTimeBadge extends StatelessWidget {
     );
   }
 }
+
 // Updated Circle Icon with Count
 class _CircleIcon extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
   final int count;
   final bool isLiked;
+  final bool showCount; // NEW: Parameter to show/hide count
 
   const _CircleIcon({
     required this.icon,
     required this.onTap,
     this.count = 0,
     this.isLiked = false,
+    this.showCount = true, // NEW: Default to true
   });
 
   @override
@@ -2138,7 +2171,7 @@ class _CircleIconState extends State<_CircleIcon> {
             ),
           ),
         ),
-        if (widget.count > 0) ...[
+        if (widget.showCount && widget.count > 0) ...[
           const SizedBox(height: 4),
           Text(
             _formatCount(widget.count),
@@ -2159,6 +2192,7 @@ class _CircleIconState extends State<_CircleIcon> {
     return count.toString();
   }
 }
+
 class _ReelItem {
   final String user;
   final String title;
@@ -2293,3 +2327,4 @@ class _BottomCreateButton extends StatelessWidget {
     );
   }
 }
+
