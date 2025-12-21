@@ -13,6 +13,8 @@ class UserModel {
   final Map<String, dynamic> livePreferences;
   final List<String> following;
   final List<String> followers;
+  final List<String> likedProfiles; // NEW: Added liked profiles
+  final List<String> likedBy; // NEW: Added liked by others
   final bool liveStatus;
   final Map<String, dynamic> wallet;
   final List<String> interests;
@@ -42,6 +44,8 @@ class UserModel {
     required this.livePreferences,
     required this.following,
     required this.followers,
+    required this.likedProfiles, // NEW
+    required this.likedBy, // NEW
     required this.liveStatus,
     required this.wallet,
     required this.interests,
@@ -73,6 +77,8 @@ class UserModel {
       livePreferences: Map<String, dynamic>.from(data['live_preferences'] ?? {}),
       following: List<String>.from(data['following'] ?? []),
       followers: List<String>.from(data['followers'] ?? []),
+      likedProfiles: List<String>.from(data['liked_profiles'] ?? []), // NEW
+      likedBy: List<String>.from(data['liked_by'] ?? []), // NEW
       liveStatus: data['live_status'] ?? false,
       wallet: Map<String, dynamic>.from(data['wallet'] ?? {}),
       interests: List<String>.from(data['interests'] ?? []),
@@ -105,12 +111,13 @@ class UserModel {
       'live_preferences': livePreferences,
       'following': following,
       'followers': followers,
+      'liked_profiles': likedProfiles, // NEW
+      'liked_by': likedBy, // NEW
       'live_status': liveStatus,
-      // Updated wallet structure in user model
       'wallet': {
-        'diamond_balance': 0, // Purchased currency - can't withdraw
-        'coin_balance': 0,    // Earned currency - can withdraw
-        'total_earning': 0.0, // Total earnings in coins
+        'diamond_balance': 0,
+        'coin_balance': 0,
+        'total_earning': 0.0,
       },
       'interests': interests,
       'first_photos': firstPhotos,

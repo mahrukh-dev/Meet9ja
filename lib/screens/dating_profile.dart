@@ -101,6 +101,13 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
     // );
   }
 
+  void _navigateToProfileScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ProfileScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -149,19 +156,10 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
                     if (_tab == 0)
                       _PayPlanTab(
                         user: _currentUser,
-                        onOpenMyProfile: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ProfileScreen(),
-                            ),
-                          );
-                        },
+                        onOpenMyProfile: _navigateToProfileScreen,
                         onExplorePremium: _navigateToSubscriptionScreen,
-                        onSpotlightTap: _navigateToSubscriptionScreen,
-                        onSuperSwipeTap: _navigateToSubscriptionScreen,
-                        onEarningsTap: _navigateToTransactionHistory,
-                        onWithdrawTap: _navigateToWithdrawalScreen,
+                        onEarningsTap: _navigateToProfileScreen,
+                        onWithdrawTap: _navigateToProfileScreen,
                       )
                     else if (_tab == 1)
                       _AdviceTab()
@@ -331,8 +329,6 @@ class _PayPlanTab extends StatelessWidget {
   const _PayPlanTab({
     required this.onOpenMyProfile,
     required this.onExplorePremium,
-    required this.onSpotlightTap,
-    required this.onSuperSwipeTap,
     required this.onEarningsTap,
     required this.onWithdrawTap,
     this.user,
@@ -340,8 +336,6 @@ class _PayPlanTab extends StatelessWidget {
 
   final VoidCallback onOpenMyProfile;
   final VoidCallback onExplorePremium;
-  final VoidCallback onSpotlightTap;
-  final VoidCallback onSuperSwipeTap;
   final VoidCallback onEarningsTap;
   final VoidCallback onWithdrawTap;
   final UserModel? user;
@@ -394,37 +388,11 @@ class _PayPlanTab extends StatelessWidget {
           onTap: onWithdrawTap,
           child: _UserStatCard(
             title: "Total Earnings",
-            value: "₦${totalEarnings.toStringAsFixed(2)}",
+            value: "\$${totalEarnings.toStringAsFixed(2)}",
             color: Colors.green,
             icon: Icons.attach_money_outlined,
             subtitle: "Available for withdrawal",
           ),
-        ),
-        const SizedBox(height: 14),
-
-        // Spotlight / SuperSwipe
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: onSpotlightTap,
-                child: const _FeatureCard(
-                  title: "Spotlight",
-                  subtitle: "Stand out",
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: GestureDetector(
-                onTap: onSuperSwipeTap,
-                child: const _FeatureCard(
-                  title: "SuperSwipe",
-                  subtitle: "Get noticed",
-                ),
-              ),
-            ),
-          ],
         ),
         const SizedBox(height: 14),
 
@@ -667,62 +635,6 @@ class _InfoCard extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FeatureCard extends StatelessWidget {
-  const _FeatureCard({required this.title, required this.subtitle});
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 84,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color(0xFFFAD3EA),
-            ),
-            child: const Icon(Icons.star, color: AppColors.primary, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -2392,3 +2304,5 @@ class _BottomNav extends StatelessWidget {
     );
   }
 }
+
+

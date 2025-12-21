@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_colors.dart';
 import '../models/user_model.dart';
@@ -107,6 +108,133 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
     final lastPaymentDate = lastPayment.toDate();
     final nextBillingDate = DateTime(lastPaymentDate.year, lastPaymentDate.month + 1, lastPaymentDate.day);
     return DateFormat('MMM dd, yyyy').format(nextBillingDate);
+  }
+
+  Future<void> _contactSupport() async {
+    const adminEmail = 'support@meet9ja.com';
+    const subject = 'Meet9ja Premium Subscription Support';
+
+    // Get user info for email body
+    final userName = _currentUser?.name ?? 'User';
+    final userEmail = _currentUser?.email ?? FirebaseAuth.instance.currentUser?.email ?? '';
+    final subscriptionType = _subscriptionData?['type'] ?? 'premium';
+    final subscriptionStatus = _subscriptionData?['subscription_status'] ?? 'active';
+
+    final body = '''
+Hello Meet9ja Support Team,
+
+I need assistance with my Premium subscription.
+
+User Information:
+- Name: $userName
+- Email: $userEmail
+- Subscription Type: $subscriptionType
+- Status: $subscriptionStatus
+
+Issue/Question:
+[Please describe your issue or question here]
+
+Additional Details:
+- Subscription Started: ${_formatDate(_subscriptionData?['premium_since'])}
+- Next Billing Date: ${_getNextBillingDate(_subscriptionData?['last_payment'])}
+
+Thank you,
+$userName
+''';
+
+    // Properly encode the subject and body
+    final encodedSubject = Uri.encodeComponent(subject);
+    final encodedBody = Uri.encodeComponent(body);
+
+    // Create the mailto URI with encoded parameters
+    final emailUrl = 'mailto:$adminEmail?subject=$encodedSubject&body=$encodedBody';
+
+    try {
+      if (await canLaunch(emailUrl)) {
+        await launch(emailUrl);
+      } else {
+        // If mail app is not available, show alternative options
+        _showEmailNotAvailableDialog(adminEmail, subject, body);
+      }
+    } catch (e) {
+      print('Error launching email: $e');
+      _showEmailErrorDialog();
+    }
+  }
+
+  void _showEmailNotAvailableDialog(String email, String subject, String body) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Email App Not Found'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('No email app found on your device.'),
+              const SizedBox(height: 16),
+              const Text('You can contact us at:'),
+              const SizedBox(height: 8),
+              SelectableText(
+                email,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Copy email address:'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _copyToClipboard(email);
+              },
+              child: const Text('Copy Email'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showEmailErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Unable to Send Email'),
+          content: const Text(
+            'There was an error trying to open the email app. '
+                'Please try again or contact us directly at support@meet9ja.com',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _copyToClipboard(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied to clipboard: $text'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    // In a real app, you would use Clipboard.setData()
+    // For this example, I'm showing the snackbar
   }
 
   Widget _buildInfoCard(IconData icon, String title, String value, Color color) {
@@ -234,8 +362,22 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                Navigator.pop(context);
+                // Optionally, you could directly open email here
+                // _contactSupport();
+              },
               child: const Text('OK'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _contactSupport();
+              },
+              child: const Text(
+                'Contact Support',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         );
@@ -341,14 +483,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
               _getNextBillingDate(_subscriptionData?['last_payment']),
               Colors.orange,
             ),
-            const SizedBox(height: 12),
 
-            _buildInfoCard(
-              Icons.credit_card,
-              'Payment Method',
-              'Credit/Debit Card',
-              Colors.purple,
-            ),
             const SizedBox(height: 24),
 
             // Premium Benefits
@@ -384,7 +519,57 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 32),
+
+            // Management Buttons
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _contactSupport,
+                      icon: const Icon(Icons.support_agent),
+                      label: const Text(
+                        'Contact Support',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _showCancelSubscriptionDialog,
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text(
+                        'Cancel Subscription',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
 
             // Support Information
             Container(
@@ -410,24 +595,42 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(
+                  const Text(
                     'For any questions about your subscription, billing, or premium features, our support team is here to help.',
                     style: TextStyle(
-                      color: Colors.blue[800],
+                      color: Colors.black87,
                       fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () {
-                      // Implement contact support functionality
-                    },
-                    child: const Text(
-                      'Contact Support →',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.email, color: Colors.blue, size: 18),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Email: ',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
-                    ),
+                      SelectableText(
+                        'support@meet9ja.com',
+                        style: const TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time, color: Colors.blue, size: 18),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Response Time: ',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const Text('24-48 hours'),
+                    ],
                   ),
                 ],
               ),

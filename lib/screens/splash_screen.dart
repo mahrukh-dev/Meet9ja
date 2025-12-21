@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../constants/app_colors.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart'; // <-- make sure this exists
 
@@ -56,7 +57,7 @@ class _SplashScreenState extends State<SplashScreen> {
     );
 
     return const Scaffold(
-      backgroundColor: Color(0xFFFF4DA6), // pink background
+      backgroundColor: Color(0xFFF8F8F8), // pink background
       body: SafeArea(
         child: Center(
           child: Column(
@@ -82,7 +83,7 @@ class _BrandText extends StatelessWidget {
       'Meet9ja',
       textAlign: TextAlign.center,
       style: TextStyle(
-        color: Colors.white,
+        color: AppColors.primary,
         fontSize: 44,
         fontWeight: FontWeight.w800,
         letterSpacing: -0.5,

@@ -1,10 +1,7 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:meet9ja/constants/app_colors.dart';
 import 'package:meet9ja/models/user_model.dart';
-import 'package:meet9ja/screens/chat_screen.dart';
-import 'package:meet9ja/screens/messages_screen.dart';
 import '../db_functions/user_service.dart';
 
 class OtherDatingProfileScreen extends StatefulWidget {
@@ -54,24 +51,41 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
   }
 
   Future<void> _checkIfLiked() async {
-    // Implement logic to check if current user has liked this profile
-    // This is a placeholder - you'll need to implement your actual like checking logic
-    setState(() {
-      _isLiked = false; // Default to false, update based on your logic
-    });
+    try {
+      final currentUserId = UserService.currentUserId;
+      if (currentUserId == null) return;
+
+      final isLiked = await UserService.checkIfLiked(currentUserId, widget.userId);
+      setState(() {
+        _isLiked = isLiked;
+      });
+    } catch (e) {
+      print('Error checking like status: $e');
+    }
   }
 
-  // Like profile function - only triggered by ❤️ icon
+  // Like profile function
   Future<void> _likeProfile() async {
     try {
       if (_user == null) return;
 
-      final String uid = widget.userId;
-      final String name = _user!.name ?? 'User';
-      print('❤️ Liking profile: $uid');
+      final currentUserId = UserService.currentUserId;
+      if (currentUserId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("You need to be logged in to like profiles"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
-      // Call your likeProfile function here
-      await likeProfile(uid);
+      final String targetUserId = widget.userId;
+      final String name = _user!.name ?? 'User';
+      print('❤ Liking profile: $targetUserId');
+
+      // Call UserService.likeProfile
+      await UserService.likeProfile(currentUserId, targetUserId);
 
       setState(() {
         _isLiked = true;
@@ -81,16 +95,15 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
         SnackBar(
           content: Text("You liked $name"),
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 800),
+          duration: const Duration(milliseconds: 1500),
           backgroundColor: Colors.green,
         ),
       );
-      // DO NOT navigate to next screen - only like action
     } catch (e) {
       print('❌ Error in _likeProfile: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Error: $e"),
+          content: Text("Error liking profile: $e"),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(milliseconds: 1500),
           backgroundColor: Colors.red,
@@ -104,12 +117,15 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
     try {
       if (_user == null) return;
 
-      final String uid = widget.userId;
-      final String name = _user!.name ?? 'User';
-      print('💔 Unliking profile: $uid');
+      final currentUserId = UserService.currentUserId;
+      if (currentUserId == null) return;
 
-      // Call your unlikeProfile function here
-      await unlikeProfile(uid);
+      final String targetUserId = widget.userId;
+      final String name = _user!.name ?? 'User';
+      print('💔 Unliking profile: $targetUserId');
+
+      // Call UserService.unlikeProfile
+      await UserService.unlikeProfile(currentUserId, targetUserId);
 
       setState(() {
         _isLiked = false;
@@ -119,7 +135,7 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
         SnackBar(
           content: Text("You unliked $name"),
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 800),
+          duration: const Duration(milliseconds: 1500),
           backgroundColor: Colors.orange,
         ),
       );
@@ -127,7 +143,7 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
       print('❌ Error in _unlikeProfile: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Error: $e"),
+          content: Text("Error unliking profile: $e"),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(milliseconds: 1500),
           backgroundColor: Colors.red,
@@ -143,24 +159,6 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
     } else {
       await _likeProfile();
     }
-  }
-
-  // Placeholder function - replace with your actual likeProfile implementation
-  Future<void> likeProfile(String uid) async {
-    // Implement your actual like profile logic here
-    // This should handle the match functionality
-    print('Implement likeProfile functionality for user: $uid');
-
-    await likeProfile(uid);
-
-    //await likeUser(uid);
-  }
-
-  // Placeholder function - replace with your actual unlikeProfile implementation
-  Future<void> unlikeProfile(String uid) async {
-    // Implement your actual unlike profile logic here
-    print('Implement unlikeProfile functionality for user: $uid');
-    // Example: await UserService.unlikeUser(uid);
   }
 
   void _showMoreOptions() {
@@ -286,11 +284,25 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('User reported successfully')),
-              );
+              try {
+                final currentUserId = UserService.currentUserId;
+                if (currentUserId != null) {
+                  await UserService.submitProfileReport(
+                    reporterId: currentUserId,
+                    reportedUserId: widget.userId,
+                    reason: 'Inappropriate behavior',
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('User reported successfully')),
+                  );
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error reporting user: $e')),
+                );
+              }
             },
             child: const Text('Report'),
           ),
@@ -316,7 +328,6 @@ class _OtherDatingProfileScreenState extends State<OtherDatingProfileScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('User blocked successfully')),
               );
-              Navigator.pop(context); // Go back to previous screen
             },
             child: const Text('Block', style: TextStyle(color: Colors.red)),
           ),
@@ -409,10 +420,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate age from date of birth - you should implement this based on your UserModel
-    final age = user!.age;
-
-    // Get profile photo URL
+    final age = user?.age ?? 0;
     final profilePhotoUrl = user != null ? UserService.getProfilePhotoUrl(user!) : null;
 
     return Column(
@@ -473,22 +481,6 @@ class _Header extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  int _calculateAge(String? dateOfBirth) {
-    if (dateOfBirth == null || dateOfBirth.isEmpty) return 18;
-
-    try {
-      final birthDate = DateTime.parse(dateOfBirth);
-      final now = DateTime.now();
-      int age = now.year - birthDate.year;
-      if (now.month < birthDate.month || (now.month == birthDate.month && now.day < birthDate.day)) {
-        age--;
-      }
-      return age;
-    } catch (e) {
-      return 18; // Default age if parsing fails
-    }
   }
 }
 
@@ -595,7 +587,6 @@ class _InterestsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Extract interests from user model - adjust based on your UserModel structure
     final interests = _extractInterests(user);
 
     if (interests.isEmpty) {
@@ -640,7 +631,6 @@ class _InterestsTab extends StatelessWidget {
   List<String> _extractInterests(UserModel? user) {
     if (user == null) return [];
 
-    // Adjust this based on how interests are stored in your UserModel
     if (user.interests != null && user.interests!.isNotEmpty) {
       if (user.interests is List<String>) {
         return user.interests as List<String>;
@@ -661,7 +651,6 @@ class _PhotosTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Get user photos - adjust based on your UserModel structure
     final photos = _getUserPhotos(user);
 
     if (photos.isEmpty) {
@@ -737,7 +726,6 @@ class _PhotosTab extends StatelessWidget {
       }
 
       // Add additional photos from user model if available
-      // Adjust this based on how you store multiple photos in your UserModel
       if (user.firstPhotos != null) {
         if (user.firstPhotos is List<String>) {
           photos.addAll(user.firstPhotos as List<String>);

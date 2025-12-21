@@ -14,6 +14,98 @@ class UserService {
   // Get current user ID
   static String? get currentUserId => _auth.currentUser?.uid;
 
+  // ============ LIKE/UNLIKE FUNCTIONALITY ============
+  static Future<void> likeProfile(String currentUserId, String targetUserId) async {
+    try {
+      final batch = _firestore.batch();
+
+      // Add to current user's liked profiles
+      batch.update(_firestore.collection('users').doc(currentUserId), {
+        'liked_profiles': FieldValue.arrayUnion([targetUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // Add to target user's liked by
+      batch.update(_firestore.collection('users').doc(targetUserId), {
+        'liked_by': FieldValue.arrayUnion([currentUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // Check for mutual like (match)
+      final targetUserDoc = await _firestore.collection('users').doc(targetUserId).get();
+      if (targetUserDoc.exists) {
+        final targetData = targetUserDoc.data() as Map<String, dynamic>;
+        final targetLikedProfiles = List<String>.from(targetData['liked_profiles'] ?? []);
+
+        if (targetLikedProfiles.contains(currentUserId)) {
+          // It's a match! Create a match document
+          final matchId = '${currentUserId}${targetUserId}${DateTime.now().millisecondsSinceEpoch}';
+          await _firestore.collection('matches').doc(matchId).set({
+            'matchId': matchId,
+            'user1Id': currentUserId,
+            'user2Id': targetUserId,
+            'matchedAt': FieldValue.serverTimestamp(),
+            'status': 'active',
+          });
+
+          // Send match notification to both users
+          await NotificationTriggers.onMutualMatch(
+            currentUserId,
+            targetUserId
+          );
+        }
+      }
+
+      await batch.commit();
+      print('✅ Liked profile: $targetUserId');
+    } catch (e) {
+      print('❌ Error liking profile: $e');
+      throw 'Failed to like profile: $e';
+    }
+  }
+
+  static Future<void> unlikeProfile(String currentUserId, String targetUserId) async {
+    try {
+      final batch = _firestore.batch();
+
+      // Remove from current user's liked profiles
+      batch.update(_firestore.collection('users').doc(currentUserId), {
+        'liked_profiles': FieldValue.arrayRemove([targetUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // Remove from target user's liked by
+      batch.update(_firestore.collection('users').doc(targetUserId), {
+        'liked_by': FieldValue.arrayRemove([currentUserId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+      print('✅ Unliked profile: $targetUserId');
+    } catch (e) {
+      print('❌ Error unliking profile: $e');
+      throw 'Failed to unlike profile: $e';
+    }
+  }
+
+  static Future<bool> checkIfLiked(String currentUserId, String targetUserId) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(currentUserId).get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final likedProfiles = List<String>.from(userData['liked_profiles'] ?? []);
+        return likedProfiles.contains(targetUserId);
+      }
+
+      return false;
+    } catch (e) {
+      print('❌ Error checking like status: $e');
+      return false;
+    }
+  }
+
+  // ============ EXISTING FUNCTIONS ============
   // Fetch user profile data as UserModel
   static Future<UserModel?> getUserProfile(String userId) async {
     try {
@@ -94,7 +186,6 @@ class UserService {
     }
   }
 
-  // Create a new post
   // Create a new post - UPDATED VERSION
   static Future<void> createPost({
     required String userId,
@@ -580,7 +671,7 @@ class UserService {
     String? details,
   }) async {
     try {
-      final reportId = '${reporterId}_${reportedUserId}_${DateTime.now().millisecondsSinceEpoch}';
+      final reportId = '${reporterId}${reportedUserId}${DateTime.now().millisecondsSinceEpoch}';
 
       final reportData = {
         'reportId': reportId,
@@ -698,20 +789,6 @@ class UserService {
     if (user.mode['bizz'] == true) return 'Bizz';
     return 'Not Set';
   }
-  //
-  // static int getCoinBalance(UserModel user) {
-  //   final balance = user.wallet['coin_balance'];
-  //   if (balance is int) return balance;
-  //   if (balance is double) return balance.toInt();
-  //   return 0;
-  // }
-  //
-  // static double getTotalEarnings(UserModel user) {
-  //   final earnings = user.wallet['total_earning'];
-  //   if (earnings is double) return earnings;
-  //   if (earnings is int) return earnings.toDouble();
-  //   return 0.0;
-  // }
 
   static bool isPremium(UserModel user) {
     return user.type == 'premium';
@@ -886,7 +963,6 @@ class UserService {
 
 
 
-
   static Stream<List<UserModel>> getSimilarInterestsUsers() {
     final currentUserId = _auth.currentUser?.uid;
     // final currentUserId = currentUserId;
@@ -922,37 +998,35 @@ class UserService {
 
   // Get diamond balance (purchased currency)
   static int getDiamondBalance(UserModel user) {
-  final balance = user.wallet['diamond_balance'];
-  if (balance is int) return balance;
-  if (balance is double) return balance.toInt();
-  return 0;
+    final balance = user.wallet['diamond_balance'];
+    if (balance is int) return balance;
+    if (balance is double) return balance.toInt();
+    return 0;
   }
 
   // Get coin balance (earned currency)
   static int getCoinBalance(UserModel user) {
-  final balance = user.wallet['coin_balance'];
-  if (balance is int) return balance;
-  if (balance is double) return balance.toInt();
-  return 0;
+    final balance = user.wallet['coin_balance'];
+    if (balance is int) return balance;
+    if (balance is double) return balance.toInt();
+    return 0;
   }
 
   // Get total earnings (coins)
   static double getTotalEarnings(UserModel user) {
-  final earnings = user.wallet['total_earning'];
-  if (earnings is double) return earnings;
-  if (earnings is int) return earnings.toDouble();
-  return 0.0;
+    final earnings = user.wallet['coin_balance']/100;
+    if (earnings is double) return earnings;
+    if (earnings is int) return earnings.toDouble();
+    return 0.0;
   }
 
   // Check if user has enough diamonds
   static bool hasEnoughDiamonds(UserModel user, int amount) {
-  return getDiamondBalance(user) >= amount;
+    return getDiamondBalance(user) >= amount;
   }
 
   // Check if user has enough coins
   static bool hasEnoughCoins(UserModel user, int amount) {
-  return getCoinBalance(user) >= amount;
+    return getCoinBalance(user) >= amount;
   }
-
-
 }

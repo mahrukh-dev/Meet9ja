@@ -26,6 +26,7 @@ import '../models/post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
 import 'MatchedUserScreen.dart';
+import 'chat_screen.dart';
 import 'create_post_screen.dart';
 import 'create_story_screen.dart';
 import 'edit_profile_screen.dart';
@@ -859,7 +860,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
-// Header Widget
+// Updated _SliverHeader class with chat button logic
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
@@ -928,10 +929,10 @@ class _SliverHeader extends StatelessWidget {
           IconButton(
             icon: const Icon(FontAwesomeIcons.gear, size: 20),
             onPressed: () {
-              FirebaseService.signOut();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => Signinscreen()),
-              );
+              // FirebaseService.signOut();
+              // Navigator.of(context).push(
+              //   MaterialPageRoute(builder: (_) => Signinscreen()),
+              // );
             },
           )
         else
@@ -1128,32 +1129,252 @@ class _SliverHeader extends StatelessWidget {
   }
 
   Widget _buildOtherProfileActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: _ActionButton(
-            label: isFollowing ? "Following" : "Follow",
-            icon: isFollowing
-                ? FontAwesomeIcons.userCheck
-                : FontAwesomeIcons.userPlus,
-            color: isFollowing ? Colors.grey : AppColors.primary,
-            textColor: isFollowing ? Colors.black87 : Colors.white,
-            onPressed: onFollowTap,
+    // Check if users are following each other and matched
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _checkFollowingAndMatchStatus(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Row(
+            children: [
+              Expanded(child: _buildLoadingButton()),
+              const SizedBox(width: 6),
+              Expanded(child: _buildLoadingButton()),
+            ],
+          );
+        }
+
+        final data = snapshot.data ?? {};
+        final isMutualFollowing = data['mutualFollowing'] ?? false;
+        final isMutuallyMatched = data['mutuallyMatched'] ?? false;
+
+        // Show chat button if both following and matched
+        final showChatButton = isMutualFollowing && isMutuallyMatched;
+
+        return Row(
+          children: [
+            Expanded(
+              child: _ActionButton(
+                label: isFollowing ? "Following" : "Follow",
+                icon: isFollowing
+                    ? FontAwesomeIcons.userCheck
+                    : FontAwesomeIcons.userPlus,
+                color: isFollowing ? Colors.grey : AppColors.primary,
+                textColor: isFollowing ? Colors.black87 : Colors.white,
+                onPressed: onFollowTap,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: showChatButton
+                  ? _ChatButton(
+                onPressed: () => _navigateToChat(context),
+              )
+                  : _ActionButton(
+                label: isMatched ? "Matched" : "Match",
+                icon: isMatched
+                    ? FontAwesomeIcons.heartCircleCheck
+                    : FontAwesomeIcons.heart,
+                color: isMatched ? Colors.green : AppColors.primary,
+                textColor: Colors.white,
+                onPressed: onMatchTap,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _checkFollowingAndMatchStatus() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null || isMyProfile) {
+        return {'mutualFollowing': false, 'mutuallyMatched': false};
+      }
+
+      // Check if current user is following the profile user
+      final currentUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+      final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
+      final currentUserFollowing = List<String>.from(
+          currentUserData?['following'] ?? []);
+
+      // Check if profile user is following current user
+      final profileUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userProfile.uid)
+          .get();
+      final profileUserData = profileUserDoc.data() as Map<String, dynamic>?;
+      final profileUserFollowing = List<String>.from(
+          profileUserData?['following'] ?? []);
+
+      final isMutualFollowing = currentUserFollowing.contains(userProfile.uid) &&
+          profileUserFollowing.contains(currentUser.uid);
+
+      // Check if users have mutually matched
+      final isMutuallyMatched = await _checkMutualMatch(currentUser.uid, userProfile.uid);
+
+      return {
+        'mutualFollowing': isMutualFollowing,
+        'mutuallyMatched': isMutuallyMatched,
+      };
+    } catch (e) {
+      print('❌ Error checking follow/match status: $e');
+      return {'mutualFollowing': false, 'mutuallyMatched': false};
+    }
+  }
+
+  Future<bool> _checkMutualMatch(String user1Id, String user2Id) async {
+    try {
+      // Check both directions for match status
+      final matchId1 = '${user1Id}_$user2Id';
+      final matchId2 = '${user2Id}_$user1Id';
+
+      final match1Doc = await FirebaseFirestore.instance
+          .collection('matches')
+          .doc(matchId1)
+          .get();
+      final match2Doc = await FirebaseFirestore.instance
+          .collection('matches')
+          .doc(matchId2)
+          .get();
+
+      // Check for mutual match or any match in both directions
+      final hasMatch1 = match1Doc.exists && (match1Doc.data()?['status'] == 'match' || match1Doc.data()?['status'] == 'like');
+      final hasMatch2 = match2Doc.exists && (match2Doc.data()?['status'] == 'match' || match2Doc.data()?['status'] == 'like');
+
+      return hasMatch1 || hasMatch2;
+    } catch (e) {
+      print('❌ Error checking mutual match: $e');
+      return false;
+    }
+  }
+
+  Future<void> _navigateToChat(BuildContext context) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      // Generate conversation ID
+      final conversationId = _getConversationId(currentUser.uid, userProfile.uid);
+
+      // Get current user data
+      final currentUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+      final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
+
+      final currentUserName = currentUserData?['name'] ?? 'You';
+      final currentUserAvatar = UserService.getProfilePhotoUrl(userProfile);
+
+      // Get profile user data
+      final profileUserAvatar = UserService.getProfilePhotoUrl(userProfile);
+
+      // Ensure conversation exists
+      await _ensureConversationExists(
+        conversationId,
+        currentUser.uid,
+        currentUserName,
+        currentUserAvatar ?? 'https://i.pravatar.cc/200',
+        userProfile.uid,
+        userProfile.name,
+        profileUserAvatar ?? 'https://i.pravatar.cc/200',
+      );
+
+      // Navigate to chat screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            conversationId: conversationId,
+            otherUserId: userProfile.uid,
+            otherUserName: userProfile.name,
+            otherUserAvatar: profileUserAvatar ?? 'https://i.pravatar.cc/200',
           ),
         ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: _ActionButton(
-            label: isMatched ? "Matched" : "Match",
-            icon: isMatched
-                ? FontAwesomeIcons.heartCircleCheck
-                : FontAwesomeIcons.heart,
-            color: isMatched ? Colors.green : AppColors.primary,
-            textColor: Colors.white,
-            onPressed: onMatchTap,
+      );
+
+    } catch (e) {
+      print('❌ Error navigating to chat: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to open chat: $e')),
+      );
+    }
+  }
+
+  String _getConversationId(String user1Id, String user2Id) {
+    final sortedIds = [user1Id, user2Id]..sort();
+    return 'conversation_${sortedIds[0]}_${sortedIds[1]}';
+  }
+
+  Future<void> _ensureConversationExists(
+      String conversationId,
+      String currentUserId,
+      String currentUserName,
+      String currentUserAvatar,
+      String otherUserId,
+      String otherUserName,
+      String otherUserAvatar,
+      ) async {
+    try {
+      final conversationDoc = await FirebaseFirestore.instance
+          .collection('chat_conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        await FirebaseFirestore.instance
+            .collection('chat_conversations')
+            .doc(conversationId)
+            .set({
+          'participants': [currentUserId, otherUserId],
+          'participantNames': {
+            currentUserId: currentUserName,
+            otherUserId: otherUserName,
+          },
+          'participantAvatars': {
+            currentUserId: currentUserAvatar,
+            otherUserId: otherUserAvatar,
+          },
+          'lastMessage': 'Start a conversation',
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'lastMessageType': 'text',
+          'lastMessageSenderId': currentUserId,
+          'unreadCount': {
+            currentUserId: 0,
+            otherUserId: 0,
+          },
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('✅ Created new conversation: $conversationId');
+      }
+    } catch (e) {
+      print('❌ Error ensuring conversation exists: $e');
+      rethrow;
+    }
+  }
+
+  Widget _buildLoadingButton() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -1221,6 +1442,51 @@ class _SliverHeader extends StatelessWidget {
     );
   }
 }
+
+// New Chat Button Widget
+class _ChatButton extends StatelessWidget {
+  const _ChatButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+      ),
+      onPressed: onPressed,
+      icon: const Icon(FontAwesomeIcons.comment, size: 13),
+      label: const Text(
+        "Chat",
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+// Also add this helper method to UserService class
+extension UserServiceHelpers on UserService {
+  static String? getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
+  }
+}
+
 
 // UI Components
 class _StatTile extends StatelessWidget {

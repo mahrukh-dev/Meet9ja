@@ -11,7 +11,6 @@ import 'package:crypto/crypto.dart';
 
 import '../aws/zego_recording_service.dart';
 
-
 class LiveStreamScreen extends StatefulWidget {
   final String liveId;
   final String userId;
@@ -32,7 +31,7 @@ class LiveStreamScreen extends StatefulWidget {
   State<LiveStreamScreen> createState() => _LiveStreamScreenState();
 }
 
-class _LiveStreamScreenState extends State<LiveStreamScreen> {
+class _LiveStreamScreenState extends State<LiveStreamScreen> with WidgetsBindingObserver, RouteAware {
   // Zego Configuration
   final int _zegoAppId = 51745598;
   final String _zegoServerSecret = 'd47d53d464da3b6ff8a8141dcb4e8b3b';
@@ -64,18 +63,163 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   bool _canNavigate = false;
   Completer<void>? _recordingCompleter;
 
+  // Route observer
+  final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
+  bool _isExiting = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeZego();
     _updateViewerCount();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      _routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // Screen came back to foreground
+    _isExiting = false;
+  }
+
+  @override
+  void didPop() {
+    // Screen was popped from navigation stack
+    _handleScreenExit();
+  }
+
+  @override
+  void didPushNext() {
+    // Another screen was pushed on top
+    _handleScreenExit();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _routeObserver.unsubscribe(this);
+    _cleanupResources();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        _handleScreenExit();
+        break;
+      case AppLifecycleState.resumed:
+        _isExiting = false;
+        break;
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        _cleanupResources();
+        break;
+    }
+  }
+
+  void _cleanupResources() {
+    print('🧹 Cleaning up resources...');
+
+    // Cancel all timers
     _statusPollingTimer?.cancel();
     _recordingCheckTimer?.cancel();
-    super.dispose();
+
+    // Complete any pending completers
+    _recordingCompleter?.complete();
+
+    // Stop recording if still active
+    if (_isRecording && widget.isHost) {
+      _stopZegoRecording();
+    }
+
+    // Update viewer count if audience
+    if (!widget.isHost) {
+      _decrementViewerCount();
+    }
+  }
+
+  void _handleScreenExit() {
+    if (_isExiting) return;
+
+    _isExiting = true;
+    print('🚪 Screen exit detected, handling cleanup...');
+
+    if (widget.isHost) {
+      // Host: end the live stream
+      _endLiveStream();
+    } else {
+      // Audience: just leave
+      _leaveAsAudience();
+    }
+  }
+
+  Future<void> _endLiveStream() async {
+    if (_isLeaving) return;
+
+    print('🛑 Host is ending live stream...');
+    setState(() {
+      _isLeaving = true;
+    });
+
+    // Stop recording if active
+    if (_isRecording && !_usingFallback && _recordingTaskId != null) {
+      await _stopZegoRecording();
+    } else {
+      // If recording wasn't started properly, just save what we have
+      _completeRecordingProcess();
+    }
+
+    // Wait for recording process to complete if needed
+    if (!_canNavigate) {
+      _recordingCompleter = Completer<void>();
+      await _recordingCompleter!.future;
+    }
+
+    // Update Firestore to end stream
+    await _saveRecordingToFirestore();
+
+    // Navigate back
+    _navigateBack();
+  }
+
+  Future<void> _leaveAsAudience() async {
+    print('👤 Audience leaving...');
+
+    // Decrement viewer count
+    await _decrementViewerCount();
+
+    // Navigate back immediately
+    _navigateBack();
+  }
+
+  Future<void> _decrementViewerCount() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('liveStreams')
+          .doc(widget.liveId)
+          .update({'viewers': FieldValue.increment(-1)});
+      print('✅ Viewer count decremented');
+    } catch (e) {
+      print('❌ Error decrementing viewer count: $e');
+    }
+  }
+
+  void _navigateBack() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
   }
 
   void _initializeZego() {
@@ -463,7 +607,11 @@ METADATA_END
                 child: const Text('Stay'),
               ),
               TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () {
+                  // Force leave and cleanup
+                  _handleScreenExit();
+                  Navigator.of(context).pop(true);
+                },
                 child: const Text('Leave Anyway'),
               ),
             ],
@@ -493,7 +641,8 @@ METADATA_END
               events: ZegoUIKitPrebuiltLiveStreamingEvents(
                 onEnded: (ZegoLiveStreamingEndEvent event,
                     VoidCallback defaultHandle) {
-                  _onLeaveLiveStreaming(defaultHandle);
+                  print('🎬 Zego onEnded event triggered');
+                  _handleScreenExit();
                 },
               ),
             ),
@@ -520,119 +669,6 @@ METADATA_END
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Zego initialization status
-          if (!_zegoInitialized)
-            // Container(
-            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            //   decoration: BoxDecoration(
-            //     color: Colors.orange,
-            //     borderRadius: BorderRadius.circular(20),
-            //   ),
-            //   child: const Text(
-            //     'Initializing Zego...',
-            //     style: TextStyle(color: Colors.white, fontSize: 12),
-            //   ),
-            // ),
-
-          const SizedBox(height: 8),
-
-          // Recording indicator
-          if (_isRecording && !_usingFallback)
-            // Container(
-            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            //   decoration: BoxDecoration(
-            //     color: Colors.red,
-            //     borderRadius: BorderRadius.circular(20),
-            //   ),
-            //   child: Row(
-            //     mainAxisSize: MainAxisSize.min,
-            //     children: [
-            //       Container(
-            //         width: 8,
-            //         height: 8,
-            //         decoration: const BoxDecoration(
-            //           color: Colors.white,
-            //           shape: BoxShape.circle,
-            //         ),
-            //       ),
-            //       const SizedBox(width: 6),
-            //       const Text(
-            //         'RECORDING',
-            //         style: TextStyle(
-            //           color: Colors.white,
-            //           fontSize: 12,
-            //           fontWeight: FontWeight.bold,
-            //         ),
-            //       ),
-            //     ],
-            //   ),
-            // ),
-
-          if (_usingFallback)
-            // Container(
-            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            //   decoration: BoxDecoration(
-            //     color: Colors.orange,
-            //     borderRadius: BorderRadius.circular(20),
-            //   ),
-            //   child: const Row(
-            //     mainAxisSize: MainAxisSize.min,
-            //     children: [
-            //       Icon(Icons.warning, color: Colors.white, size: 12),
-            //       SizedBox(width: 6),
-            //       Text(
-            //         'FALLBACK MODE',
-            //         style: TextStyle(
-            //           color: Colors.white,
-            //           fontSize: 12,
-            //           fontWeight: FontWeight.bold,
-            //         ),
-            //       ),
-            //     ],
-            //   ),
-            // ),
-
-          const SizedBox(height: 8),
-          //
-          // // Status message
-          // Container(
-          //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          //   decoration: BoxDecoration(
-          //     color: Colors.black54,
-          //     borderRadius: BorderRadius.circular(20),
-          //   ),
-          //   child: Text(
-          //     _getStatusMessage(),
-          //     style: const TextStyle(color: Colors.white, fontSize: 12),
-          //   ),
-          // ),
-
-          // Task ID
-          if (_recordingTaskId != null)
-            // Container(
-            //   margin: const EdgeInsets.only(top: 8),
-            //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            //   decoration: BoxDecoration(
-            //     color: Colors.green,
-            //     borderRadius: BorderRadius.circular(20),
-            //   ),
-            //   child: Column(
-            //     crossAxisAlignment: CrossAxisAlignment.start,
-            //     children: [
-            //       const Text(
-            //         'Task ID:',
-            //         style: TextStyle(color: Colors.white,
-            //             fontSize: 10,
-            //             fontWeight: FontWeight.bold),
-            //       ),
-            //       Text(
-            //         _recordingTaskId!,
-            //         style: const TextStyle(color: Colors.white, fontSize: 10),
-            //       ),
-            //     ],
-            //   ),
-            // ),
-
           // File count
           if (_recordingUrls.isNotEmpty)
             Container(
@@ -675,7 +711,7 @@ METADATA_END
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                'Checking recording... $_recordingCheckAttempts/$_maxRecordingCheckAttempts',
+                'Checking recording... $_recordingCheckAttempts/6',
                 style: const TextStyle(color: Colors.white, fontSize: 10),
               ),
             ),
@@ -713,13 +749,6 @@ METADATA_END
               ),
             ),
             const SizedBox(height: 20),
-            // Text(
-            //   // 'Attempt $_recordingCheckAttempts of $_maxRecordingCheckAttempts',
-            //   style: TextStyle(
-            //     color: Colors.white.withOpacity(0.7),
-            //     fontSize: 12,
-            //   ),
-            // ),
             if (_recordingUrl != null) ...[
               const SizedBox(height: 20),
               Container(
@@ -741,79 +770,6 @@ METADATA_END
         ),
       ),
     );
-  }
-
-  String _getStatusMessage() {
-    if (!_zegoInitialized) return 'Initializing...';
-    if (_usingFallback) return 'Fallback Recording';
-    if (_isRecording) return 'Recording...';
-    if (_recordingUrl != null) return 'Recording Ready';
-    if (_isLeaving) return 'Processing...';
-    return 'Ready';
-  }
-
-  Future<void> _onLeaveLiveStreaming(VoidCallback defaultHandle) async {
-    if (_isLeaving) return;
-
-    print('🚪 Leaving live stream...');
-    print('📊 Current recording state:');
-    print('   - Is Recording: $_isRecording');
-    print('   - Task ID: $_recordingTaskId');
-    print('   - Using Fallback: $_usingFallback');
-    print('   - Recording URLs: ${_recordingUrls.length}');
-    print('   - Can Navigate: $_canNavigate');
-
-    setState(() {
-      _isLeaving = true;
-    });
-
-    if (!widget.isHost) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('liveStreams')
-            .doc(widget.liveId)
-            .update({'viewers': FieldValue.increment(-1)});
-      } catch (e) {
-        print('Error decrementing viewer count: $e');
-      }
-
-      // Audience can leave immediately
-      setState(() {
-        _canNavigate = true;
-      });
-      _performNavigation(defaultHandle);
-    } else {
-      print('🛑 Host is leaving - handling recording...');
-
-      // Stop recording if it's active
-      if (_isRecording && !_usingFallback && _recordingTaskId != null) {
-        await _stopZegoRecording();
-      } else {
-        // If recording wasn't started properly, just save what we have
-        _completeRecordingProcess();
-      }
-
-      // Wait for recording process to complete
-      if (!_canNavigate) {
-        _recordingCompleter = Completer<void>();
-        await _recordingCompleter!.future;
-      }
-
-      _performNavigation(defaultHandle);
-    }
-  }
-
-  void _performNavigation(VoidCallback defaultHandle) {
-    print('🎯 Performing navigation...');
-    print('📹 Final Recording URL: $_recordingUrl');
-    print('📁 Total files: ${_recordingUrls.length}');
-
-    // Clean up timers
-    _statusPollingTimer?.cancel();
-    _recordingCheckTimer?.cancel();
-
-    // Navigate
-    defaultHandle();
   }
 
   Future<void> _saveRecordingToFirestore() async {
@@ -1039,66 +995,6 @@ bool _isUnreserved(String char) {
       char == '~';
 }
 
-// Alternative simplified S3 upload using pre-signed URLs (if you prefer)
-Future<String> uploadToS3Simple({
-  required String content,
-  required String bucket,
-  required String region,
-  required String objectKey,
-}) async {
-  try {
-    // For simple text content, you can use this alternative approach
-    final url = 'https://$bucket.s3.$region.amazonaws.com/$objectKey';
-
-    print('🌐 Uploading to S3 (simple method)...');
-    print('📁 Object Key: $objectKey');
-
-    final response = await http.put(
-      Uri.parse(url),
-      headers: {
-        'Content-Type': 'text/plain',
-      },
-      body: content,
-    );
-
-    print('📡 S3 Simple Upload Response: ${response.statusCode}');
-
-    if (response.statusCode == 200) {
-      print('✅ File uploaded successfully: $url');
-      return url;
-    } else {
-      throw Exception('S3 Upload failed: ${response.statusCode}');
-    }
-  } catch (e) {
-    print('❌ S3 Simple Upload error: $e');
-    rethrow;
-  }
-}
-
-// Helper function to create fallback recording content
-String createFallbackRecordingContent({
-  required String liveId,
-  required String hostName,
-  required String hostId,
-  required String error,
-  String? taskId,
-  List<String> recordingUrls = const [],
-}) {
-  return '''
-LIVE_STREAM_METADATA
-Live ID: $liveId
-Host: $hostName
-Host ID: $hostId
-Start Time: ${DateTime.now().toIso8601String()}
-Recording Type: FALLBACK_METADATA
-Status: COMPLETED
-Error: $error
-Task ID: $taskId
-Recording URLs: ${recordingUrls.join(', ')}
-Fallback Created: ${DateTime.now().toIso8601String()}
-METADATA_END
-''';
-}
 // Gift Overlay Widget
 class _GiftOverlay extends StatelessWidget {
   final String liveId;
