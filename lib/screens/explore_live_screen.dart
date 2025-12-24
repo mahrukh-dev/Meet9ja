@@ -13,6 +13,7 @@ import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
 import 'package:video_player/video_player.dart';
 
+
 import '../constants/app_colors.dart';
 import '../models/user_model.dart';
 import 'browse_live_screen.dart';
@@ -21,15 +22,18 @@ import 'home_screen.dart';
 import 'livestream_screen.dart';
 import 'messages_screen.dart';
 
+
 class ExploreLiveScreen extends StatefulWidget {
   const ExploreLiveScreen({super.key});
   @override
   State<ExploreLiveScreen> createState() => _ExploreLiveScreenState();
 }
 
+
 class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tab;
+
 
   final List<String> _liveFilters = const [
     "All",
@@ -40,6 +44,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   ];
   int _liveFilterIndex = 0;
 
+
   List<_ReelItem> _followingReels = [];
   List<_ReelItem> _clipsReels = [];
   List<_LiveCard> _liveRooms = [];
@@ -48,13 +53,26 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   String? _currentUserId;
   List<UserModel> _matchedUsers = [];
 
+
   // Bottom navigation state
   int _currentBottomNavIndex = 0;
+
 
   // Track active video controllers
   final Map<String, VideoPlayerController> _videoControllers = {};
   final Map<String, ChewieController> _chewieControllers = {};
   String? _currentPlayingVideoId;
+
+  // Track visibility of play/pause overlay for each video
+  final Map<String, bool> _showPlayPauseOverlay = {};
+  Timer? _hideOverlayTimer;
+
+  // Track PageController for each tab
+  final PageController _followingPageController = PageController();
+  final PageController _clipsPageController = PageController();
+  int _currentFollowingPage = 0;
+  int _currentClipsPage = 0;
+
 
   @override
   void initState() {
@@ -62,20 +80,78 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _tab = TabController(length: 3, vsync: this, initialIndex: 1);
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
+
     // Add observer for app lifecycle
     WidgetsBinding.instance.addObserver(this);
+
 
     _loadLiveData();
     _setupLiveStreamListener();
     _loadMatchedUsers();
 
+
     // Listen to tab changes to pause videos when switching tabs
     _tab.addListener(_handleTabChange);
+
+    // Listen to page changes for autoplay
+    _followingPageController.addListener(_handleFollowingPageChange);
+    _clipsPageController.addListener(_handleClipsPageChange);
   }
+
+
+  void _handleFollowingPageChange() {
+    final page = _followingPageController.page?.round() ?? 0;
+    if (page != _currentFollowingPage) {
+      // Hide overlay for previous video
+      if (_currentFollowingPage < _followingReels.length) {
+        final prevItem = _followingReels[_currentFollowingPage];
+        if (prevItem.mediaType == 'video') {
+          setState(() {
+            _showPlayPauseOverlay[prevItem.postId] = false;
+          });
+        }
+      }
+
+      _currentFollowingPage = page;
+      // Auto play video on page change
+      if (_followingReels.isNotEmpty && page < _followingReels.length) {
+        final item = _followingReels[page];
+        if (item.mediaType == 'video') {
+          _playVideo(item.postId);
+        }
+      }
+    }
+  }
+
+  void _handleClipsPageChange() {
+    final page = _clipsPageController.page?.round() ?? 0;
+    if (page != _currentClipsPage) {
+      // Hide overlay for previous video
+      if (_currentClipsPage < _clipsReels.length) {
+        final prevItem = _clipsReels[_currentClipsPage];
+        if (prevItem.mediaType == 'video') {
+          setState(() {
+            _showPlayPauseOverlay[prevItem.postId] = false;
+          });
+        }
+      }
+
+      _currentClipsPage = page;
+      // Auto play video on page change
+      if (_clipsReels.isNotEmpty && page < _clipsReels.length) {
+        final item = _clipsReels[page];
+        if (item.mediaType == 'video') {
+          _playVideo(item.postId);
+        }
+      }
+    }
+  }
+
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+
 
     switch (state) {
       case AppLifecycleState.paused:
@@ -100,12 +176,14 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   void _handleTabChange() {
     // Pause videos when switching away from clips or following tabs
     if (_tab.index != 0 && _tab.index != 2) {
       _pauseAllVideos();
     }
   }
+
 
   void _pauseAllVideos() {
     for (var controller in _videoControllers.values) {
@@ -114,6 +192,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       }
     }
   }
+
 
   void _disposeAllVideoControllers() {
     for (var controller in _chewieControllers.values) {
@@ -124,23 +203,29 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
     _videoControllers.clear();
     _chewieControllers.clear();
+    _showPlayPauseOverlay.clear();
+    _hideOverlayTimer?.cancel();
   }
+
 
   Future<void> _initializeVideoController(_ReelItem item) async {
     if (item.mediaType != 'video' || _videoControllers.containsKey(item.postId)) {
       return;
     }
 
+
     try {
       final videoController = VideoPlayerController.network(item.thumb)
         ..setLooping(true)
         ..setVolume(1.0);
 
+
       await videoController.initialize();
+
 
       final chewieController = ChewieController(
         videoPlayerController: videoController,
-        autoPlay: false, // Don't autoplay by default
+        autoPlay: false, // We'll control autoplay manually
         looping: true,
         allowFullScreen: true,
         allowMuting: true,
@@ -153,10 +238,25 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         ),
       );
 
+// In _initializeVideoController method, update the video controller listener:
+      videoController.addListener(() {
+        if (!mounted) return;
+
+        final isPlaying = videoController.value.isPlaying;
+        final postId = item.postId;
+
+        // If video is playing and overlay is showing, restart the hide timer
+        if (isPlaying && (_showPlayPauseOverlay[postId] ?? false)) {
+          _startHideOverlayTimer(postId);
+        }
+      });
+
+
       if (mounted) {
         setState(() {
           _videoControllers[item.postId] = videoController;
           _chewieControllers[item.postId] = chewieController;
+          _showPlayPauseOverlay[item.postId] = false; // Initially hidden
         });
       }
     } catch (e) {
@@ -164,7 +264,67 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
+
+  // Toggle play/pause with overlay handling
+  void _togglePlayPause(_ReelItem item) {
+    final postId = item.postId;
+    print('Toggle called for $postId');
+
+    if (!_videoControllers.containsKey(postId)) return;
+
+    if (_videoControllers[postId]!.value.isPlaying) {
+      _pauseVideo(postId);
+    } else {
+      _playVideo(postId);
+    }
+  }
+
+// Handle tap on video area
+  void _onVideoTap(_ReelItem item) {
+    final postId = item.postId;
+    if (!_videoControllers.containsKey(postId)) return;
+
+    if (_showPlayPauseOverlay[postId] == true) {
+      // If overlay is visible, toggle play/pause
+      _togglePlayPause(item);
+    } else {
+      // If overlay is hidden, show it
+      setState(() {
+        _showPlayPauseOverlay[postId] = true;
+      });
+
+      // Hide overlay after 2 seconds if video is playing
+      if (_videoControllers[postId]!.value.isPlaying) {
+        _startHideOverlayTimer(postId);
+      }
+    }
+  }
+
+// Start hide overlay timer
+  void _startHideOverlayTimer(String postId) {
+    _hideOverlayTimer?.cancel(); // Cancel any existing timer
+    _hideOverlayTimer = Timer(Duration(seconds: 2), () {
+      if (mounted &&
+          _videoControllers.containsKey(postId) &&
+          _videoControllers[postId]!.value.isPlaying &&
+          (_showPlayPauseOverlay[postId] ?? false)) {
+        setState(() {
+          _showPlayPauseOverlay[postId] = false;
+          print('Hiding overlay for $postId');
+        });
+      }
+    });
+  }
+
+// Hide overlay after delay
+  void _hideOverlayAfterDelay(String postId) {
+    _startHideOverlayTimer(postId); // Use the same timer method
+  }
+
   void _playVideo(String postId) {
+    print('Playing video $postId');
+
     // Pause current playing video
     if (_currentPlayingVideoId != null && _currentPlayingVideoId != postId) {
       _pauseVideo(_currentPlayingVideoId!);
@@ -173,20 +333,40 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     // Play new video
     if (_videoControllers.containsKey(postId)) {
       _videoControllers[postId]!.play();
-      setState(() {
-        _currentPlayingVideoId = postId;
+
+      Future.microtask(() {
+        if (mounted) {
+          setState(() {
+            _currentPlayingVideoId = postId;
+            _showPlayPauseOverlay[postId] = true; // Show overlay when starting
+          });
+
+          // Start timer to hide overlay after 2 seconds
+          _startHideOverlayTimer(postId);
+        }
       });
     }
   }
 
   void _pauseVideo(String postId) {
+    print('Pausing video $postId');
+
     if (_videoControllers.containsKey(postId)) {
       _videoControllers[postId]!.pause();
-      if (_currentPlayingVideoId == postId) {
-        setState(() {
-          _currentPlayingVideoId = null;
-        });
-      }
+
+      Future.microtask(() {
+        if (mounted) {
+          setState(() {
+            _showPlayPauseOverlay[postId] = true; // Show overlay when paused
+            if (_currentPlayingVideoId == postId) {
+              _currentPlayingVideoId = null;
+            }
+          });
+
+          // Cancel timer when paused (overlay should stay visible)
+          _hideOverlayTimer?.cancel();
+        }
+      });
     }
   }
 
@@ -195,21 +375,28 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         _videoControllers[postId]!.value.isPlaying;
   }
 
+
   @override
   void dispose() {
     _liveStreamSubscription?.cancel();
     _tab.removeListener(_handleTabChange);
     _tab.dispose();
+    _followingPageController.removeListener(_handleFollowingPageChange);
+    _clipsPageController.removeListener(_handleClipsPageChange);
+    _followingPageController.dispose();
+    _clipsPageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _disposeAllVideoControllers();
     super.dispose();
   }
+
 
   // Load matched users for sharing
   Future<void> _loadMatchedUsers() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
+
 
       // Get mutual matches where both users have liked each other
       final matchesSnapshot = await FirebaseFirestore.instance
@@ -219,13 +406,16 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .where('is_mutual', isEqualTo: true)
           .get();
 
+
       final matchedUserIds = matchesSnapshot.docs
           .map((doc) => doc.data()['matched_user_ID'] as String)
           .toList();
 
+
       final users = await Future.wait(
         matchedUserIds.map((userId) => UserService.getUserProfile(userId)),
       );
+
 
       setState(() {
         _matchedUsers = users.whereType<UserModel>().toList();
@@ -235,11 +425,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Load matched users for sharing (same as in PostDetailScreen)
   Future<List<UserModel>> _loadMatchedUsersForSharing() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return [];
+
 
       // Get mutual matches where both users have liked each other
       final matchesSnapshot = await FirebaseFirestore.instance
@@ -249,13 +441,16 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .where('is_mutual', isEqualTo: true)
           .get();
 
+
       final matchedUserIds = matchesSnapshot.docs
           .map((doc) => doc.data()['matched_user_ID'] as String)
           .toList();
 
+
       final users = await Future.wait(
         matchedUserIds.map((userId) => UserService.getUserProfile(userId)),
       );
+
 
       return users.whereType<UserModel>().toList();
     } catch (e) {
@@ -264,11 +459,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Generate consistent conversation ID (same as in PostDetailScreen)
   String _getConversationId(String user1, String user2) {
     final sortedIds = [user1, user2]..sort();
     return 'conversation_${sortedIds[0]}_${sortedIds[1]}';
   }
+
 
   // Ensure conversation exists (same as in PostDetailScreen)
   Future<void> _ensureConversationExists(String conversationId, String currentUserId, UserModel otherUser) async {
@@ -278,6 +475,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .doc(conversationId)
           .get();
 
+
       if (!conversationDoc.exists) {
         // Get current user data from Firestore
         final currentUserDoc = await FirebaseFirestore.instance
@@ -286,10 +484,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
             .get();
         final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
 
+
         final currentUserName = currentUserData?['name'] ?? 'You';
         final currentUserAvatar = _getFirstPhotoUrl(currentUserData?['first_photos']) ?? 'https://i.pravatar.cc/200';
 
+
         final otherUserAvatar = UserService.getProfilePhotoUrl(otherUser) ?? 'https://i.pravatar.cc/200';
+
 
         await FirebaseFirestore.instance
             .collection('chat_conversations')
@@ -322,6 +523,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Helper method to get first photo URL (same as in PostDetailScreen)
   String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
     if (firstPhotos == null) return null;
@@ -333,6 +535,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
     return null;
   }
+
 
   // Save shared post to chat (same as in PostDetailScreen)
   Future<void> _saveSharedPostToChat({
@@ -361,6 +564,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'timestamp': FieldValue.serverTimestamp(),
       });
 
+
       // Update conversation with shared post info
       await FirebaseFirestore.instance
           .collection('chat_conversations')
@@ -374,6 +578,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'unreadCount.$senderId': 0,
       });
 
+
       print('✅ Shared ${item.type} saved to chat: $conversationId');
     } catch (e) {
       print('❌ Error saving shared ${item.type} to chat: $e');
@@ -381,21 +586,26 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Share post with specific user (same as in PostDetailScreen)
   Future<void> _shareWithUser(UserModel user, _ReelItem item) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
+
       // Generate conversation ID
       final conversationId = _getConversationId(currentUser.uid, user.uid);
+
 
       // Ensure conversation exists
       await _ensureConversationExists(conversationId, currentUser.uid, user);
 
+
       // Create share message based on content type
       final contentType = item.type == 'story' ? 'story' : 'post';
       final shareMessage = "Check out this $contentType! 📸\n\n${item.title}\n\n[Shared ${contentType}: ${item.thumb}]";
+
 
       // Save shared post message to Firestore
       await _saveSharedPostToChat(
@@ -405,9 +615,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         senderId: currentUser.uid,
       );
 
+
       // Close the share sheet
       if (mounted) {
         Navigator.pop(context);
+
 
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -417,6 +629,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           ),
         );
       }
+
+
 
 
     } catch (e) {
@@ -432,19 +646,24 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Load real live stream data from Firebase
   Future<void> _loadLiveData() async {
     try {
       setState(() => _isLoading = true);
 
+
       // Load active live streams
       final liveStreams = await _getActiveLiveStreams();
+
 
       // Load ALL stories from ALL users except current user
       final followingReels = await _getAllStories();
 
+
       // Load ALL posts from ALL users except current user
       final clipsReels = await _getAllPosts();
+
 
       // Initialize video controllers for clips
       for (var clip in clipsReels) {
@@ -453,6 +672,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         }
       }
 
+
       if (mounted) {
         setState(() {
           _liveRooms = liveStreams;
@@ -460,6 +680,19 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           _clipsReels = clipsReels;
           _isLoading = false;
         });
+
+        // Auto play first video in clips tab
+        if (_clipsReels.isNotEmpty) {
+          final firstClip = _clipsReels.first;
+          if (firstClip.mediaType == 'video') {
+            // Delay to ensure UI is built
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                _playVideo(firstClip.postId);
+              }
+            });
+          }
+        }
       }
     } catch (e) {
       print('❌ Error loading live data: $e');
@@ -469,6 +702,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Get active live streams from Firebase
   Future<List<_LiveCard>> _getActiveLiveStreams() async {
     try {
@@ -477,6 +711,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .where('isLive', isEqualTo: true)
           .orderBy('startedAt', descending: true)
           .get();
+
 
       return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
@@ -496,10 +731,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Get ALL stories from ALL users except current user
   Future<List<_ReelItem>> _getAllStories() async {
     try {
       print('🔍 Fetching stories from Firebase...');
+
 
       // Get ALL active stories from ALL users from the 'stories' collection
       final snapshot = await FirebaseFirestore.instance
@@ -509,12 +746,15 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .limit(50) // Limit to 50 most recent stories
           .get();
 
+
       print('📱 Found ${snapshot.docs.length} stories in database');
+
 
       if (snapshot.docs.isEmpty) {
         print('❌ No stories found in database');
         return [];
       }
+
 
       // Get user details for each story and filter out current user's stories
       final reels = await Future.wait(
@@ -522,13 +762,16 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           final data = doc.data() as Map<String, dynamic>;
           final userId = data['UID'] as String?;
 
+
           print('👤 Processing story from user: $userId, Current user: $_currentUserId');
+
 
           // Filter out current user's stories
           if (userId == null || userId == _currentUserId) {
             print('🚫 Filtered out current user\'s story');
             return null;
           }
+
 
           try {
             // Get user details
@@ -537,16 +780,20 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                 .doc(userId)
                 .get();
 
+
             if (!userDoc.exists) {
               print('❌ User document not found for userId: $userId');
               return null;
             }
 
+
             final userData = userDoc.data() as Map<String, dynamic>?;
             final username = userData?['username'] ?? 'User';
             final userPhoto = userData?['photo_url'] ?? '';
 
+
             print('✅ Loaded user data: $username');
+
 
             return _ReelItem(
               user: username,
@@ -569,8 +816,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         }),
       );
 
+
       final filteredReels = reels.whereType<_ReelItem>().toList();
       print('🎯 Final stories count after filtering: ${filteredReels.length}');
+
 
       return filteredReels;
     } catch (e) {
@@ -578,6 +827,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return [];
     }
   }
+
 
   Future<List<_ReelItem>> _getAllPosts() async {
     try {
@@ -588,7 +838,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .limit(50)
           .get();
 
+
       if (snapshot.docs.isEmpty) return [];
+
 
       // Get user details for each post and filter out current user's posts AND non-video posts
       final reels = await Future.wait(
@@ -596,8 +848,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           final data = doc.data() as Map<String, dynamic>;
           final userId = data['UID'] as String?;
 
+
           // Filter out current user's posts AND non-video posts
           if (userId == null || userId == _currentUserId) return null;
+
 
           // ADD THIS FILTER - only include video posts
           final mediaUrl = data['media_url']?.toString() ?? '';
@@ -606,7 +860,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               mediaUrl.contains('.avi') ||
               data['media_type'] == 'video';
 
+
           if (!isVideo) return null;
+
 
           // Get user details
           final userDoc = await FirebaseFirestore.instance
@@ -614,9 +870,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               .doc(userId)
               .get();
 
+
           if (!userDoc.exists) return null;
 
+
           final userData = userDoc.data() as Map<String, dynamic>?;
+
 
           return _ReelItem(
             user: userData?['username'] ?? 'User',
@@ -635,12 +894,14 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         }),
       );
 
+
       return reels.whereType<_ReelItem>().toList();
     } catch (e) {
       print('Error getting all posts: $e');
       return [];
     }
   }
+
 
   // Real-time listener for live streams
   void _setupLiveStreamListener() {
@@ -668,6 +929,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     });
   }
 
+
   // Like functionality - simplified without progress indicators
   Future<void> _likePost(_ReelItem item) async {
     try {
@@ -679,8 +941,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         return;
       }
 
+
       // Check if already liked
       final isLiked = item.likes.any((like) => like['likerUID'] == currentUserId);
+
 
       if (isLiked) {
         // Unlike
@@ -689,6 +953,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         // Like
         await UserService.likePost(item.postId, currentUserId);
       }
+
 
       // Update UI immediately without showing loading state
       _loadLiveData(); // This will refresh the data in background
@@ -700,6 +965,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Comment functionality
   void _showComments(BuildContext context, _ReelItem item) {
     final currentUserId = _currentUserId;
@@ -710,6 +976,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return;
     }
 
+
     // Navigate to post detail screen for comments
     Navigator.push(
       context,
@@ -718,6 +985,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       ),
     );
   }
+
 
   // Share functionality - only to matched users
   void _sharePost(_ReelItem item) {
@@ -728,6 +996,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       );
       return;
     }
+
 
     showModalBottomSheet(
       context: context,
@@ -784,6 +1053,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                     );
                   }
 
+
                   if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.all(16),
@@ -807,6 +1077,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                     );
                   }
 
+
                   final matchedUsers = snapshot.data!;
                   return Flexible(
                     child: ListView.builder(
@@ -816,6 +1087,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                       itemBuilder: (context, index) {
                         final user = matchedUsers[index];
                         final profilePhotoUrl = UserService.getProfilePhotoUrl(user);
+
 
                         return ListTile(
                           leading: CircleAvatar(
@@ -885,11 +1157,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
+
   // Send share message to matched user
   Future<void> _sendShareMessage(UserModel user, _ReelItem item) async {
     try {
       final currentUserId = _currentUserId;
       if (currentUserId == null) return;
+
 
       // Create a share message
       final message = {
@@ -905,10 +1179,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'isRead': false,
       };
 
+
       // Save to messages collection
       await FirebaseFirestore.instance
           .collection('messages')
           .add(message);
+
 
       // Update user's recent activity
       await FirebaseFirestore.instance
@@ -922,6 +1198,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'timestamp': FieldValue.serverTimestamp(),
       });
 
+
       Navigator.pop(context); // Close the bottom sheet
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Shared with ${user.username}')),
@@ -934,6 +1211,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Navigate to user profile
   void _navigateToUserProfile(String userId) async {
     try {
@@ -941,6 +1219,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       if (_currentPlayingVideoId != null) {
         _pauseVideo(_currentPlayingVideoId!);
       }
+
 
       // Check if it's the current user's profile
       final currentUserId = _currentUserId;
@@ -972,6 +1251,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   // Check if user is premium before going live
   Future<void> _checkPremiumAndGoLive(BuildContext context) async {
     try {
@@ -983,19 +1263,23 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         return;
       }
 
+
       // Check if user is premium
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
 
+
       final userData = userDoc.data() as Map<String, dynamic>?;
       final isPremium = userData?['type'] == 'premium';
+
 
       if (!isPremium) {
         _showPremiumRequiredDialog(context);
         return;
       }
+
 
       // User is premium, proceed to live stream
       _startLiveStream(context);
@@ -1006,6 +1290,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       );
     }
   }
+
 
   void _showPremiumRequiredDialog(BuildContext context) {
     showDialog(
@@ -1031,15 +1316,18 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
+
   Future<void> _startLiveStream(BuildContext context) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
+
       // Pause video before starting live stream
       if (_currentPlayingVideoId != null) {
         _pauseVideo(_currentPlayingVideoId!);
       }
+
 
       // Create a new live stream document
       final liveId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -1048,7 +1336,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .doc(user.uid)
           .get();
 
+
       final userData = userDoc.data() as Map<String, dynamic>?;
+
 
       await FirebaseFirestore.instance
           .collection('liveStreams')
@@ -1064,6 +1354,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'startedAt': FieldValue.serverTimestamp(),
         'thumbnailUrl': userData?['photo_url'] ?? '',
       });
+
 
       // Navigate to live stream screen
       Navigator.push(
@@ -1086,6 +1377,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   void _joinLiveStream(BuildContext context, _LiveCard room) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -1095,10 +1387,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return;
     }
 
+
     // Pause video before joining live stream
     if (_currentPlayingVideoId != null) {
       _pauseVideo(_currentPlayingVideoId!);
     }
+
 
     Navigator.push(
       context,
@@ -1114,6 +1408,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
+
   // Handle bottom navigation
   void _onBottomNavTapped(int index) {
     // Pause video before navigating
@@ -1121,9 +1416,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       _pauseVideo(_currentPlayingVideoId!);
     }
 
+
     setState(() {
       _currentBottomNavIndex = index;
     });
+
 
     switch (index) {
       case 0:
@@ -1155,10 +1452,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     // The dark background color used in the images
     const Color darkBackground = Color(0xFF333333);
+
 
     return Scaffold(
       backgroundColor: darkBackground,
@@ -1187,6 +1486,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         ),
       ),
 
+
       // Body content with floating button
       body: Stack(
         children: [
@@ -1203,17 +1503,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onComment: _showComments,
                   onShare: _sharePost,
                   onProfileTap: _navigateToUserProfile,
-                  onPlayPause: (item) {
-                    if (item.mediaType == 'video') {
-                      if (_isVideoPlaying(item.postId)) {
-                        _pauseVideo(item.postId);
-                      } else {
-                        _playVideo(item.postId);
-                      }
-                    }
-                  },
+                  onVideoTap: _onVideoTap,
+                  onPlayPause: _togglePlayPause,
                   isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
+                  showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
+                  pageController: _followingPageController,
                 ),
+
 
                 // Live Tab - Shows live streams
                 Column(
@@ -1257,6 +1553,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   ],
                 ),
 
+
                 // Posts Tab - Shows ALL posts from other users
                 _ReelsFeed(
                   items: _clipsReels,
@@ -1265,22 +1562,18 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                   onComment: _showComments,
                   onShare: _sharePost,
                   onProfileTap: _navigateToUserProfile,
-                  onPlayPause: (item) {
-                    if (item.mediaType == 'video') {
-                      if (_isVideoPlaying(item.postId)) {
-                        _pauseVideo(item.postId);
-                      } else {
-                        _playVideo(item.postId);
-                      }
-                    }
-                  },
+                  onVideoTap: _onVideoTap,
+                  onPlayPause: _togglePlayPause,
                   isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
+                  showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
+                  pageController: _clipsPageController,
                 ),
               ],
             ),
           ),
         ],
       ),
+
 
       // Bottom nav like screenshot (Home, Browse, Create, Activity, Profile)
       bottomNavigationBar: Container(
@@ -1327,6 +1620,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
+
   Widget _buildEmptyLiveState() {
     return Center(
       child: Column(
@@ -1357,6 +1651,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
+
   String timeOfDayText() {
     final now = TimeOfDay.now();
     final h = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
@@ -1366,17 +1661,21 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 }
 
+
 /* ----------------------- TIKTOK STYLE TAB BAR ----------------------- */
 class _TikTokTabBar extends StatelessWidget {
   final TabController tabController;
 
+
   const _TikTokTabBar({required this.tabController});
+
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 250,
       height: 40,
+
 
       child: TabBar(
         controller: tabController,
@@ -1408,6 +1707,7 @@ class _TikTokTabBar extends StatelessWidget {
   }
 }
 
+
 /* ----------------------- LIVE FILTER BAR ----------------------- */
 class _LiveFiltersBar extends StatelessWidget {
   const _LiveFiltersBar({
@@ -1417,10 +1717,12 @@ class _LiveFiltersBar extends StatelessWidget {
     required this.backgroundColor,
   });
 
+
   final List<String> filters;
   final int selected;
   final ValueChanged<int> onTap;
   final Color backgroundColor;
+
 
   @override
   Widget build(BuildContext context) {
@@ -1428,6 +1730,7 @@ class _LiveFiltersBar extends StatelessWidget {
     const Color unselectedBgColor = Color(0xFF333333);
     const Color selectedTextColor = Colors.black87;
     const Color unselectedTextColor = Colors.white;
+
 
     return Container(
       color: backgroundColor,
@@ -1469,11 +1772,13 @@ class _LiveFiltersBar extends StatelessWidget {
   }
 }
 
+
 /* ----------------------- LIVE TILE ----------------------- */
 class _LiveTile extends StatelessWidget {
   const _LiveTile({required this.room, required this.onTap});
   final _LiveCard room;
   final VoidCallback onTap;
+
 
   @override
   Widget build(BuildContext context) {
@@ -1576,6 +1881,7 @@ class _LiveTile extends StatelessWidget {
     );
   }
 
+
   Widget _pill({required IconData icon, required String text}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1600,12 +1906,14 @@ class _LiveTile extends StatelessWidget {
     );
   }
 
+
   String _formatViewers(int v) {
     if (v >= 1000000) return "${(v / 1000000).toStringAsFixed(1)}M";
     if (v >= 1000) return "${(v / 1000).toStringAsFixed(1)}K";
     return "$v";
   }
 }
+
 
 class _ReelsFeed extends StatelessWidget {
   const _ReelsFeed({
@@ -1615,9 +1923,13 @@ class _ReelsFeed extends StatelessWidget {
     required this.onComment,
     required this.onShare,
     required this.onProfileTap,
-    required this.onPlayPause, // NEW: Added play/pause callback
-    required this.isVideoPlaying, // NEW: Added video playing status callback
+    required this.onVideoTap,
+    required this.onPlayPause,
+    required this.isVideoPlaying,
+    required this.showPlayPauseOverlay,
+    this.pageController,
   });
+
 
   final List<_ReelItem> items;
   final bool showStories;
@@ -1625,16 +1937,31 @@ class _ReelsFeed extends StatelessWidget {
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
   final Function(String) onProfileTap;
-  final Function(_ReelItem) onPlayPause; // NEW: Play/pause callback
-  final bool Function(_ReelItem) isVideoPlaying; // NEW: Video playing status
+  final Function(_ReelItem) onVideoTap;
+  final Function(_ReelItem) onPlayPause;
+  final bool Function(_ReelItem) isVideoPlaying;
+  final bool Function(_ReelItem) showPlayPauseOverlay;
+  final PageController? pageController;
+
 
   @override
   Widget build(BuildContext context) {
     return items.isEmpty
         ? _buildEmptyState()
         : PageView.builder(
+      controller: pageController,
       scrollDirection: Axis.vertical,
       itemCount: items.length,
+      onPageChanged: (index) {
+        // Auto play video when page changes
+        if (items.isNotEmpty && index < items.length) {
+          final item = items[index];
+          if (item.mediaType == 'video') {
+            final exploreState = context.findAncestorStateOfType<_ExploreLiveScreenState>();
+            exploreState?._playVideo(item.postId);
+          }
+        }
+      },
       itemBuilder: (_, i) {
         final it = items[i];
         return _ReelContent(
@@ -1644,12 +1971,15 @@ class _ReelsFeed extends StatelessWidget {
           onComment: onComment,
           onShare: onShare,
           onProfileTap: onProfileTap,
-          onPlayPause: onPlayPause, // NEW: Pass the callback
-          isVideoPlaying: isVideoPlaying(it), // NEW: Pass playing status
+          onVideoTap: onVideoTap,
+          onPlayPause: onPlayPause,
+          isVideoPlaying: isVideoPlaying(it),
+          showPlayPauseOverlay: showPlayPauseOverlay(it),
         );
       },
     );
   }
+
 
   Widget _buildEmptyState() {
     return Center(
@@ -1673,6 +2003,7 @@ class _ReelsFeed extends StatelessWidget {
   }
 }
 
+
 class _ReelContent extends StatefulWidget {
   final _ReelItem item;
   final bool showStories;
@@ -1680,8 +2011,11 @@ class _ReelContent extends StatefulWidget {
   final Function(BuildContext, _ReelItem) onComment;
   final Function(_ReelItem) onShare;
   final Function(String) onProfileTap;
-  final Function(_ReelItem) onPlayPause; // NEW: Play/pause callback
-  final bool isVideoPlaying; // NEW: Video playing status
+  final Function(_ReelItem) onVideoTap;
+  final Function(_ReelItem) onPlayPause;
+  final bool isVideoPlaying;
+  final bool showPlayPauseOverlay;
+
 
   const _ReelContent({
     required this.item,
@@ -1690,225 +2024,258 @@ class _ReelContent extends StatefulWidget {
     required this.onComment,
     required this.onShare,
     required this.onProfileTap,
-    required this.onPlayPause, // NEW: Add this parameter
-    required this.isVideoPlaying, // NEW: Add this parameter
+    required this.onVideoTap,
+    required this.onPlayPause,
+    required this.isVideoPlaying,
+    required this.showPlayPauseOverlay,
   });
+
 
   @override
   State<_ReelContent> createState() => _ReelContentState();
 }
 
+
 class _ReelContentState extends State<_ReelContent> {
-  bool _isMuted = false; // NEW: Track mute state
+  bool _isMuted = false;
+
 
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final isLiked = widget.item.likes.any((like) => like['likerUID'] == currentUserId);
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Background Media (Image/Video)
-        if (widget.item.mediaType == 'video')
-          _buildVideoContent()
-        else
-          Image.network(
-            widget.item.thumb,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-          ),
 
-        // Gradient Overlay
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.center,
-                colors: [Colors.black.withOpacity(.75), Colors.transparent],
+    return GestureDetector(
+      onTap: () {
+        if (widget.item.mediaType == 'video') {
+          widget.onVideoTap(widget.item);
+        }
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background Media (Image/Video)
+          if (widget.item.mediaType == 'video')
+            _buildVideoContent()
+          else
+            Image.network(
+              widget.item.thumb,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+
+
+          // Centered Play/Pause Overlay (TikTok-style)
+          if (widget.item.mediaType == 'video' && widget.showPlayPauseOverlay)
+            Center(
+              child: AnimatedOpacity(
+                opacity: widget.showPlayPauseOverlay ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: GestureDetector(
+                  onTap: () => widget.onPlayPause(widget.item),
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      widget.isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                      size: 40,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+
+          // Gradient Overlay
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.center,
+                  colors: [Colors.black.withOpacity(.75), Colors.transparent],
+                ),
               ),
             ),
           ),
-        ),
 
-        // Story Time Remaining (only for stories)
-        if (widget.showStories && widget.item.type == 'story')
+
+          // Story Time Remaining (only for stories)
+          if (widget.showStories && widget.item.type == 'story')
+            Positioned(
+              top: 40,
+              right: 12,
+              child: _StoryTimeBadge(timestamp: widget.item.timestamp),
+            ),
+
+
+          // Right Action Buttons
           Positioned(
-            top: 40,
             right: 12,
-            child: _StoryTimeBadge(timestamp: widget.item.timestamp),
-          ),
-
-        // Right Action Buttons - UPDATED with play/pause button for videos
-        Positioned(
-          right: 12,
-          bottom: 110,
-          child: Column(
-            children: [
-              // Play/Pause Button for Videos (only show for video content)
-              if (widget.item.mediaType == 'video')
-                Column(
-                  children: [
-                    _CircleIcon(
-                      icon: widget.isVideoPlaying ? Icons.pause : Icons.play_arrow,
-                      onTap: () => widget.onPlayPause(widget.item),
-                      showCount: false,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+            bottom: 110,
+            child: Column(
+              children: [
+                _CircleIcon(
+                  icon: isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
+                  onTap: () => widget.onLike(widget.item),
+                  count: widget.item.likes.length,
+                  isLiked: isLiked,
                 ),
-
-              _CircleIcon(
-                icon: isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
-                onTap: () => widget.onLike(widget.item),
-                count: widget.item.likes.length,
-                isLiked: isLiked,
-              ),
-              const SizedBox(height: 16),
-              _CircleIcon(
-                icon: FontAwesomeIcons.comment,
-                onTap: () => widget.onComment(context, widget.item),
-                count: widget.item.comments.length,
-              ),
-              const SizedBox(height: 16),
-              _CircleIcon(
-                icon: FontAwesomeIcons.share,
-                onTap: () => widget.onShare(widget.item),
-              ),
-            ],
+                const SizedBox(height: 16),
+                _CircleIcon(
+                  icon: FontAwesomeIcons.comment,
+                  onTap: () => widget.onComment(context, widget.item),
+                  count: widget.item.comments.length,
+                ),
+                const SizedBox(height: 16),
+                _CircleIcon(
+                  icon: FontAwesomeIcons.share,
+                  onTap: () => widget.onShare(widget.item),
+                ),
+              ],
+            ),
           ),
-        ),
 
-        // Bottom Content Info
-        Positioned(
-          left: 12,
-          right: 80,
-          bottom: 20,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // User Info Row - Make tappable
-              GestureDetector(
-                onTap: () => widget.onProfileTap(widget.item.userId),
-                child: Row(
-                  children: [
-                    // User Avatar - Make tappable
-                    GestureDetector(
-                      onTap: () => widget.onProfileTap(widget.item.userId),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                          image: DecorationImage(
-                            image: NetworkImage(widget.item.userPhoto.isNotEmpty
-                                ? widget.item.userPhoto
-                                : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop'),
-                            fit: BoxFit.cover,
+
+          // Bottom Content Info
+          Positioned(
+            left: 12,
+            right: 80,
+            bottom: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // User Info Row - Make tappable
+                GestureDetector(
+                  onTap: () => widget.onProfileTap(widget.item.userId),
+                  child: Row(
+                    children: [
+                      // User Avatar - Make tappable
+                      GestureDetector(
+                        onTap: () => widget.onProfileTap(widget.item.userId),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            image: DecorationImage(
+                              image: NetworkImage(widget.item.userPhoto.isNotEmpty
+                                  ? widget.item.userPhoto
+                                  : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop'),
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '@${widget.item.user}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                            ),
-                          ),
-                          if (widget.item.timestamp != null)
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              _formatTimestamp(widget.item.timestamp!),
+                              '@${widget.item.user}',
                               style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
                               ),
                             ),
-                        ],
+                            if (widget.item.timestamp != null)
+                              Text(
+                                _formatTimestamp(widget.item.timestamp!),
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+
+                // Content Title
+                Text(
+                  widget.item.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+
+                // Engagement Stats
+                Row(
+                  children: [
+                    const Icon(
+                      FontAwesomeIcons.eye,
+                      color: Colors.white70,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _formatViewers(widget.item.viewers),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(
+                      isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
+                      color: Colors.white70,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${widget.item.likes.length}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Icon(
+                      FontAwesomeIcons.comment,
+                      color: Colors.white70,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${widget.item.comments.length}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
-
-              // Content Title
-              Text(
-                widget.item.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Engagement Stats
-              Row(
-                children: [
-                  const Icon(
-                    FontAwesomeIcons.eye,
-                    color: Colors.white70,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    _formatViewers(widget.item.viewers),
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Icon(
-                    isLiked ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
-                    color: Colors.white70,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${widget.item.likes.length}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  const Icon(
-                    FontAwesomeIcons.comment,
-                    color: Colors.white70,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${widget.item.comments.length}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+
 
   Widget _buildVideoContent() {
     final exploreState = context.findAncestorStateOfType<_ExploreLiveScreenState>();
@@ -1943,7 +2310,43 @@ class _ReelContentState extends State<_ReelContent> {
       );
     }
 
-    return Chewie(controller: chewieController);
+    return GestureDetector(
+      onTap: () {
+        // Forward the tap to parent
+        widget.onVideoTap(widget.item);
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Chewie(controller: chewieController),
+
+          // Centered Play/Pause Overlay (TikTok-style)
+          if (widget.showPlayPauseOverlay)
+            Center(
+              child: AnimatedOpacity(
+                opacity: widget.showPlayPauseOverlay ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: GestureDetector(
+                  onTap: () => widget.onPlayPause(widget.item),
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      widget.isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                      size: 40,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   String _formatTimestamp(Timestamp timestamp) {
@@ -1951,13 +2354,16 @@ class _ReelContentState extends State<_ReelContent> {
     final postTime = timestamp.toDate();
     final difference = now.difference(postTime);
 
+
     if (difference.inMinutes < 1) return 'Just now';
     if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
     if (difference.inHours < 24) return '${difference.inHours}h ago';
     if (difference.inDays < 7) return '${difference.inDays}d ago';
 
+
     return '${postTime.day}/${postTime.month}/${postTime.year}';
   }
+
 
   String _formatViewers(int v) {
     if (v >= 1000000) return "${(v / 1000000).toStringAsFixed(1)}M";
@@ -1966,17 +2372,20 @@ class _ReelContentState extends State<_ReelContent> {
   }
 }
 
+
 /* ----------------------- SHARE BOTTOM SHEET ----------------------- */
 class _ShareBottomSheet extends StatelessWidget {
   final _ReelItem item;
   final List<UserModel> matchedUsers;
   final Function(UserModel, _ReelItem) onShare;
 
+
   const _ShareBottomSheet({
     required this.item,
     required this.matchedUsers,
     required this.onShare,
   });
+
 
   @override
   Widget build(BuildContext context) {
@@ -2022,6 +2431,7 @@ class _ShareBottomSheet extends StatelessWidget {
             ),
           ),
 
+
           // Matched Users List
           Expanded(
             child: matchedUsers.isEmpty
@@ -2053,6 +2463,7 @@ class _ShareBottomSheet extends StatelessWidget {
                     ),
                   ),
 
+
                   trailing: IconButton(
                     icon: const Icon(FontAwesomeIcons.paperPlane, color: AppColors.primary),
                     onPressed: () => onShare(user, item),
@@ -2067,22 +2478,28 @@ class _ShareBottomSheet extends StatelessWidget {
   }
 }
 
+
 // Story Time Badge Widget
 class _StoryTimeBadge extends StatelessWidget {
   final Timestamp? timestamp;
 
+
   const _StoryTimeBadge({this.timestamp});
+
 
   @override
   Widget build(BuildContext context) {
     if (timestamp == null) return const SizedBox();
 
+
     final storyTime = timestamp!.toDate();
     final expiresAt = storyTime.add(const Duration(hours: 24));
     final remaining = expiresAt.difference(DateTime.now());
 
+
     String timeText;
     Color badgeColor;
+
 
     if (remaining.inHours > 0) {
       timeText = '${remaining.inHours}h';
@@ -2094,6 +2511,7 @@ class _StoryTimeBadge extends StatelessWidget {
       timeText = 'Ending';
       badgeColor = Colors.red;
     }
+
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -2113,28 +2531,33 @@ class _StoryTimeBadge extends StatelessWidget {
   }
 }
 
+
 // Updated Circle Icon with Count
 class _CircleIcon extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
   final int count;
   final bool isLiked;
-  final bool showCount; // NEW: Parameter to show/hide count
+  final bool showCount;
+
 
   const _CircleIcon({
     required this.icon,
     required this.onTap,
     this.count = 0,
     this.isLiked = false,
-    this.showCount = true, // NEW: Default to true
+    this.showCount = true,
   });
+
 
   @override
   State<_CircleIcon> createState() => _CircleIconState();
 }
 
+
 class _CircleIconState extends State<_CircleIcon> {
   bool _isTapped = false;
+
 
   @override
   Widget build(BuildContext context) {
@@ -2186,12 +2609,14 @@ class _CircleIconState extends State<_CircleIcon> {
     );
   }
 
+
   String _formatCount(int count) {
     if (count >= 1000000) return "${(count / 1000000).toStringAsFixed(1)}M";
     if (count >= 1000) return "${(count / 1000).toStringAsFixed(1)}K";
     return count.toString();
   }
 }
+
 
 class _ReelItem {
   final String user;
@@ -2206,6 +2631,7 @@ class _ReelItem {
   final List<Map<String, dynamic>> likes;
   final List<Map<String, dynamic>> comments;
   final String mediaType; // 'image' or 'video' - THIS IS IMPORTANT
+
 
   const _ReelItem({
     required this.user,
@@ -2223,6 +2649,7 @@ class _ReelItem {
   });
 }
 
+
 class _LiveCard {
   final String title;
   final String user;
@@ -2231,6 +2658,7 @@ class _LiveCard {
   final String game;
   final String liveId;
   final String hostId;
+
 
   const _LiveCard({
     required this.title,
@@ -2243,6 +2671,7 @@ class _LiveCard {
   });
 }
 
+
 /* ----------------------- BOTTOM NAV ----------------------- */
 class _BottomNavItem extends StatelessWidget {
   const _BottomNavItem({
@@ -2252,10 +2681,12 @@ class _BottomNavItem extends StatelessWidget {
     required this.onTap,
   });
 
+
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
 
   @override
   Widget build(BuildContext context) {
@@ -2300,9 +2731,12 @@ class _BottomNavItem extends StatelessWidget {
   }
 }
 
+
 class _BottomCreateButton extends StatelessWidget {
   const _BottomCreateButton({required this.onTap});
+
   final VoidCallback onTap;
+
 
   @override
   Widget build(BuildContext context) {
@@ -2327,4 +2761,3 @@ class _BottomCreateButton extends StatelessWidget {
     );
   }
 }
-

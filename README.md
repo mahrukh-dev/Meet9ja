@@ -1,4 +1,3 @@
-Changes im accomodating
 clips section pause play on tap
 live end properly if we navigate out of the screen
 clip vido playing in the bg

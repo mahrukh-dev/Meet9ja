@@ -929,10 +929,10 @@ class _SliverHeader extends StatelessWidget {
           IconButton(
             icon: const Icon(FontAwesomeIcons.gear, size: 20),
             onPressed: () {
-              // FirebaseService.signOut();
-              // Navigator.of(context).push(
-              //   MaterialPageRoute(builder: (_) => Signinscreen()),
-              // );
+              // TODO: Setting SCREEN
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => HomeScreen()),
+              );
             },
           )
         else

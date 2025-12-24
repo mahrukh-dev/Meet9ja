@@ -124,6 +124,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _goNext() {
+    if (_profiles.isEmpty) {
+      // No profiles, try to load more
+      _loadProfiles();
+      return;
+    }
+
     if (_index < _profiles.length - 1) {
       _pageCtrl.nextPage(
         duration: const Duration(milliseconds: 240),
@@ -135,8 +141,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadProfiles();
     }
   }
+// In lib/home_screen.dart, update the _likeProfile and _passProfile methods
 
-  // Like profile function - only triggered by ❤️ icon
+// Like profile function - only triggered by ❤️ icon
   Future<void> _likeProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
@@ -144,6 +151,22 @@ class _HomeScreenState extends State<HomeScreen> {
       print('❤️ Liking profile: $uid');
 
       await likeProfile(uid);
+
+      // Immediately remove the profile from the list
+      if (mounted) {
+        setState(() {
+          _profiles.removeWhere((p) =>
+          (p['uid'] == uid) || (p['UID'] == uid)
+          );
+
+          // Reset index if needed
+          if (_index >= _profiles.length && _profiles.isNotEmpty) {
+            _index = _profiles.length - 1;
+          } else if (_profiles.isEmpty) {
+            _index = 0;
+          }
+        });
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -153,7 +176,6 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      // DO NOT navigate to next screen - only like action
     } catch (e) {
       print('❌ Error in _likeProfile: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -167,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Pass profile function - only triggered by ❌ icon
+// Pass profile function - only triggered by ❌ icon
   Future<void> _passProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
@@ -175,6 +197,22 @@ class _HomeScreenState extends State<HomeScreen> {
       print('👎 Passing on profile: $uid');
 
       await passProfile(uid);
+
+      // Immediately remove the profile from the list
+      if (mounted) {
+        setState(() {
+          _profiles.removeWhere((p) =>
+          (p['uid'] == uid) || (p['UID'] == uid)
+          );
+
+          // Reset index if needed
+          if (_index >= _profiles.length && _profiles.isNotEmpty) {
+            _index = _profiles.length - 1;
+          } else if (_profiles.isEmpty) {
+            _index = 0;
+          }
+        });
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -184,7 +222,6 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: Colors.orange,
         ),
       );
-      // DO NOT navigate to next screen - only pass action
     } catch (e) {
       print('❌ Error in _passProfile: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -197,7 +234,6 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
-
   // Navigate to profile details - only triggered by share icon or card tap
   void _navigateToProfileDetails(Map<String, dynamic> profile) {
     final String userId = profile['uid'] ?? profile['UID'];
