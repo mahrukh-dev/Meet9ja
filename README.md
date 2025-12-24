@@ -15,7 +15,7 @@ people screen lag when load
 if already preium doesnt show go premium screen
 premium management remove credit/debit
 contact support navigate to support email 
-- following - live of following users should appear here
+following - live of following users should appear here
 currency should be either dollar
 
 UI changes that i wont be doing

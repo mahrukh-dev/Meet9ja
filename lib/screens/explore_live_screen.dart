@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/cupertino.dart';
@@ -13,7 +14,6 @@ import 'package:meet9ja/screens/profile_screen.dart';
 import 'package:meet9ja/screens/post_detail_screen.dart';
 import 'package:video_player/video_player.dart';
 
-
 import '../constants/app_colors.dart';
 import '../models/user_model.dart';
 import 'browse_live_screen.dart';
@@ -22,18 +22,16 @@ import 'home_screen.dart';
 import 'livestream_screen.dart';
 import 'messages_screen.dart';
 
-
 class ExploreLiveScreen extends StatefulWidget {
   const ExploreLiveScreen({super.key});
+
   @override
   State<ExploreLiveScreen> createState() => _ExploreLiveScreenState();
 }
 
-
 class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tab;
-
 
   final List<String> _liveFilters = const [
     "All",
@@ -44,19 +42,18 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   ];
   int _liveFilterIndex = 0;
 
-
   List<_ReelItem> _followingReels = [];
   List<_ReelItem> _clipsReels = [];
   List<_LiveCard> _liveRooms = [];
+  List<_LiveCard> _followingLiveRooms = [];
   bool _isLoading = true;
   StreamSubscription<QuerySnapshot>? _liveStreamSubscription;
   String? _currentUserId;
   List<UserModel> _matchedUsers = [];
-
+  List<String> _followingUserIds = [];
 
   // Bottom navigation state
   int _currentBottomNavIndex = 0;
-
 
   // Track active video controllers
   final Map<String, VideoPlayerController> _videoControllers = {};
@@ -73,6 +70,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   int _currentFollowingPage = 0;
   int _currentClipsPage = 0;
 
+  // Track if we're in the foreground
+  bool _isScreenActive = true;
 
   @override
   void initState() {
@@ -80,32 +79,46 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _tab = TabController(length: 3, vsync: this, initialIndex: 1);
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
-
-    // Add observer for app lifecycle
     WidgetsBinding.instance.addObserver(this);
-
 
     _loadLiveData();
     _setupLiveStreamListener();
     _loadMatchedUsers();
+    _loadFollowingUsers();
 
-
-    // Listen to tab changes to pause videos when switching tabs
     _tab.addListener(_handleTabChange);
-
-    // Listen to page changes for autoplay
     _followingPageController.addListener(_handleFollowingPageChange);
     _clipsPageController.addListener(_handleClipsPageChange);
   }
 
+  Future<void> _loadFollowingUsers() async {
+    try {
+      final currentUserId = _currentUserId;
+      if (currentUserId == null) return;
+
+      final followingSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUserId)
+          .collection('following')
+          .get();
+
+      setState(() {
+        _followingUserIds = followingSnapshot.docs.map((doc) => doc.id).toList();
+      });
+
+      print('✅ Loaded ${_followingUserIds.length} followed users');
+    } catch (e) {
+      print('❌ Error loading followed users: $e');
+    }
+  }
 
   void _handleFollowingPageChange() {
     final page = _followingPageController.page?.round() ?? 0;
     if (page != _currentFollowingPage) {
-      // Hide overlay for previous video
       if (_currentFollowingPage < _followingReels.length) {
         final prevItem = _followingReels[_currentFollowingPage];
         if (prevItem.mediaType == 'video') {
+          _pauseVideo(prevItem.postId);
           setState(() {
             _showPlayPauseOverlay[prevItem.postId] = false;
           });
@@ -113,7 +126,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       }
 
       _currentFollowingPage = page;
-      // Auto play video on page change
       if (_followingReels.isNotEmpty && page < _followingReels.length) {
         final item = _followingReels[page];
         if (item.mediaType == 'video') {
@@ -126,10 +138,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   void _handleClipsPageChange() {
     final page = _clipsPageController.page?.round() ?? 0;
     if (page != _currentClipsPage) {
-      // Hide overlay for previous video
       if (_currentClipsPage < _clipsReels.length) {
         final prevItem = _clipsReels[_currentClipsPage];
         if (prevItem.mediaType == 'video') {
+          _pauseVideo(prevItem.postId);
           setState(() {
             _showPlayPauseOverlay[prevItem.postId] = false;
           });
@@ -137,7 +149,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       }
 
       _currentClipsPage = page;
-      // Auto play video on page change
       if (_clipsReels.isNotEmpty && page < _clipsReels.length) {
         final item = _clipsReels[page];
         if (item.mediaType == 'video') {
@@ -147,43 +158,49 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
-
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-      // Pause all videos when app goes to background
+      case AppLifecycleState.hidden:
+        _isScreenActive = false;
         _pauseAllVideos();
         break;
       case AppLifecycleState.resumed:
-      // Resume current video when app comes to foreground
-        if (_currentPlayingVideoId != null && _videoControllers.containsKey(_currentPlayingVideoId)) {
+        _isScreenActive = true;
+        if (_currentPlayingVideoId != null &&
+            _videoControllers.containsKey(_currentPlayingVideoId) &&
+            _tab.index != 1) {
           _videoControllers[_currentPlayingVideoId]?.play();
         }
         break;
       case AppLifecycleState.detached:
-      // Dispose all controllers when app is detached
+        _isScreenActive = false;
         _disposeAllVideoControllers();
         break;
-      case AppLifecycleState.hidden:
-      // Pause videos when app is hidden
-        _pauseAllVideos();
-        break;
     }
   }
-
 
   void _handleTabChange() {
-    // Pause videos when switching away from clips or following tabs
-    if (_tab.index != 0 && _tab.index != 2) {
+    if (_tab.index == 1) {
       _pauseAllVideos();
+    } else if (_tab.index == 0 || _tab.index == 2) {
+      if (_tab.index == 0 && _followingReels.isNotEmpty && _currentFollowingPage < _followingReels.length) {
+        final item = _followingReels[_currentFollowingPage];
+        if (item.mediaType == 'video') {
+          _playVideo(item.postId);
+        }
+      } else if (_tab.index == 2 && _clipsReels.isNotEmpty && _currentClipsPage < _clipsReels.length) {
+        final item = _clipsReels[_currentClipsPage];
+        if (item.mediaType == 'video') {
+          _playVideo(item.postId);
+        }
+      }
     }
   }
-
 
   void _pauseAllVideos() {
     for (var controller in _videoControllers.values) {
@@ -193,8 +210,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
   void _disposeAllVideoControllers() {
+    _hideOverlayTimer?.cancel();
     for (var controller in _chewieControllers.values) {
       controller.dispose();
     }
@@ -204,28 +221,23 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _videoControllers.clear();
     _chewieControllers.clear();
     _showPlayPauseOverlay.clear();
-    _hideOverlayTimer?.cancel();
   }
-
 
   Future<void> _initializeVideoController(_ReelItem item) async {
     if (item.mediaType != 'video' || _videoControllers.containsKey(item.postId)) {
       return;
     }
 
-
     try {
       final videoController = VideoPlayerController.network(item.thumb)
         ..setLooping(true)
         ..setVolume(1.0);
 
-
       await videoController.initialize();
-
 
       final chewieController = ChewieController(
         videoPlayerController: videoController,
-        autoPlay: false, // We'll control autoplay manually
+        autoPlay: false,
         looping: true,
         allowFullScreen: true,
         allowMuting: true,
@@ -238,25 +250,27 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         ),
       );
 
-// In _initializeVideoController method, update the video controller listener:
+      // Add listener to hide overlay when video starts playing
       videoController.addListener(() {
         if (!mounted) return;
 
         final isPlaying = videoController.value.isPlaying;
         final postId = item.postId;
 
-        // If video is playing and overlay is showing, restart the hide timer
         if (isPlaying && (_showPlayPauseOverlay[postId] ?? false)) {
-          _startHideOverlayTimer(postId);
+          // Hide overlay immediately when video starts playing
+          setState(() {
+            _showPlayPauseOverlay[postId] = false;
+          });
+          _hideOverlayTimer?.cancel(); // Cancel any existing timer
         }
       });
-
 
       if (mounted) {
         setState(() {
           _videoControllers[item.postId] = videoController;
           _chewieControllers[item.postId] = chewieController;
-          _showPlayPauseOverlay[item.postId] = false; // Initially hidden
+          _showPlayPauseOverlay[item.postId] = false;
         });
       }
     } catch (e) {
@@ -264,13 +278,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-
   // Toggle play/pause with overlay handling
   void _togglePlayPause(_ReelItem item) {
     final postId = item.postId;
-    print('Toggle called for $postId');
-
     if (!_videoControllers.containsKey(postId)) return;
 
     if (_videoControllers[postId]!.value.isPlaying) {
@@ -279,51 +289,52 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       _playVideo(postId);
     }
   }
-
-// Handle tap on video area
+// Handle tap on video area - UPDATED VERSION
   void _onVideoTap(_ReelItem item) {
     final postId = item.postId;
     if (!_videoControllers.containsKey(postId)) return;
 
-    if (_showPlayPauseOverlay[postId] == true) {
-      // If overlay is visible, toggle play/pause
-      _togglePlayPause(item);
+    // Cancel any existing hide timer
+    _hideOverlayTimer?.cancel();
+
+    // Check if video is currently playing
+    final isCurrentlyPlaying = _videoControllers[postId]!.value.isPlaying;
+
+    if (isCurrentlyPlaying) {
+      // Video is playing - toggle to pause
+      _pauseVideo(postId);
+
+      // Show pause overlay (it will stay visible since video is paused)
+      setState(() {
+        _showPlayPauseOverlay[postId] = true;
+      });
     } else {
-      // If overlay is hidden, show it
+      // Video is paused - toggle to play
+      _playVideo(postId);
+
+      // Show play overlay briefly when starting to play
       setState(() {
         _showPlayPauseOverlay[postId] = true;
       });
 
-      // Hide overlay after 2 seconds if video is playing
-      if (_videoControllers[postId]!.value.isPlaying) {
-        _startHideOverlayTimer(postId);
-      }
+      // Hide overlay after 1.5 seconds
+      _hideOverlayTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (mounted &&
+            _videoControllers.containsKey(postId) &&
+            _videoControllers[postId]!.value.isPlaying) {
+          setState(() {
+            _showPlayPauseOverlay[postId] = false;
+          });
+        }
+      });
     }
-  }
-
-// Start hide overlay timer
-  void _startHideOverlayTimer(String postId) {
-    _hideOverlayTimer?.cancel(); // Cancel any existing timer
-    _hideOverlayTimer = Timer(Duration(seconds: 2), () {
-      if (mounted &&
-          _videoControllers.containsKey(postId) &&
-          _videoControllers[postId]!.value.isPlaying &&
-          (_showPlayPauseOverlay[postId] ?? false)) {
-        setState(() {
-          _showPlayPauseOverlay[postId] = false;
-          print('Hiding overlay for $postId');
-        });
-      }
-    });
-  }
-
-// Hide overlay after delay
-  void _hideOverlayAfterDelay(String postId) {
-    _startHideOverlayTimer(postId); // Use the same timer method
   }
 
   void _playVideo(String postId) {
     print('Playing video $postId');
+
+    // Cancel any existing hide timer
+    _hideOverlayTimer?.cancel();
 
     // Pause current playing video
     if (_currentPlayingVideoId != null && _currentPlayingVideoId != postId) {
@@ -338,11 +349,20 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         if (mounted) {
           setState(() {
             _currentPlayingVideoId = postId;
-            _showPlayPauseOverlay[postId] = true; // Show overlay when starting
+            // Show overlay briefly when starting to play
+            _showPlayPauseOverlay[postId] = true;
           });
 
-          // Start timer to hide overlay after 2 seconds
-          _startHideOverlayTimer(postId);
+          // Hide overlay after 1.5 seconds
+          _hideOverlayTimer = Timer(const Duration(milliseconds: 1500), () {
+            if (mounted &&
+                _videoControllers.containsKey(postId) &&
+                _videoControllers[postId]!.value.isPlaying) {
+              setState(() {
+                _showPlayPauseOverlay[postId] = false;
+              });
+            }
+          });
         }
       });
     }
@@ -351,20 +371,21 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   void _pauseVideo(String postId) {
     print('Pausing video $postId');
 
+    // Cancel hide timer
+    _hideOverlayTimer?.cancel();
+
     if (_videoControllers.containsKey(postId)) {
       _videoControllers[postId]!.pause();
 
       Future.microtask(() {
         if (mounted) {
           setState(() {
-            _showPlayPauseOverlay[postId] = true; // Show overlay when paused
+            // Show overlay when paused
+            _showPlayPauseOverlay[postId] = true;
             if (_currentPlayingVideoId == postId) {
               _currentPlayingVideoId = null;
             }
           });
-
-          // Cancel timer when paused (overlay should stay visible)
-          _hideOverlayTimer?.cancel();
         }
       });
     }
@@ -375,9 +396,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         _videoControllers[postId]!.value.isPlaying;
   }
 
-
   @override
   void dispose() {
+    _isScreenActive = false;
     _liveStreamSubscription?.cancel();
     _tab.removeListener(_handleTabChange);
     _tab.dispose();
@@ -390,6 +411,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     super.dispose();
   }
 
+  Future<bool> _onWillPop() async {
+    if (_currentPlayingVideoId != null) {
+      _pauseVideo(_currentPlayingVideoId!);
+    }
+    return true;
+  }
 
   // Load matched users for sharing
   Future<void> _loadMatchedUsers() async {
@@ -397,8 +424,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-
-      // Get mutual matches where both users have liked each other
       final matchesSnapshot = await FirebaseFirestore.instance
           .collection('matches')
           .where('UID', isEqualTo: currentUser.uid)
@@ -406,16 +431,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .where('is_mutual', isEqualTo: true)
           .get();
 
-
       final matchedUserIds = matchesSnapshot.docs
           .map((doc) => doc.data()['matched_user_ID'] as String)
           .toList();
 
-
       final users = await Future.wait(
         matchedUserIds.map((userId) => UserService.getUserProfile(userId)),
       );
-
 
       setState(() {
         _matchedUsers = users.whereType<UserModel>().toList();
@@ -425,15 +447,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Load matched users for sharing (same as in PostDetailScreen)
   Future<List<UserModel>> _loadMatchedUsersForSharing() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return [];
 
-
-      // Get mutual matches where both users have liked each other
       final matchesSnapshot = await FirebaseFirestore.instance
           .collection('matches')
           .where('UID', isEqualTo: currentUser.uid)
@@ -441,16 +459,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .where('is_mutual', isEqualTo: true)
           .get();
 
-
       final matchedUserIds = matchesSnapshot.docs
           .map((doc) => doc.data()['matched_user_ID'] as String)
           .toList();
 
-
       final users = await Future.wait(
         matchedUserIds.map((userId) => UserService.getUserProfile(userId)),
       );
-
 
       return users.whereType<UserModel>().toList();
     } catch (e) {
@@ -459,15 +474,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Generate consistent conversation ID (same as in PostDetailScreen)
   String _getConversationId(String user1, String user2) {
     final sortedIds = [user1, user2]..sort();
     return 'conversation_${sortedIds[0]}_${sortedIds[1]}';
   }
 
-
-  // Ensure conversation exists (same as in PostDetailScreen)
   Future<void> _ensureConversationExists(String conversationId, String currentUserId, UserModel otherUser) async {
     try {
       final conversationDoc = await FirebaseFirestore.instance
@@ -475,22 +486,17 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .doc(conversationId)
           .get();
 
-
       if (!conversationDoc.exists) {
-        // Get current user data from Firestore
         final currentUserDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(currentUserId)
             .get();
         final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
 
-
         final currentUserName = currentUserData?['name'] ?? 'You';
         final currentUserAvatar = _getFirstPhotoUrl(currentUserData?['first_photos']) ?? 'https://i.pravatar.cc/200';
 
-
         final otherUserAvatar = UserService.getProfilePhotoUrl(otherUser) ?? 'https://i.pravatar.cc/200';
-
 
         await FirebaseFirestore.instance
             .collection('chat_conversations')
@@ -523,8 +529,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Helper method to get first photo URL (same as in PostDetailScreen)
   String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
     if (firstPhotos == null) return null;
     for (var i = 1; i <= 4; i++) {
@@ -536,8 +540,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     return null;
   }
 
-
-  // Save shared post to chat (same as in PostDetailScreen)
   Future<void> _saveSharedPostToChat({
     required String conversationId,
     required String message,
@@ -545,7 +547,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     required String senderId,
   }) async {
     try {
-      // Save message to messages subcollection
       await FirebaseFirestore.instance
           .collection('chat_conversations')
           .doc(conversationId)
@@ -559,13 +560,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           'mediaUrl': item.thumb,
           'caption': item.title,
           'ownerId': item.userId,
-          'postType': item.type, // Add post type for context
+          'postType': item.type,
         },
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-
-      // Update conversation with shared post info
       await FirebaseFirestore.instance
           .collection('chat_conversations')
           .doc(conversationId)
@@ -578,7 +577,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'unreadCount.$senderId': 0,
       });
 
-
       print('✅ Shared ${item.type} saved to chat: $conversationId');
     } catch (e) {
       print('❌ Error saving shared ${item.type} to chat: $e');
@@ -586,28 +584,17 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Share post with specific user (same as in PostDetailScreen)
   Future<void> _shareWithUser(UserModel user, _ReelItem item) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-
-      // Generate conversation ID
       final conversationId = _getConversationId(currentUser.uid, user.uid);
-
-
-      // Ensure conversation exists
       await _ensureConversationExists(conversationId, currentUser.uid, user);
 
-
-      // Create share message based on content type
       final contentType = item.type == 'story' ? 'story' : 'post';
       final shareMessage = "Check out this $contentType! 📸\n\n${item.title}\n\n[Shared ${contentType}: ${item.thumb}]";
 
-
-      // Save shared post message to Firestore
       await _saveSharedPostToChat(
         conversationId: conversationId,
         message: shareMessage,
@@ -615,13 +602,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         senderId: currentUser.uid,
       );
 
-
-      // Close the share sheet
       if (mounted) {
         Navigator.pop(context);
-
-
-        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${contentType} shared with ${user.name}'),
@@ -629,9 +611,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           ),
         );
       }
-
-
-
 
     } catch (e) {
       print('❌ Error sharing ${item.type}: $e');
@@ -646,48 +625,35 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Load real live stream data from Firebase
   Future<void> _loadLiveData() async {
     try {
       setState(() => _isLoading = true);
 
-
-      // Load active live streams
       final liveStreams = await _getActiveLiveStreams();
-
-
-      // Load ALL stories from ALL users except current user
+      final followingLiveStreams = await _getFollowingLiveStreams();
       final followingReels = await _getAllStories();
-
-
-      // Load ALL posts from ALL users except current user
       final clipsReels = await _getAllPosts();
 
-
-      // Initialize video controllers for clips
       for (var clip in clipsReels) {
         if (clip.mediaType == 'video') {
           await _initializeVideoController(clip);
         }
       }
 
-
       if (mounted) {
         setState(() {
           _liveRooms = liveStreams;
+          _followingLiveRooms = followingLiveStreams;
           _followingReels = followingReels;
           _clipsReels = clipsReels;
           _isLoading = false;
         });
 
-        // Auto play first video in clips tab
         if (_clipsReels.isNotEmpty) {
           final firstClip = _clipsReels.first;
           if (firstClip.mediaType == 'video') {
-            // Delay to ensure UI is built
             Future.delayed(const Duration(milliseconds: 500), () {
-              if (mounted) {
+              if (mounted && _isScreenActive) {
                 _playVideo(firstClip.postId);
               }
             });
@@ -702,8 +668,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Get active live streams from Firebase
   Future<List<_LiveCard>> _getActiveLiveStreams() async {
     try {
       final snapshot = await FirebaseFirestore.instance
@@ -711,7 +675,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .where('isLive', isEqualTo: true)
           .orderBy('startedAt', descending: true)
           .get();
-
 
       return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
@@ -731,73 +694,89 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
+  Future<List<_LiveCard>> _getFollowingLiveStreams() async {
+    try {
+      if (_followingUserIds.isEmpty) {
+        print('No followed users found');
+        return [];
+      }
 
-  // Get ALL stories from ALL users except current user
+      print('🔍 Fetching live streams from ${_followingUserIds.length} followed users...');
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('liveStreams')
+          .where('isLive', isEqualTo: true)
+          .where('hostId', whereIn: _followingUserIds)
+          .orderBy('startedAt', descending: true)
+          .get();
+
+      print('📱 Found ${snapshot.docs.length} live streams from followed users');
+
+      final liveStreams = snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return _LiveCard(
+          title: data['title'] ?? 'Live Stream',
+          user: data['hostName'] ?? 'Unknown Host',
+          viewers: (data['viewers'] ?? 0).toInt(),
+          thumb: data['thumbnailUrl'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
+          game: data['category'] ?? 'Just Chatting',
+          liveId: doc.id,
+          hostId: data['hostId'] ?? '',
+        );
+      }).toList();
+
+      return liveStreams;
+    } catch (e) {
+      print('❌ Error getting following live streams: $e');
+      return [];
+    }
+  }
+
   Future<List<_ReelItem>> _getAllStories() async {
     try {
       print('🔍 Fetching stories from Firebase...');
 
-
-      // Get ALL active stories from ALL users from the 'stories' collection
       final snapshot = await FirebaseFirestore.instance
           .collection('stories')
           .where('expires_at', isGreaterThan: Timestamp.now())
           .orderBy('expires_at', descending: true)
-          .limit(50) // Limit to 50 most recent stories
+          .limit(50)
           .get();
 
-
       print('📱 Found ${snapshot.docs.length} stories in database');
-
 
       if (snapshot.docs.isEmpty) {
         print('❌ No stories found in database');
         return [];
       }
 
-
-      // Get user details for each story and filter out current user's stories
       final reels = await Future.wait(
         snapshot.docs.map((doc) async {
           final data = doc.data() as Map<String, dynamic>;
           final userId = data['UID'] as String?;
 
-
-          print('👤 Processing story from user: $userId, Current user: $_currentUserId');
-
-
-          // Filter out current user's stories
           if (userId == null || userId == _currentUserId) {
-            print('🚫 Filtered out current user\'s story');
             return null;
           }
 
-
           try {
-            // Get user details
             final userDoc = await FirebaseFirestore.instance
                 .collection('users')
                 .doc(userId)
                 .get();
-
 
             if (!userDoc.exists) {
               print('❌ User document not found for userId: $userId');
               return null;
             }
 
-
             final userData = userDoc.data() as Map<String, dynamic>?;
             final username = userData?['username'] ?? 'User';
             final userPhoto = userData?['photo_url'] ?? '';
 
-
-            print('✅ Loaded user data: $username');
-
-
             return _ReelItem(
               user: username,
-              title: 'New Story', // Default title for stories
+              title: 'New Story',
               viewers: (data['viewers']?.length ?? 0),
               thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?q=80&w=1080&auto=format&fit=crop',
               type: 'story',
@@ -807,7 +786,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               timestamp: data['created_at'] as Timestamp?,
               likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
               comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
-              mediaType: data['media_type'] ?? 'image', // 'image' or 'video' for stories
+              mediaType: data['media_type'] ?? 'image',
             );
           } catch (e) {
             print('❌ Error loading user data for $userId: $e');
@@ -816,10 +795,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         }),
       );
 
-
       final filteredReels = reels.whereType<_ReelItem>().toList();
       print('🎯 Final stories count after filtering: ${filteredReels.length}');
-
 
       return filteredReels;
     } catch (e) {
@@ -828,54 +805,39 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
   Future<List<_ReelItem>> _getAllPosts() async {
     try {
-      // Get ALL posts from ALL users
       final snapshot = await FirebaseFirestore.instance
           .collection('user_feed')
           .orderBy('date_time', descending: true)
           .limit(50)
           .get();
 
-
       if (snapshot.docs.isEmpty) return [];
 
-
-      // Get user details for each post and filter out current user's posts AND non-video posts
       final reels = await Future.wait(
         snapshot.docs.map((doc) async {
           final data = doc.data() as Map<String, dynamic>;
           final userId = data['UID'] as String?;
 
-
-          // Filter out current user's posts AND non-video posts
           if (userId == null || userId == _currentUserId) return null;
 
-
-          // ADD THIS FILTER - only include video posts
           final mediaUrl = data['media_url']?.toString() ?? '';
           final isVideo = mediaUrl.contains('.mp4') ||
               mediaUrl.contains('.mov') ||
               mediaUrl.contains('.avi') ||
               data['media_type'] == 'video';
 
-
           if (!isVideo) return null;
 
-
-          // Get user details
           final userDoc = await FirebaseFirestore.instance
               .collection('users')
               .doc(userId)
               .get();
 
-
           if (!userDoc.exists) return null;
 
-
           final userData = userDoc.data() as Map<String, dynamic>?;
-
 
           return _ReelItem(
             user: userData?['username'] ?? 'User',
@@ -894,7 +856,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         }),
       );
 
-
       return reels.whereType<_ReelItem>().toList();
     } catch (e) {
       print('Error getting all posts: $e');
@@ -902,8 +863,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Real-time listener for live streams
   void _setupLiveStreamListener() {
     _liveStreamSubscription = FirebaseFirestore.instance
         .collection('liveStreams')
@@ -911,26 +870,31 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         .snapshots()
         .listen((snapshot) {
       if (mounted) {
+        final allLiveStreams = snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return _LiveCard(
+            title: data['title'] ?? 'Live Stream',
+            user: data['hostName'] ?? 'Unknown Host',
+            viewers: (data['viewers'] ?? 0).toInt(),
+            thumb: data['thumbnailUrl'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
+            game: data['category'] ?? 'Just Chatting',
+            liveId: doc.id,
+            hostId: data['hostId'] ?? '',
+          );
+        }).toList();
+
+        final followingLiveStreams = allLiveStreams
+            .where((room) => _followingUserIds.contains(room.hostId))
+            .toList();
+
         setState(() {
-          _liveRooms = snapshot.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            return _LiveCard(
-              title: data['title'] ?? 'Live Stream',
-              user: data['hostName'] ?? 'Unknown Host',
-              viewers: (data['viewers'] ?? 0).toInt(),
-              thumb: data['thumbnailUrl'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
-              game: data['category'] ?? 'Just Chatting',
-              liveId: doc.id,
-              hostId: data['hostId'] ?? '',
-            );
-          }).toList();
+          _liveRooms = allLiveStreams;
+          _followingLiveRooms = followingLiveStreams;
         });
       }
     });
   }
 
-
-  // Like functionality - simplified without progress indicators
   Future<void> _likePost(_ReelItem item) async {
     try {
       final currentUserId = _currentUserId;
@@ -941,22 +905,15 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         return;
       }
 
-
-      // Check if already liked
       final isLiked = item.likes.any((like) => like['likerUID'] == currentUserId);
 
-
       if (isLiked) {
-        // Unlike
         await UserService.unlikePost(item.postId, currentUserId);
       } else {
-        // Like
         await UserService.likePost(item.postId, currentUserId);
       }
 
-
-      // Update UI immediately without showing loading state
-      _loadLiveData(); // This will refresh the data in background
+      _loadLiveData();
     } catch (e) {
       print('Error liking post: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -965,8 +922,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Comment functionality
   void _showComments(BuildContext context, _ReelItem item) {
     final currentUserId = _currentUserId;
     if (currentUserId == null) {
@@ -976,8 +931,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return;
     }
 
+    if (_currentPlayingVideoId != null) {
+      _pauseVideo(_currentPlayingVideoId!);
+    }
 
-    // Navigate to post detail screen for comments
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -986,8 +943,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
-
-  // Share functionality - only to matched users
   void _sharePost(_ReelItem item) {
     final currentUserId = _currentUserId;
     if (currentUserId == null) {
@@ -997,6 +952,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return;
     }
 
+    if (_currentPlayingVideoId != null) {
+      _pauseVideo(_currentPlayingVideoId!);
+    }
 
     showModalBottomSheet(
       context: context,
@@ -1053,7 +1011,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                     );
                   }
 
-
                   if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.all(16),
@@ -1077,7 +1034,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                     );
                   }
 
-
                   final matchedUsers = snapshot.data!;
                   return Flexible(
                     child: ListView.builder(
@@ -1087,7 +1043,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                       itemBuilder: (context, index) {
                         final user = matchedUsers[index];
                         final profilePhotoUrl = UserService.getProfilePhotoUrl(user);
-
 
                         return ListTile(
                           leading: CircleAvatar(
@@ -1157,15 +1112,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
-
-  // Send share message to matched user
   Future<void> _sendShareMessage(UserModel user, _ReelItem item) async {
     try {
       final currentUserId = _currentUserId;
       if (currentUserId == null) return;
 
-
-      // Create a share message
       final message = {
         'senderId': currentUserId,
         'receiverId': user.uid,
@@ -1179,14 +1130,10 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'isRead': false,
       };
 
-
-      // Save to messages collection
       await FirebaseFirestore.instance
           .collection('messages')
           .add(message);
 
-
-      // Update user's recent activity
       await FirebaseFirestore.instance
           .collection('users')
           .doc(currentUserId)
@@ -1198,8 +1145,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-
-      Navigator.pop(context); // Close the bottom sheet
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Shared with ${user.username}')),
       );
@@ -1211,20 +1157,14 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Navigate to user profile
   void _navigateToUserProfile(String userId) async {
     try {
-      // Pause video before navigating away
       if (_currentPlayingVideoId != null) {
         _pauseVideo(_currentPlayingVideoId!);
       }
 
-
-      // Check if it's the current user's profile
       final currentUserId = _currentUserId;
       if (currentUserId == userId) {
-        // Navigate to own profile
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1232,7 +1172,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           ),
         );
       } else {
-        // Navigate to other user's profile
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1251,8 +1190,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
-  // Check if user is premium before going live
   Future<void> _checkPremiumAndGoLive(BuildContext context) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -1263,25 +1200,23 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         return;
       }
 
+      if (_currentPlayingVideoId != null) {
+        _pauseVideo(_currentPlayingVideoId!);
+      }
 
-      // Check if user is premium
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
 
-
       final userData = userDoc.data() as Map<String, dynamic>?;
       final isPremium = userData?['type'] == 'premium';
-
 
       if (!isPremium) {
         _showPremiumRequiredDialog(context);
         return;
       }
 
-
-      // User is premium, proceed to live stream
       _startLiveStream(context);
     } catch (e) {
       print('Error checking premium status: $e');
@@ -1290,7 +1225,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       );
     }
   }
-
 
   void _showPremiumRequiredDialog(BuildContext context) {
     showDialog(
@@ -1306,8 +1240,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // Navigate to premium subscription screen
-              // Navigator.push(context, MaterialPageRoute(builder: (_) => SubscriptionScreen()));
             },
             child: const Text('Upgrade'),
           ),
@@ -1316,29 +1248,22 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
-
   Future<void> _startLiveStream(BuildContext context) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-
-      // Pause video before starting live stream
       if (_currentPlayingVideoId != null) {
         _pauseVideo(_currentPlayingVideoId!);
       }
 
-
-      // Create a new live stream document
       final liveId = DateTime.now().millisecondsSinceEpoch.toString();
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
 
-
       final userData = userDoc.data() as Map<String, dynamic>?;
-
 
       await FirebaseFirestore.instance
           .collection('liveStreams')
@@ -1355,8 +1280,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'thumbnailUrl': userData?['photo_url'] ?? '',
       });
 
-
-      // Navigate to live stream screen
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -1377,7 +1300,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
   void _joinLiveStream(BuildContext context, _LiveCard room) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -1387,12 +1309,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       return;
     }
 
-
-    // Pause video before joining live stream
     if (_currentPlayingVideoId != null) {
       _pauseVideo(_currentPlayingVideoId!);
     }
-
 
     Navigator.push(
       context,
@@ -1408,19 +1327,14 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
-
-  // Handle bottom navigation
   void _onBottomNavTapped(int index) {
-    // Pause video before navigating
     if (_currentPlayingVideoId != null) {
       _pauseVideo(_currentPlayingVideoId!);
     }
 
-
     setState(() {
       _currentBottomNavIndex = index;
     });
-
 
     switch (index) {
       case 0:
@@ -1452,174 +1366,241 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
-    // The dark background color used in the images
-    const Color darkBackground = Color(0xFF333333);
-
-
-    return Scaffold(
-      backgroundColor: darkBackground,
-      extendBodyBehindAppBar: true, // Important for TikTok-style overlay
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        titleSpacing: 0,
-        leading: IconButton(
-          icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.white),
-          onPressed: () {
-            // Pause video before going back
-            if (_currentPlayingVideoId != null) {
-              _pauseVideo(_currentPlayingVideoId!);
-            }
-            Navigator.pop(context);
-          },
-        ),
-        // TikTok-style transparent tabs
-        title: Container(
-          height: kToolbarHeight,
-          alignment: Alignment.center,
-          child: _TikTokTabBar(
-            tabController: _tab,
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF333333),
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          titleSpacing: 0,
+          leading: IconButton(
+            icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.white),
+            onPressed: () {
+              if (_currentPlayingVideoId != null) {
+                _pauseVideo(_currentPlayingVideoId!);
+              }
+              Navigator.pop(context);
+            },
+          ),
+          title: Container(
+            height: kToolbarHeight,
+            alignment: Alignment.center,
+            child: _TikTokTabBar(
+              tabController: _tab,
+            ),
           ),
         ),
-      ),
-
-
-      // Body content with floating button
-      body: Stack(
-        children: [
-          Container(
-            color: darkBackground,
-            child: TabBarView(
-              controller: _tab,
-              children: [
-                // Stories Tab - Shows ALL stories from other users
-                _ReelsFeed(
-                  items: _followingReels,
-                  showStories: true,
-                  onLike: _likePost,
-                  onComment: _showComments,
-                  onShare: _sharePost,
-                  onProfileTap: _navigateToUserProfile,
-                  onVideoTap: _onVideoTap,
-                  onPlayPause: _togglePlayPause,
-                  isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
-                  showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
-                  pageController: _followingPageController,
-                ),
-
-
-                // Live Tab - Shows live streams
-                Column(
-                  children: [
-                    const SizedBox(height: kToolbarHeight + 40), // Space for overlay tabs
-                    // Live Filters Bar
-                    _LiveFiltersBar(
-                      filters: _liveFilters,
-                      selected: _liveFilterIndex,
-                      onTap: (i) => setState(() => _liveFilterIndex = i),
-                      backgroundColor: darkBackground,
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: _liveRooms.isEmpty
-                          ? _buildEmptyLiveState()
-                          : CustomScrollView(
-                        slivers: [
-                          SliverPadding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            sliver: SliverGrid(
-                              delegate: SliverChildBuilderDelegate(
-                                    (context, i) => _LiveTile(
-                                  room: _liveRooms[i],
-                                  onTap: () => _joinLiveStream(context, _liveRooms[i]),
+        body: Stack(
+          children: [
+            Container(
+              color: const Color(0xFF333333),
+              child: TabBarView(
+                controller: _tab,
+                children: [
+                  _buildFollowingTab(),
+                  Column(
+                    children: [
+                      const SizedBox(height: kToolbarHeight + 40),
+                      _LiveFiltersBar(
+                        filters: _liveFilters,
+                        selected: _liveFilterIndex,
+                        onTap: (i) => setState(() => _liveFilterIndex = i),
+                        backgroundColor: const Color(0xFF333333),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: _liveRooms.isEmpty
+                            ? _buildEmptyLiveState()
+                            : CustomScrollView(
+                          slivers: [
+                            SliverPadding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              sliver: SliverGrid(
+                                delegate: SliverChildBuilderDelegate(
+                                      (context, i) => _LiveTile(
+                                    room: _liveRooms[i],
+                                    onTap: () => _joinLiveStream(context, _liveRooms[i]),
+                                  ),
+                                  childCount: _liveRooms.length,
                                 ),
-                                childCount: _liveRooms.length,
-                              ),
-                              gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                mainAxisSpacing: 10,
-                                crossAxisSpacing: 10,
-                                childAspectRatio: 9 / 14,
+                                gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 10,
+                                  childAspectRatio: 9 / 14,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-
-
-                // Posts Tab - Shows ALL posts from other users
-                _ReelsFeed(
-                  items: _clipsReels,
-                  showStories: false,
-                  onLike: _likePost,
-                  onComment: _showComments,
-                  onShare: _sharePost,
-                  onProfileTap: _navigateToUserProfile,
-                  onVideoTap: _onVideoTap,
-                  onPlayPause: _togglePlayPause,
-                  isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
-                  showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
-                  pageController: _clipsPageController,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-
-
-      // Bottom nav like screenshot (Home, Browse, Create, Activity, Profile)
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: Colors.black12.withOpacity(.4)),
-          ),
-          color: Colors.white,
-        ),
-        height: 58,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _BottomNavItem(
-              icon: Icons.home_filled,
-              label: "Home",
-              selected: _currentBottomNavIndex == 0,
-              onTap: () => _onBottomNavTapped(0),
-            ),
-            _BottomNavItem(
-              icon: Icons.search,
-              label: "Browse",
-              selected: _currentBottomNavIndex == 1,
-              onTap: () => _onBottomNavTapped(1),
-            ),
-            _BottomCreateButton(
-              onTap: () => _onBottomNavTapped(2),
-            ),
-            _BottomNavItem(
-              icon: Icons.notifications_none,
-              label: "Activity",
-              selected: _currentBottomNavIndex == 3,
-              onTap: () => _onBottomNavTapped(3),
-            ),
-            _BottomNavItem(
-              icon: Icons.person_outline,
-              label: "Profile",
-              selected: _currentBottomNavIndex == 4,
-              onTap: () => _onBottomNavTapped(4),
+                    ],
+                  ),
+                  _ReelsFeed(
+                    items: _clipsReels,
+                    showStories: false,
+                    onLike: _likePost,
+                    onComment: _showComments,
+                    onShare: _sharePost,
+                    onProfileTap: _navigateToUserProfile,
+                    onVideoTap: _onVideoTap,
+                    onPlayPause: _togglePlayPause,
+                    isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
+                    showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
+                    pageController: _clipsPageController,
+                  ),
+                ],
+              ),
             ),
           ],
+        ),
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: Colors.black12.withOpacity(.4)),
+            ),
+            color: Colors.white,
+          ),
+          height: 58,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _BottomNavItem(
+                icon: Icons.home_filled,
+                label: "Home",
+                selected: _currentBottomNavIndex == 0,
+                onTap: () => _onBottomNavTapped(0),
+              ),
+              _BottomNavItem(
+                icon: Icons.search,
+                label: "Browse",
+                selected: _currentBottomNavIndex == 1,
+                onTap: () => _onBottomNavTapped(1),
+              ),
+              _BottomCreateButton(
+                onTap: () => _onBottomNavTapped(2),
+              ),
+              _BottomNavItem(
+                icon: Icons.notifications_none,
+                label: "Activity",
+                selected: _currentBottomNavIndex == 3,
+                onTap: () => _onBottomNavTapped(3),
+              ),
+              _BottomNavItem(
+                icon: Icons.person_outline,
+                label: "Profile",
+                selected: _currentBottomNavIndex == 4,
+                onTap: () => _onBottomNavTapped(4),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildFollowingTab() {
+    return Column(
+      children: [
+        const SizedBox(height: kToolbarHeight + 40),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(FontAwesomeIcons.userFriends, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Live from people you follow',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${_followingLiveRooms.length} live',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _followingLiveRooms.isEmpty
+              ? _buildEmptyFollowingState()
+              : CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                sliver: SliverGrid(
+                  delegate: SliverChildBuilderDelegate(
+                        (context, i) => _LiveTile(
+                      room: _followingLiveRooms[i],
+                      onTap: () => _joinLiveStream(context, _followingLiveRooms[i]),
+                    ),
+                    childCount: _followingLiveRooms.length,
+                  ),
+                  gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 9 / 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyFollowingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(FontAwesomeIcons.userFriends, size: 64, color: Colors.white54),
+          const SizedBox(height: 16),
+          const Text(
+            'No live streams from followed users',
+            style: TextStyle(color: Colors.white, fontSize: 18),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Follow users to see when they go live',
+            style: TextStyle(color: Colors.white54),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => DiscoverScreen()),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Discover Users to Follow'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildEmptyLiveState() {
     return Center(
@@ -1651,7 +1632,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     );
   }
 
-
   String timeOfDayText() {
     final now = TimeOfDay.now();
     final h = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
@@ -1661,22 +1641,16 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 }
 
-
-/* ----------------------- TIKTOK STYLE TAB BAR ----------------------- */
 class _TikTokTabBar extends StatelessWidget {
   final TabController tabController;
 
-
   const _TikTokTabBar({required this.tabController});
-
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 250,
       height: 40,
-
-
       child: TabBar(
         controller: tabController,
         indicator: BoxDecoration(
@@ -1707,8 +1681,6 @@ class _TikTokTabBar extends StatelessWidget {
   }
 }
 
-
-/* ----------------------- LIVE FILTER BAR ----------------------- */
 class _LiveFiltersBar extends StatelessWidget {
   const _LiveFiltersBar({
     required this.filters,
@@ -1717,12 +1689,10 @@ class _LiveFiltersBar extends StatelessWidget {
     required this.backgroundColor,
   });
 
-
   final List<String> filters;
   final int selected;
   final ValueChanged<int> onTap;
   final Color backgroundColor;
-
 
   @override
   Widget build(BuildContext context) {
@@ -1730,7 +1700,6 @@ class _LiveFiltersBar extends StatelessWidget {
     const Color unselectedBgColor = Color(0xFF333333);
     const Color selectedTextColor = Colors.black87;
     const Color unselectedTextColor = Colors.white;
-
 
     return Container(
       color: backgroundColor,
@@ -1772,13 +1741,10 @@ class _LiveFiltersBar extends StatelessWidget {
   }
 }
 
-
-/* ----------------------- LIVE TILE ----------------------- */
 class _LiveTile extends StatelessWidget {
   const _LiveTile({required this.room, required this.onTap});
   final _LiveCard room;
   final VoidCallback onTap;
-
 
   @override
   Widget build(BuildContext context) {
@@ -1881,7 +1847,6 @@ class _LiveTile extends StatelessWidget {
     );
   }
 
-
   Widget _pill({required IconData icon, required String text}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1906,14 +1871,12 @@ class _LiveTile extends StatelessWidget {
     );
   }
 
-
   String _formatViewers(int v) {
     if (v >= 1000000) return "${(v / 1000000).toStringAsFixed(1)}M";
     if (v >= 1000) return "${(v / 1000).toStringAsFixed(1)}K";
     return "$v";
   }
 }
-
 
 class _ReelsFeed extends StatelessWidget {
   const _ReelsFeed({
@@ -1930,7 +1893,6 @@ class _ReelsFeed extends StatelessWidget {
     this.pageController,
   });
 
-
   final List<_ReelItem> items;
   final bool showStories;
   final Function(_ReelItem) onLike;
@@ -1943,7 +1905,6 @@ class _ReelsFeed extends StatelessWidget {
   final bool Function(_ReelItem) showPlayPauseOverlay;
   final PageController? pageController;
 
-
   @override
   Widget build(BuildContext context) {
     return items.isEmpty
@@ -1953,7 +1914,6 @@ class _ReelsFeed extends StatelessWidget {
       scrollDirection: Axis.vertical,
       itemCount: items.length,
       onPageChanged: (index) {
-        // Auto play video when page changes
         if (items.isNotEmpty && index < items.length) {
           final item = items[index];
           if (item.mediaType == 'video') {
@@ -1980,7 +1940,6 @@ class _ReelsFeed extends StatelessWidget {
     );
   }
 
-
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -2003,7 +1962,6 @@ class _ReelsFeed extends StatelessWidget {
   }
 }
 
-
 class _ReelContent extends StatefulWidget {
   final _ReelItem item;
   final bool showStories;
@@ -2015,7 +1973,6 @@ class _ReelContent extends StatefulWidget {
   final Function(_ReelItem) onPlayPause;
   final bool isVideoPlaying;
   final bool showPlayPauseOverlay;
-
 
   const _ReelContent({
     required this.item,
@@ -2030,21 +1987,17 @@ class _ReelContent extends StatefulWidget {
     required this.showPlayPauseOverlay,
   });
 
-
   @override
   State<_ReelContent> createState() => _ReelContentState();
 }
 
-
 class _ReelContentState extends State<_ReelContent> {
   bool _isMuted = false;
-
 
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final isLiked = widget.item.likes.any((like) => like['likerUID'] == currentUserId);
-
 
     return GestureDetector(
       onTap: () {
@@ -2055,7 +2008,6 @@ class _ReelContentState extends State<_ReelContent> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Background Media (Image/Video)
           if (widget.item.mediaType == 'video')
             _buildVideoContent()
           else
@@ -2066,8 +2018,7 @@ class _ReelContentState extends State<_ReelContent> {
               height: double.infinity,
             ),
 
-
-          // Centered Play/Pause Overlay (TikTok-style)
+          // Play/Pause Overlay - Only show when video is NOT playing OR when showPlayPauseOverlay is true
           if (widget.item.mediaType == 'video' && widget.showPlayPauseOverlay)
             Center(
               child: AnimatedOpacity(
@@ -2092,8 +2043,6 @@ class _ReelContentState extends State<_ReelContent> {
               ),
             ),
 
-
-          // Gradient Overlay
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -2106,8 +2055,6 @@ class _ReelContentState extends State<_ReelContent> {
             ),
           ),
 
-
-          // Story Time Remaining (only for stories)
           if (widget.showStories && widget.item.type == 'story')
             Positioned(
               top: 40,
@@ -2115,8 +2062,6 @@ class _ReelContentState extends State<_ReelContent> {
               child: _StoryTimeBadge(timestamp: widget.item.timestamp),
             ),
 
-
-          // Right Action Buttons
           Positioned(
             right: 12,
             bottom: 110,
@@ -2143,8 +2088,6 @@ class _ReelContentState extends State<_ReelContent> {
             ),
           ),
 
-
-          // Bottom Content Info
           Positioned(
             left: 12,
             right: 80,
@@ -2152,12 +2095,10 @@ class _ReelContentState extends State<_ReelContent> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // User Info Row - Make tappable
                 GestureDetector(
                   onTap: () => widget.onProfileTap(widget.item.userId),
                   child: Row(
                     children: [
-                      // User Avatar - Make tappable
                       GestureDetector(
                         onTap: () => widget.onProfileTap(widget.item.userId),
                         child: Container(
@@ -2204,8 +2145,6 @@ class _ReelContentState extends State<_ReelContent> {
                 ),
                 const SizedBox(height: 12),
 
-
-                // Content Title
                 Text(
                   widget.item.title,
                   maxLines: 2,
@@ -2218,8 +2157,6 @@ class _ReelContentState extends State<_ReelContent> {
                 ),
                 const SizedBox(height: 8),
 
-
-                // Engagement Stats
                 Row(
                   children: [
                     const Icon(
@@ -2276,7 +2213,6 @@ class _ReelContentState extends State<_ReelContent> {
     );
   }
 
-
   Widget _buildVideoContent() {
     final exploreState = context.findAncestorStateOfType<_ExploreLiveScreenState>();
     if (exploreState == null || !exploreState._videoControllers.containsKey(widget.item.postId)) {
@@ -2312,7 +2248,6 @@ class _ReelContentState extends State<_ReelContent> {
 
     return GestureDetector(
       onTap: () {
-        // Forward the tap to parent
         widget.onVideoTap(widget.item);
       },
       child: Stack(
@@ -2320,7 +2255,6 @@ class _ReelContentState extends State<_ReelContent> {
         children: [
           Chewie(controller: chewieController),
 
-          // Centered Play/Pause Overlay (TikTok-style)
           if (widget.showPlayPauseOverlay)
             Center(
               child: AnimatedOpacity(
@@ -2354,16 +2288,13 @@ class _ReelContentState extends State<_ReelContent> {
     final postTime = timestamp.toDate();
     final difference = now.difference(postTime);
 
-
     if (difference.inMinutes < 1) return 'Just now';
     if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
     if (difference.inHours < 24) return '${difference.inHours}h ago';
     if (difference.inDays < 7) return '${difference.inDays}d ago';
 
-
     return '${postTime.day}/${postTime.month}/${postTime.year}';
   }
-
 
   String _formatViewers(int v) {
     if (v >= 1000000) return "${(v / 1000000).toStringAsFixed(1)}M";
@@ -2372,20 +2303,16 @@ class _ReelContentState extends State<_ReelContent> {
   }
 }
 
-
-/* ----------------------- SHARE BOTTOM SHEET ----------------------- */
 class _ShareBottomSheet extends StatelessWidget {
   final _ReelItem item;
   final List<UserModel> matchedUsers;
   final Function(UserModel, _ReelItem) onShare;
-
 
   const _ShareBottomSheet({
     required this.item,
     required this.matchedUsers,
     required this.onShare,
   });
-
 
   @override
   Widget build(BuildContext context) {
@@ -2397,7 +2324,6 @@ class _ShareBottomSheet extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -2431,8 +2357,6 @@ class _ShareBottomSheet extends StatelessWidget {
             ),
           ),
 
-
-          // Matched Users List
           Expanded(
             child: matchedUsers.isEmpty
                 ? const Center(
@@ -2463,7 +2387,6 @@ class _ShareBottomSheet extends StatelessWidget {
                     ),
                   ),
 
-
                   trailing: IconButton(
                     icon: const Icon(FontAwesomeIcons.paperPlane, color: AppColors.primary),
                     onPressed: () => onShare(user, item),
@@ -2478,28 +2401,21 @@ class _ShareBottomSheet extends StatelessWidget {
   }
 }
 
-
-// Story Time Badge Widget
 class _StoryTimeBadge extends StatelessWidget {
   final Timestamp? timestamp;
 
-
   const _StoryTimeBadge({this.timestamp});
-
 
   @override
   Widget build(BuildContext context) {
     if (timestamp == null) return const SizedBox();
 
-
     final storyTime = timestamp!.toDate();
     final expiresAt = storyTime.add(const Duration(hours: 24));
     final remaining = expiresAt.difference(DateTime.now());
 
-
     String timeText;
     Color badgeColor;
-
 
     if (remaining.inHours > 0) {
       timeText = '${remaining.inHours}h';
@@ -2511,7 +2427,6 @@ class _StoryTimeBadge extends StatelessWidget {
       timeText = 'Ending';
       badgeColor = Colors.red;
     }
-
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -2531,15 +2446,12 @@ class _StoryTimeBadge extends StatelessWidget {
   }
 }
 
-
-// Updated Circle Icon with Count
 class _CircleIcon extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
   final int count;
   final bool isLiked;
   final bool showCount;
-
 
   const _CircleIcon({
     required this.icon,
@@ -2549,15 +2461,12 @@ class _CircleIcon extends StatefulWidget {
     this.showCount = true,
   });
 
-
   @override
   State<_CircleIcon> createState() => _CircleIconState();
 }
 
-
 class _CircleIconState extends State<_CircleIcon> {
   bool _isTapped = false;
-
 
   @override
   Widget build(BuildContext context) {
@@ -2569,7 +2478,6 @@ class _CircleIconState extends State<_CircleIcon> {
               _isTapped = true;
             });
             widget.onTap();
-            // Reset the tap state after a short delay
             Future.delayed(const Duration(milliseconds: 200), () {
               if (mounted) {
                 setState(() {
@@ -2609,7 +2517,6 @@ class _CircleIconState extends State<_CircleIcon> {
     );
   }
 
-
   String _formatCount(int count) {
     if (count >= 1000000) return "${(count / 1000000).toStringAsFixed(1)}M";
     if (count >= 1000) return "${(count / 1000).toStringAsFixed(1)}K";
@@ -2617,21 +2524,19 @@ class _CircleIconState extends State<_CircleIcon> {
   }
 }
 
-
 class _ReelItem {
   final String user;
   final String title;
   final int viewers;
   final String thumb;
-  final String type; // 'post', 'story', 'live_replay', 'video'
+  final String type;
   final String postId;
   final String userId;
   final String userPhoto;
   final Timestamp? timestamp;
   final List<Map<String, dynamic>> likes;
   final List<Map<String, dynamic>> comments;
-  final String mediaType; // 'image' or 'video' - THIS IS IMPORTANT
-
+  final String mediaType;
 
   const _ReelItem({
     required this.user,
@@ -2645,10 +2550,9 @@ class _ReelItem {
     this.timestamp,
     required this.likes,
     required this.comments,
-    this.mediaType = 'image', // Default to image
+    this.mediaType = 'image',
   });
 }
-
 
 class _LiveCard {
   final String title;
@@ -2658,7 +2562,6 @@ class _LiveCard {
   final String game;
   final String liveId;
   final String hostId;
-
 
   const _LiveCard({
     required this.title,
@@ -2671,8 +2574,6 @@ class _LiveCard {
   });
 }
 
-
-/* ----------------------- BOTTOM NAV ----------------------- */
 class _BottomNavItem extends StatelessWidget {
   const _BottomNavItem({
     required this.icon,
@@ -2681,12 +2582,10 @@ class _BottomNavItem extends StatelessWidget {
     required this.onTap,
   });
 
-
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
-
 
   @override
   Widget build(BuildContext context) {
@@ -2731,12 +2630,10 @@ class _BottomNavItem extends StatelessWidget {
   }
 }
 
-
 class _BottomCreateButton extends StatelessWidget {
   const _BottomCreateButton({required this.onTap});
 
   final VoidCallback onTap;
-
 
   @override
   Widget build(BuildContext context) {
