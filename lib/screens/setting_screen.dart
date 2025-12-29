@@ -10,6 +10,7 @@ import '../constants/app_colors.dart';
 import '../constants/privacy_policy_popup.dart';
 import '../constants/terms_condition_popup.dart';
 import '../db_functions/user_service.dart';
+import 'package:mailto/mailto.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -68,6 +69,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const SizedBox(height: 24),
 
+              // Payments Section
+              _SettingsSection(
+                title: 'Payments',
+                children: [
+                  _SettingsTile(
+                    icon: FontAwesomeIcons.creditCard,
+                    title: 'Payment Methods',
+                    subtitle: 'Manage your payment cards',
+                    onTap: () => _showComingSoon(context),
+                    showArrow: true,
+                  ),
+                  const SizedBox(height: 12),
+                  _SettingsTile(
+                    icon: FontAwesomeIcons.receipt,
+                    title: 'Transaction History',
+                    subtitle: 'View your payment history',
+                    onTap: () => _showTransactionHistory(context),
+                    showArrow: true,
+                  ),
+                  const SizedBox(height: 12),
+                  _SettingsTile(
+                    icon: FontAwesomeIcons.history,
+                    title: 'Report History',
+                    subtitle: 'View your submitted reports',
+                    onTap: () => _showReportHistory(context),
+                    showArrow: true,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
               // Safety & Support Section
               _SettingsSection(
                 title: 'Safety & Support',
@@ -92,7 +125,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: FontAwesomeIcons.headset,
                     title: 'Help Center',
                     subtitle: 'Get help and support',
-                    onTap: () => _showHelpCenter(context),
+                    onTap: () => _openHelpCenterEmail(context),
                     showArrow: true,
                   ),
                 ],
@@ -271,8 +304,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
-      // Use UserService to get profile (if available in SettingsScreen)
-      // First, import your UserService
+      // Use UserService to get profile
       final userProfile = await UserService.getUserProfile(currentUser.uid);
 
       if (mounted) Navigator.pop(context); // Close loading dialog
@@ -474,7 +506,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final matchesQuery = await SettingsScreen._firestore
           .collection('matches')
           .where('user1Id', isEqualTo: userId)
-          .where('user2Id', isEqualTo: userId)
+          .orWhere('user2Id', isEqualTo: userId)
           .get();
 
       for (final doc in matchesQuery.docs) {
@@ -569,6 +601,204 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ============ TRANSACTION HISTORY ============
+  void _showTransactionHistory(BuildContext context) async {
+    try {
+      final currentUser = SettingsScreen._auth.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to view transaction history'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading transactions...'),
+            ],
+          ),
+        ),
+      );
+
+      // Fetch transactions from Firestore
+      final transactionsQuery = await SettingsScreen._firestore
+          .collection('transactions')
+          .where('userId', isEqualTo: currentUser.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(50)
+          .get();
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (transactionsQuery.docs.isEmpty) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Transaction History'),
+            content: const Text('No transactions found.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // Show transaction history dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(FontAwesomeIcons.receipt, color: Colors.blue),
+              SizedBox(width: 12),
+              Text('Transaction History'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final doc in transactionsQuery.docs)
+                    _TransactionItem(doc.data()),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading transactions: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ============ REPORT HISTORY ============
+  void _showReportHistory(BuildContext context) async {
+    try {
+      final currentUser = SettingsScreen._auth.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to view report history'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading reports...'),
+            ],
+          ),
+        ),
+      );
+
+      // Fetch reports from Firestore
+      final reportsQuery = await SettingsScreen._firestore
+          .collection('problem_reports')
+          .where('userId', isEqualTo: currentUser.uid)
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .get();
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (reportsQuery.docs.isEmpty) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Report History'),
+            content: const Text('No reports found.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // Show report history dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(FontAwesomeIcons.history, color: Colors.blue),
+              SizedBox(width: 12),
+              Text('Report History'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final doc in reportsQuery.docs)
+                    _ReportHistoryItem(doc.data()),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading reports: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   // ============ COMING SOON FEATURES ============
   void _showComingSoon(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -584,12 +814,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(FontAwesomeIcons.shieldHalved, color: Colors.blue),
-            SizedBox(width: 12),
-            Text('Community Guidelines'),
-          ],
+        title: Container(
+          padding: const EdgeInsets.only(right: 12), // Fix overflow issue
+          child: const Row(
+            children: [
+              Icon(FontAwesomeIcons.shieldHalved, color: Colors.blue),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Community Guidelines',
+                  style: TextStyle(fontSize: 18),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
         content: SingleChildScrollView(
           child: Column(
@@ -836,17 +1076,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       final reportId = SettingsScreen._firestore.collection('problem_reports').doc().id;
+      final now = DateTime.now();
       final reportData = {
         'reportId': reportId,
         'userId': currentUser.uid,
         'userEmail': currentUser.email,
+        'userName': currentUser.displayName,
         'category': category,
         'description': description,
         'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
         'appVersion': '1.0.0',
         'platform': '${Theme.of(context).platform}',
+        'formattedDate': '${now.day}/${now.month}/${now.year} ${now.hour}:${now.minute}',
       };
 
       await SettingsScreen._firestore
@@ -877,18 +1120,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ============ HELP CENTER ============
-  void _showHelpCenter(BuildContext context) async {
+  void _openHelpCenterEmail(BuildContext context) async {
     try {
-      const url = 'https://meet9ja.com/help-center';
-      if (await canLaunchUrl(Uri.parse(url))) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      final mailtoLink = Mailto(
+        to: ['help@meet9ja.com'],
+        subject: 'Meet9ja Help Request',
+        body: 'Hello Meet9ja Support Team,\n\nI need help with:',
+      );
+
+      final url = Uri.parse(mailtoLink.toString());
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
       } else {
-        throw 'Could not launch $url';
+        // Fallback to copying email to clipboard
+        await Clipboard.setData(const ClipboardData(text: 'help@meet9ja.com'));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Email copied to clipboard: help@meet9ja.com'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Cannot open help center: ${e.toString()}'),
+          content: Text('Cannot open email client: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -918,34 +1174,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       } else {
-        // Fallback to dialog
+        // Fallback to detailed dialog
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Cookie Policy'),
+            title: const Row(
+              children: [
+                Icon(FontAwesomeIcons.cookie, color: Colors.brown),
+                SizedBox(width: 12),
+                Text('Cookie Policy'),
+              ],
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'How We Use Cookies',
+                    'Our Cookie Policy',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'We use cookies and similar technologies to:',
+                    'We use cookies and similar tracking technologies to enhance your experience on Meet9ja.',
                     style: TextStyle(fontSize: 14),
                   ),
-                  const SizedBox(height: 8),
-                  _CookieItem('Essential', 'Required for app functionality'),
-                  _CookieItem('Authentication', 'Keep you logged in'),
-                  _CookieItem('Preferences', 'Remember your settings'),
-                  _CookieItem('Analytics', 'Understand how you use our app'),
                   const SizedBox(height: 16),
+
+                  // Types of Cookies
                   const Text(
-                    'By using Meet9ja, you consent to our use of cookies as described in our full Cookie Policy.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    'Types of Cookies We Use:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  _CookieItem('🍪 Essential Cookies', 
+                    'Required for basic functions like login and security'),
+                  _CookieItem('🎯 Performance Cookies', 
+                    'Help us understand how you use our app to improve it'),
+                  _CookieItem('🔒 Security Cookies', 
+                    'Protect your account from unauthorized access'),
+                  _CookieItem('📊 Analytics Cookies', 
+                    'Collect anonymous data to analyze app performance'),
+                  _CookieItem('🎨 Preference Cookies', 
+                    'Remember your settings and preferences'),
+
+                  const SizedBox(height: 16),
+
+                  // How We Use Cookies
+                  const Text(
+                    'How We Use Cookies:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  _CookieUsageItem('Authentication', 
+                    'Keep you logged in during your session'),
+                  _CookieUsageItem('Security', 
+                    'Prevent fraudulent use of login credentials'),
+                  _CookieUsageItem('Preferences', 
+                    'Remember your language and display settings'),
+                  _CookieUsageItem('Analytics', 
+                    'Understand which features are most popular'),
+                  _CookieUsageItem('Performance', 
+                    'Monitor and improve app loading times'),
+
+                  const SizedBox(height: 16),
+
+                  // Third-Party Cookies
+                  const Text(
+                    'Third-Party Cookies:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'We may use third-party services like Google Analytics and Firebase that set their own cookies to help us analyze app usage.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Cookie Management
+                  const Text(
+                    'Managing Cookies:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'You can control cookies through your device settings. However, disabling essential cookies may affect app functionality.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  const Text(
+                    'By using Meet9ja, you consent to our use of cookies as described above.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
                   ),
                 ],
               ),
@@ -1669,7 +1991,7 @@ class _GuidelineItem extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      );
     );
   }
 }
@@ -1690,7 +2012,7 @@ class _AboutFeature extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(text, style: const TextStyle(fontSize: 14))),
         ],
-      ),
+      );
     );
   }
 }
@@ -1716,7 +2038,7 @@ class _ContactInfo extends StatelessWidget {
             child: Text(value, style: const TextStyle(color: Colors.black54)),
           ),
         ],
-      ),
+      );
     );
   }
 }
@@ -1815,6 +2137,211 @@ class _CookieItem extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      );
+    );
+  }
+}
+
+class _CookieUsageItem extends StatelessWidget {
+  final String title;
+  final String description;
+
+  const _CookieUsageItem(this.title, this.description);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle, size: 14, color: Colors.green),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                ),
+                Text(
+                  description,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    );
+  }
+}
+
+class _TransactionItem extends StatelessWidget {
+  final Map<String, dynamic> transaction;
+
+  const _TransactionItem(this.transaction);
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = transaction['amount'] ?? 0.0;
+    final type = transaction['type'] ?? 'unknown';
+    final status = transaction['status'] ?? 'pending';
+    final timestamp = transaction['timestamp'] != null 
+      ? (transaction['timestamp'] as Timestamp).toDate() 
+      : DateTime.now();
+    
+    Color statusColor = Colors.grey;
+    String statusText = status;
+    
+    if (status == 'completed') {
+      statusColor = Colors.green;
+      statusText = 'Completed';
+    } else if (status == 'failed') {
+      statusColor = Colors.red;
+      statusText = 'Failed';
+    } else if (status == 'pending') {
+      statusColor = Colors.orange;
+      statusText = 'Pending';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '₦${amount.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  statusText,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Type: ${type.toString().toUpperCase()}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          Text(
+            'Date: ${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour}:${timestamp.minute}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportHistoryItem extends StatelessWidget {
+  final Map<String, dynamic> report;
+
+  const _ReportHistoryItem(this.report);
+
+  @override
+  Widget build(BuildContext context) {
+    final category = report['category'] ?? 'Unknown';
+    final status = report['status'] ?? 'pending';
+    final description = report['description'] ?? 'No description';
+    final createdAt = report['createdAt'] != null 
+      ? (report['createdAt'] as Timestamp).toDate() 
+      : DateTime.now();
+    
+    Color statusColor = Colors.grey;
+    String statusText = status;
+    
+    if (status == 'resolved') {
+      statusColor = Colors.green;
+      statusText = 'Resolved';
+    } else if (status == 'reviewed') {
+      statusColor = Colors.blue;
+      statusText = 'Reviewed';
+    } else if (status == 'pending') {
+      statusColor = Colors.orange;
+      statusText = 'Pending';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  category,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  statusText,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: const TextStyle(fontSize: 12),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Submitted: ${createdAt.day}/${createdAt.month}/${createdAt.year}',
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
         ],
       ),
