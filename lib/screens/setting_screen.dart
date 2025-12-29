@@ -9,14 +9,20 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_colors.dart';
 import '../constants/privacy_policy_popup.dart';
 import '../constants/terms_condition_popup.dart';
+import '../db_functions/user_service.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   // Firebase instances
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -236,16 +242,78 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ NAVIGATION METHODS ============
+  void _navigateToEditProfile(BuildContext context) async {
+    try {
+      final currentUser = SettingsScreen._auth.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to edit profile'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
-  void _navigateToEditProfile(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const EditProfileScreen()),
-    );
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading profile...'),
+            ],
+          ),
+        ),
+      );
+
+      // Use UserService to get profile (if available in SettingsScreen)
+      // First, import your UserService
+      final userProfile = await UserService.getUserProfile(currentUser.uid);
+
+      if (mounted) Navigator.pop(context); // Close loading dialog
+
+      if (userProfile != null) {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EditProfileScreen(userProfile: userProfile),
+          ),
+        );
+
+        if (result == true && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Profile updated successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('User profile not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      print('❌ Error loading profile: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading profile: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   // ============ ACCOUNT DELETION ============
-
   void _showDeleteAccountDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -318,7 +386,7 @@ class SettingsScreen extends StatelessWidget {
     );
 
     try {
-      final currentUser = _auth.currentUser;
+      final currentUser = SettingsScreen._auth.currentUser;
       if (currentUser == null) {
         Navigator.pop(context); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
@@ -374,13 +442,13 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _deleteUserData(String userId) async {
     try {
-      final batch = _firestore.batch();
+      final batch = SettingsScreen._firestore.batch();
 
       // Delete user document
-      batch.delete(_firestore.collection('users').doc(userId));
+      batch.delete(SettingsScreen._firestore.collection('users').doc(userId));
 
       // Delete user's posts
-      final postsQuery = await _firestore
+      final postsQuery = await SettingsScreen._firestore
           .collection('user_feed')
           .where('UID', isEqualTo: userId)
           .get();
@@ -390,7 +458,7 @@ class SettingsScreen extends StatelessWidget {
       }
 
       // Delete user's stories
-      final storiesQuery = await _firestore
+      final storiesQuery = await SettingsScreen._firestore
           .collection('stories')
           .where('UID', isEqualTo: userId)
           .get();
@@ -403,10 +471,10 @@ class SettingsScreen extends StatelessWidget {
       await _removeUserFromSocialLists(userId);
 
       // Delete matches
-      final matchesQuery = await _firestore
+      final matchesQuery = await SettingsScreen._firestore
           .collection('matches')
           .where('user1Id', isEqualTo: userId)
-          .orWhere('user2Id', isEqualTo: userId)
+          .where('user2Id', isEqualTo: userId)
           .get();
 
       for (final doc in matchesQuery.docs) {
@@ -414,7 +482,7 @@ class SettingsScreen extends StatelessWidget {
       }
 
       // Delete chat messages
-      final chatsQuery = await _firestore
+      final chatsQuery = await SettingsScreen._firestore
           .collection('chats')
           .where('participants', arrayContains: userId)
           .get();
@@ -424,7 +492,7 @@ class SettingsScreen extends StatelessWidget {
       }
 
       // Delete notifications
-      final notificationsQuery = await _firestore
+      final notificationsQuery = await SettingsScreen._firestore
           .collection('notifications')
           .where('userId', isEqualTo: userId)
           .get();
@@ -444,12 +512,12 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _removeUserFromSocialLists(String userId) async {
     try {
       // Get all users who have this user in their followers/following
-      final usersQuery = await _firestore
+      final usersQuery = await SettingsScreen._firestore
           .collection('users')
           .where('followers', arrayContains: userId)
           .get();
 
-      final batch = _firestore.batch();
+      final batch = SettingsScreen._firestore.batch();
 
       for (final doc in usersQuery.docs) {
         batch.update(doc.reference, {
@@ -458,7 +526,7 @@ class SettingsScreen extends StatelessWidget {
         });
       }
 
-      final followingQuery = await _firestore
+      final followingQuery = await SettingsScreen._firestore
           .collection('users')
           .where('following', arrayContains: userId)
           .get();
@@ -502,7 +570,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ COMING SOON FEATURES ============
-
   void _showComingSoon(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -513,7 +580,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ COMMUNITY GUIDELINES ============
-
   void _showCommunityGuidelines(BuildContext context) {
     showDialog(
       context: context,
@@ -601,7 +667,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ REPORT PROBLEM ============
-
   void _showReportProblemDialog(BuildContext context) {
     final TextEditingController problemController = TextEditingController();
     String selectedCategory = 'Bug Report';
@@ -758,7 +823,7 @@ class SettingsScreen extends StatelessWidget {
     );
 
     try {
-      final currentUser = _auth.currentUser;
+      final currentUser = SettingsScreen._auth.currentUser;
       if (currentUser == null) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -770,7 +835,7 @@ class SettingsScreen extends StatelessWidget {
         return;
       }
 
-      final reportId = _firestore.collection('problem_reports').doc().id;
+      final reportId = SettingsScreen._firestore.collection('problem_reports').doc().id;
       final reportData = {
         'reportId': reportId,
         'userId': currentUser.uid,
@@ -784,7 +849,7 @@ class SettingsScreen extends StatelessWidget {
         'platform': '${Theme.of(context).platform}',
       };
 
-      await _firestore
+      await SettingsScreen._firestore
           .collection('problem_reports')
           .doc(reportId)
           .set(reportData);
@@ -812,7 +877,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ HELP CENTER ============
-
   void _showHelpCenter(BuildContext context) async {
     try {
       const url = 'https://meet9ja.com/help-center';
@@ -832,7 +896,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ PRIVACY POLICY ============
-
   void _showPrivacyPolicy(BuildContext context) {
     showDialog(
       context: context,
@@ -841,7 +904,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ TERMS & CONDITIONS ============
-
   void _showTermsConditions(BuildContext context) {
     showDialog(
       context: context,
@@ -850,7 +912,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ COOKIE POLICY ============
-
   void _showCookiePolicy(BuildContext context) async {
     try {
       const url = 'https://meet9ja.com/cookie-policy';
@@ -916,7 +977,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ ABOUT COMPANY ============
-
   void _showAboutCompany(BuildContext context) {
     showDialog(
       context: context,
@@ -1031,7 +1091,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ CONTACT US ============
-
   void _showContactUs(BuildContext context) {
     final TextEditingController messageController = TextEditingController();
     String selectedTopic = 'General Inquiry';
@@ -1206,12 +1265,12 @@ class SettingsScreen extends StatelessWidget {
     );
 
     try {
-      final currentUser = _auth.currentUser;
+      final currentUser = SettingsScreen._auth.currentUser;
       final userEmail = currentUser?.email ?? 'Not provided';
       final userName = currentUser?.displayName ?? 'Anonymous User';
       final userId = currentUser?.uid ?? 'anonymous';
 
-      final contactId = _firestore.collection('contact_messages').doc().id;
+      final contactId = SettingsScreen._firestore.collection('contact_messages').doc().id;
       final contactData = {
         'contactId': contactId,
         'userId': userId,
@@ -1224,7 +1283,7 @@ class SettingsScreen extends StatelessWidget {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      await _firestore
+      await SettingsScreen._firestore
           .collection('contact_messages')
           .doc(contactId)
           .set(contactData);
@@ -1271,7 +1330,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ RATE APP ============
-
   void _rateApp(BuildContext context) async {
     // Determine platform
     final platform = Theme.of(context).platform;
@@ -1352,7 +1410,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ LOGOUT ============
-
   void _showLogoutConfirmation(BuildContext context) {
     showDialog(
       context: context,
@@ -1404,7 +1461,7 @@ class SettingsScreen extends StatelessWidget {
     );
 
     try {
-      await _auth.signOut();
+      await SettingsScreen._auth.signOut();
 
       Navigator.pop(context); // Close loading
       Navigator.pop(context); // Close confirmation
@@ -1434,7 +1491,6 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // ============ HELPER METHODS ============
-
   Future<void> _openWebsite(BuildContext context, String url) async {
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
