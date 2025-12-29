@@ -74,26 +74,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'Payments',
                 children: [
                   _SettingsTile(
-                    icon: FontAwesomeIcons.creditCard,
-                    title: 'Payment Methods',
-                    subtitle: 'Manage your payment cards',
-                    onTap: () => _showComingSoon(context),
-                    showArrow: true,
-                  ),
-                  const SizedBox(height: 12),
-                  _SettingsTile(
                     icon: FontAwesomeIcons.receipt,
                     title: 'Transaction History',
                     subtitle: 'View your payment history',
                     onTap: () => _showTransactionHistory(context),
-                    showArrow: true,
-                  ),
-                  const SizedBox(height: 12),
-                  _SettingsTile(
-                    icon: FontAwesomeIcons.history,
-                    title: 'Report History',
-                    subtitle: 'View your submitted reports',
-                    onTap: () => _showReportHistory(context),
                     showArrow: true,
                   ),
                 ],
@@ -118,6 +102,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: 'Report a Problem',
                     subtitle: 'Report issues or concerns',
                     onTap: () => _showReportProblemDialog(context),
+                    showArrow: true,
+                  ),
+                  const SizedBox(height: 12),
+                  _SettingsTile(
+                    icon: FontAwesomeIcons.history,
+                    title: 'Report History',
+                    subtitle: 'View your submitted reports',
+                    onTap: () => _showReportHistory(context),
                     showArrow: true,
                   ),
                   const SizedBox(height: 12),
@@ -645,7 +637,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Transaction History'),
+            title: const Row(
+              children: [
+                Icon(FontAwesomeIcons.receipt, color: Colors.blue),
+                SizedBox(width: 12),
+                Text('Transaction History'),
+              ],
+            ),
             content: const Text('No transactions found.'),
             actions: [
               TextButton(
@@ -671,14 +669,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           content: SizedBox(
             width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final doc in transactionsQuery.docs)
-                    _TransactionItem(doc.data()),
-                ],
-              ),
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: Column(
+              children: [
+                Text(
+                  'Total Transactions: ${transactionsQuery.docs.length}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final doc in transactionsQuery.docs)
+                          _TransactionItem(doc.data()),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           actions: [
@@ -690,7 +703,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } catch (e) {
-      Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error loading transactions: ${e.toString()}'),
@@ -744,7 +757,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Report History'),
+            title: const Row(
+              children: [
+                Icon(FontAwesomeIcons.history, color: Colors.blue),
+                SizedBox(width: 12),
+                Text('Report History'),
+              ],
+            ),
             content: const Text('No reports found.'),
             actions: [
               TextButton(
@@ -770,14 +789,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           content: SizedBox(
             width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final doc in reportsQuery.docs)
-                    _ReportHistoryItem(doc.data()),
-                ],
-              ),
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: Column(
+              children: [
+                Text(
+                  'Total Reports: ${reportsQuery.docs.length}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final doc in reportsQuery.docs)
+                          _ReportHistoryItem(doc.data()),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           actions: [
@@ -789,7 +823,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } catch (e) {
-      Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error loading reports: ${e.toString()}'),
@@ -1108,6 +1142,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           backgroundColor: Colors.green,
         ),
       );
+      
+      // Refresh the page to show updated report history
+      if (mounted) {
+        setState(() {});
+      }
     } catch (e) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
