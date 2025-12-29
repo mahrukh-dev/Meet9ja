@@ -506,7 +506,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final matchesQuery = await SettingsScreen._firestore
           .collection('matches')
           .where('user1Id', isEqualTo: userId)
-          .orWhere('user2Id', isEqualTo: userId)
+          .where('user2Id', isEqualTo: userId)
           .get();
 
       for (final doc in matchesQuery.docs) {
@@ -1991,7 +1991,7 @@ class _GuidelineItem extends StatelessWidget {
             ),
           ),
         ],
-      );
+      )
     );
   }
 }
@@ -2012,7 +2012,7 @@ class _AboutFeature extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(text, style: const TextStyle(fontSize: 14))),
         ],
-      );
+      )
     );
   }
 }
@@ -2038,7 +2038,7 @@ class _ContactInfo extends StatelessWidget {
             child: Text(value, style: const TextStyle(color: Colors.black54)),
           ),
         ],
-      );
+      )
     );
   }
 }
@@ -2139,7 +2139,7 @@ class _CookieItem extends StatelessWidget {
             ),
           ),
         ],
-      );
+      )
     );
   }
 }
@@ -2175,7 +2175,7 @@ class _CookieUsageItem extends StatelessWidget {
             ),
           ),
         ],
-      );
+      )
     );
   }
 }

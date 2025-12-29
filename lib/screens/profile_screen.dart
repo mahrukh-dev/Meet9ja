@@ -1207,7 +1207,7 @@ class _SliverHeader extends StatelessWidget {
         final isMutuallyMatched = data['mutuallyMatched'] ?? false;
 
         // Show gift button if matched and not following
-        final showGiftButton = isMutuallyMatched && !isMutualFollowing;
+        final showGiftButton = isMutuallyMatched;
         // Show chat button if both following and matched
         final showChatButton = isMutualFollowing && isMutuallyMatched;
 
@@ -1902,7 +1902,7 @@ class _GiftTabState extends State<_GiftTab> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        "Send a Gift to Abdullah Khan",
+                        "Send a Gift",
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.black87,
