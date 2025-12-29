@@ -11,6 +11,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/messages_screen.dart' hide StoryModel;
 import 'package:meet9ja/screens/post_detail_screen.dart';
+import 'package:meet9ja/screens/setting_screen.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
 import 'package:meet9ja/screens/story_view_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -929,10 +930,10 @@ class _SliverHeader extends StatelessWidget {
           IconButton(
             icon: const Icon(FontAwesomeIcons.gear, size: 20),
             onPressed: () {
-              // TODO: Setting SCREEN
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => HomeScreen()),
+                MaterialPageRoute(builder: (_) => SettingsScreen()),
               );
+
             },
           )
         else

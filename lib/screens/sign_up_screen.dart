@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:meet9ja/screens/selfie_onboarding_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_colors.dart';
+import '../constants/privacy_policy_popup.dart';
+import '../constants/terms_condition_popup.dart';
 import '../db_functions/firebase_service.dart';
 import '../db_functions/image_service.dart';
 
@@ -765,7 +767,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Terms of Service
+            // In _buildNameStep() method of sign_up_screen.dart
+// Replace the Terms of Service section with:
+
+// Terms of Service
             Row(
               children: [
                 Checkbox(
@@ -778,19 +783,41 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       style: const TextStyle(color: Colors.black87, fontSize: 12),
                       children: [
                         const TextSpan(text: 'I agree to the '),
-                        TextSpan(
-                          text: 'Terms of Service',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.bold,
+                        WidgetSpan(
+                          child: GestureDetector(
+                            onTap: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => const TermsConditionsPopup(),
+                              );
+                            },
+                            child: Text(
+                              'Terms of Service',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
                           ),
                         ),
                         const TextSpan(text: ' and '),
-                        TextSpan(
-                          text: 'Privacy Policy',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.bold,
+                        WidgetSpan(
+                          child: GestureDetector(
+                            onTap: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => const PrivacyPolicyPopup(),
+                              );
+                            },
+                            child: Text(
+                              'Privacy Policy',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -799,7 +826,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
               ],
             ),
-
             const SizedBox(height: 40),
           ],
         ),

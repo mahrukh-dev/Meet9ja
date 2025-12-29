@@ -4,7 +4,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meet9ja/screens/signin_screen.dart';
 import '../constants/app_colors.dart';
-import '../db_functions/dummyData.dart';
+import '../constants/privacy_policy_popup.dart';
+import '../constants/terms_condition_popup.dart';
 import 'sign_up_screen.dart';
 
 class AuthPage extends StatefulWidget {
@@ -56,6 +57,22 @@ class _AuthPageState extends State<AuthPage>
     super.dispose();
   }
 
+  // Show Privacy Policy Popup
+  void _showPrivacyPolicy() {
+    showDialog(
+      context: context,
+      builder: (context) => const PrivacyPolicyPopup(),
+    );
+  }
+
+  // Show Terms & Conditions Popup
+  void _showTermsConditions() {
+    showDialog(
+      context: context,
+      builder: (context) => const TermsConditionsPopup(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -104,7 +121,7 @@ class _AuthPageState extends State<AuthPage>
           SafeArea(
             child: Column(
               children: [
-                const SizedBox(height: 70), // was 40 → nudged content down
+                const SizedBox(height: 70),
                 // Top area: logo and brand stacked together
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -118,8 +135,8 @@ class _AuthPageState extends State<AuthPage>
                         children: [
                           // Bigger circular logo with soft shadow
                           Container(
-                            width: 140, // was 110
-                            height: 140, // was 110
+                            width: 140,
+                            height: 140,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               boxShadow: [
@@ -132,7 +149,7 @@ class _AuthPageState extends State<AuthPage>
                             ),
                             child: ClipOval(
                               child: Padding(
-                                padding: const EdgeInsets.all(10.0), // was 8.0
+                                padding: const EdgeInsets.all(10.0),
                                 child: Image.asset(
                                   "assets/images/Heart.png",
                                   fit: BoxFit.contain,
@@ -141,12 +158,12 @@ class _AuthPageState extends State<AuthPage>
                             ),
                           ),
 
-                          const SizedBox(height: 12), // was 10
+                          const SizedBox(height: 12),
                           // Slightly larger brand name
                           RichText(
                             text: const TextSpan(
                               style: TextStyle(
-                                fontSize: 38, // was 34
+                                fontSize: 38,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.2,
                               ),
@@ -214,7 +231,7 @@ class _AuthPageState extends State<AuthPage>
                               width: double.infinity,
                               height: 56,
                               child: ElevatedButton.icon(
-                                icon: Icon(
+                                icon: const Icon(
                                   CupertinoIcons.camera,
                                   size: 20,
                                 ),
@@ -288,15 +305,45 @@ class _AuthPageState extends State<AuthPage>
 
                 const SizedBox(height: 20),
 
-                // Small helper row
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Text(
-                    "By signing up, you agree to our Terms. See how we use your data in our Privacy Policy.",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      height: 1.4,
+                // Small helper row with clickable terms
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                      children: [
+                        const TextSpan(text: 'By signing up, you agree to our '),
+                        WidgetSpan(
+                          child: GestureDetector(
+                            onTap: _showTermsConditions,
+                            child: const Text(
+                              'Terms',
+                              style: TextStyle(
+                                decoration: TextDecoration.underline,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const TextSpan(text: '. See how we use your data in our '),
+                        WidgetSpan(
+                          child: GestureDetector(
+                            onTap: _showPrivacyPolicy,
+                            child: const Text(
+                              'Privacy Policy',
+                              style: TextStyle(
+                                decoration: TextDecoration.underline,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const TextSpan(text: '.'),
+                      ],
                     ),
                     textAlign: TextAlign.center,
                   ),

@@ -5,6 +5,8 @@ import 'package:meet9ja/constants/app_colors.dart';
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/sign_up_screen.dart';
 import 'package:zego_zimkit/zego_zimkit.dart';
+import '../constants/privacy_policy_popup.dart';
+import '../constants/terms_condition_popup.dart';
 import '../db_functions/firebase_service.dart';
 
 class Signinscreen extends StatefulWidget {
@@ -300,6 +302,56 @@ class _SigninscreenState extends State<Signinscreen> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
+                        ),
+                      ),
+                      // Add this after the registration link section
+                      const SizedBox(height: 16),
+                      Center(
+                        child: Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8.0,
+                          runSpacing: 4.0,
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => const TermsConditionsPopup(),
+                                );
+                              },
+                              child: Text(
+                                'Terms of Service',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 12,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '|',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => const PrivacyPolicyPopup(),
+                                );
+                              },
+                              child: Text(
+                                'Privacy Policy',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 12,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 
