@@ -61,7 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Map<String, int> _userStats = {
     'followers': 0,
     'following': 0,
-    'matches': 0,
+    'subs': 0, // Changed from 'matches' to 'subs'
   };
   bool _isFollowing = false;
   bool _isMatched = false;
@@ -105,6 +105,12 @@ class _ProfileScreenState extends State<ProfileScreen>
         _userStats = stats;
       });
 
+      // Get subscription count
+      final subCount = await _getSubscriptionCount(userId);
+      setState(() {
+        _userStats['subs'] = subCount;
+      });
+
       if (!widget.isMyProfile && UserService.currentUserId != null) {
         final following = await UserService.isFollowing(userId);
         setState(() {
@@ -139,6 +145,21 @@ class _ProfileScreenState extends State<ProfileScreen>
         _error = 'Failed to load user data: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<int> _getSubscriptionCount(String userId) async {
+    try {
+      final subsSnapshot = await FirebaseFirestore.instance
+          .collection('subscriptions')
+          .where('receiver_id', isEqualTo: userId)
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      return subsSnapshot.docs.length;
+    } catch (e) {
+      print('❌ Error getting subscription count: $e');
+      return 0;
     }
   }
 
@@ -179,7 +200,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
 
       _showSnackBar(
-        _isFollowing ? 'You are now following ${_userProfile!.name}' : 'You unfollowed ${_userProfile!.name}',
+        _isFollowing
+            ? 'You are now following ${_userProfile!.name}'
+            : 'You unfollowed ${_userProfile!.name}',
         color: _isFollowing ? Colors.green : Colors.orange,
       );
     } catch (e) {
@@ -210,7 +233,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
 
       _showSnackBar(
-        _isMatched ? 'You matched with ${_userProfile!.name}! 🎉' : 'You unmatched ${_userProfile!.name}',
+        _isMatched
+            ? 'You matched with ${_userProfile!.name}! 🎉'
+            : 'You unmatched ${_userProfile!.name}',
         color: _isMatched ? Colors.green : Colors.orange,
       );
     } catch (e) {
@@ -221,6 +246,20 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  void _showGiftDialog() {
+    if (_userProfile == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => GiftPopup(
+        receiverId: _userProfile!.uid,
+        receiverName: _userProfile!.name,
+      ),
+    );
+  }
+
   Future<void> _likeProfile(String targetUserId) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -228,7 +267,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       final batch = FirebaseFirestore.instance.batch();
 
-      final currentUserRef = FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
+      final currentUserRef =
+      FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
       batch.update(currentUserRef, {
         'liked_profiles': FieldValue.arrayUnion([targetUserId]),
         'updated_at': FieldValue.serverTimestamp(),
@@ -236,8 +276,12 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       await _createMatchRecord(currentUser.uid, targetUserId, 'like');
 
-      final targetUserDoc = await FirebaseFirestore.instance.collection('users').doc(targetUserId).get();
-      final targetUserLikes = List.from(targetUserDoc.data()?['liked_profiles'] ?? []);
+      final targetUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(targetUserId)
+          .get();
+      final targetUserLikes =
+      List.from(targetUserDoc.data()?['liked_profiles'] ?? []);
 
       if (targetUserLikes.contains(currentUser.uid)) {
         await _createMutualMatch(currentUser.uid, targetUserId);
@@ -257,7 +301,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) throw 'User not logged in';
 
-      await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).update({
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .update({
         'liked_profiles': FieldValue.arrayRemove([targetUserId]),
         'updated_at': FieldValue.serverTimestamp(),
       });
@@ -271,10 +318,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  Future<void> _createMatchRecord(String user1Id, String user2Id, String status) async {
+  Future<void> _createMatchRecord(
+      String user1Id, String user2Id, String status) async {
     try {
       final matchId = '${user1Id}_$user2Id';
-      final matchRef = FirebaseFirestore.instance.collection('matches').doc(matchId);
+      final matchRef =
+      FirebaseFirestore.instance.collection('matches').doc(matchId);
 
       await matchRef.set({
         'matchId': matchId,
@@ -295,7 +344,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       final matchId = '${user1Id}_$user2Id';
       final mutualMatchId = 'mutual_$matchId';
 
-      final matchRef = FirebaseFirestore.instance.collection('matches').doc(mutualMatchId);
+      final matchRef =
+      FirebaseFirestore.instance.collection('matches').doc(mutualMatchId);
 
       await matchRef.set({
         'matchId': mutualMatchId,
@@ -308,13 +358,15 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       final batch = FirebaseFirestore.instance.batch();
 
-      final user1Ref = FirebaseFirestore.instance.collection('users').doc(user1Id);
+      final user1Ref =
+      FirebaseFirestore.instance.collection('users').doc(user1Id);
       batch.update(user1Ref, {
         'matches': FieldValue.arrayUnion([mutualMatchId]),
         'updated_at': FieldValue.serverTimestamp(),
       });
 
-      final user2Ref = FirebaseFirestore.instance.collection('users').doc(user2Id);
+      final user2Ref =
+      FirebaseFirestore.instance.collection('users').doc(user2Id);
       batch.update(user2Ref, {
         'matches': FieldValue.arrayUnion([mutualMatchId]),
         'updated_at': FieldValue.serverTimestamp(),
@@ -323,7 +375,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       await batch.commit();
 
       print('🎉 Mutual match created between $user1Id and $user2Id');
-
     } catch (e) {
       print('❌ Error creating mutual match: $e');
     }
@@ -377,43 +428,46 @@ class _ProfileScreenState extends State<ProfileScreen>
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
-
                   _ReportReasonTile(
                     value: 'Inappropriate content',
                     groupValue: selectedReason,
-                    onChanged: (value) => setState(() => selectedReason = value!),
+                    onChanged: (value) =>
+                        setState(() => selectedReason = value!),
                     title: 'Inappropriate content',
                     subtitle: 'Nudity, violence, or explicit material',
                   ),
                   _ReportReasonTile(
                     value: 'Spam or fake profile',
                     groupValue: selectedReason,
-                    onChanged: (value) => setState(() => selectedReason = value!),
+                    onChanged: (value) =>
+                        setState(() => selectedReason = value!),
                     title: 'Spam or fake profile',
                     subtitle: 'Fake account or promotional content',
                   ),
                   _ReportReasonTile(
                     value: 'Harassment or bullying',
                     groupValue: selectedReason,
-                    onChanged: (value) => setState(() => selectedReason = value!),
+                    onChanged: (value) =>
+                        setState(() => selectedReason = value!),
                     title: 'Harassment or bullying',
                     subtitle: 'Threatening or abusive behavior',
                   ),
                   _ReportReasonTile(
                     value: 'Underage user',
                     groupValue: selectedReason,
-                    onChanged: (value) => setState(() => selectedReason = value!),
+                    onChanged: (value) =>
+                        setState(() => selectedReason = value!),
                     title: 'Underage user',
                     subtitle: 'User appears to be under 18 years old',
                   ),
                   _ReportReasonTile(
                     value: 'Other',
                     groupValue: selectedReason,
-                    onChanged: (value) => setState(() => selectedReason = value!),
+                    onChanged: (value) =>
+                        setState(() => selectedReason = value!),
                     title: 'Other',
                     subtitle: 'Something else',
                   ),
-
                   if (selectedReason == 'Other') ...[
                     const SizedBox(height: 16),
                     const Text(
@@ -475,7 +529,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
 
       final reportData = {
-        'reportId': '${currentUser.uid}_${reportedUser.uid}_${DateTime.now().millisecondsSinceEpoch}',
+        'reportId':
+        '${currentUser.uid}_${reportedUser.uid}_${DateTime.now().millisecondsSinceEpoch}',
         'reporterId': currentUser.uid,
         'reporterName': currentUser.displayName ?? 'Anonymous',
         'reportedUserId': reportedUser.uid,
@@ -536,10 +591,10 @@ class _ProfileScreenState extends State<ProfileScreen>
           mode: LaunchMode.inAppWebView,
         );
       }
-
     } catch (e) {
       print('Error launching URL: $e');
-      _showSnackBar('Error opening link. Please make sure you have a browser installed.');
+      _showSnackBar(
+          'Error opening link. Please make sure you have a browser installed.');
     }
   }
 
@@ -643,7 +698,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     try {
       String websiteUrl = website;
-      if (!websiteUrl.startsWith('http://') && !websiteUrl.startsWith('https://')) {
+      if (!websiteUrl.startsWith('http://') &&
+          !websiteUrl.startsWith('https://')) {
         websiteUrl = 'https://$websiteUrl';
       }
 
@@ -659,7 +715,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
     } catch (e) {
       print('Error launching website: $e');
-      _showSnackBar('Error opening website. Please check the URL and try again.');
+      _showSnackBar(
+          'Error opening website. Please check the URL and try again.');
     }
   }
 
@@ -706,6 +763,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               isSmallScreen: isSmallScreen,
               onFollowTap: _toggleFollow,
               onMatchTap: _toggleMatch,
+              onGiftTap: _showGiftDialog,
               onEditTap: _navigateToEditProfile,
               onManageMatchesTap: _navigateToMatchedUsers,
               onReportTap: () => _showReportDialog(context, _userProfile!),
@@ -715,7 +773,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               onTikTokTap: _launchTikTok,
               onYouTubeTap: _launchYouTube,
             ),
-
             SliverPersistentHeader(
               pinned: true,
               delegate: _TabBarDelegate(
@@ -861,7 +918,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
-// Updated _SliverHeader class with chat button logic
+// Updated _SliverHeader class with gift button logic
 class _SliverHeader extends StatelessWidget {
   const _SliverHeader({
     required this.isMyProfile,
@@ -872,6 +929,7 @@ class _SliverHeader extends StatelessWidget {
     required this.isSmallScreen,
     required this.onFollowTap,
     required this.onMatchTap,
+    required this.onGiftTap,
     required this.onEditTap,
     required this.onManageMatchesTap,
     required this.onReportTap,
@@ -890,6 +948,7 @@ class _SliverHeader extends StatelessWidget {
   final bool isSmallScreen;
   final VoidCallback onFollowTap;
   final VoidCallback onMatchTap;
+  final VoidCallback onGiftTap;
   final VoidCallback onEditTap;
   final VoidCallback onManageMatchesTap;
   final VoidCallback onReportTap;
@@ -919,12 +978,10 @@ class _SliverHeader extends StatelessWidget {
       foregroundColor: Colors.black,
       elevation: 1,
       shadowColor: Colors.black12,
-
       leading: IconButton(
         icon: const Icon(FontAwesomeIcons.arrowLeft, color: Colors.black),
         onPressed: () => Navigator.of(context).pop(),
       ),
-
       actions: [
         if (isMyProfile)
           IconButton(
@@ -933,12 +990,12 @@ class _SliverHeader extends StatelessWidget {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => SettingsScreen()),
               );
-
             },
           )
         else
           PopupMenuButton<String>(
-            icon: const Icon(FontAwesomeIcons.ellipsisVertical, size: 20),
+            icon:
+            const Icon(FontAwesomeIcons.ellipsisVertical, size: 20),
             onSelected: (value) {
               if (value == 'report') {
                 onReportTap();
@@ -949,7 +1006,8 @@ class _SliverHeader extends StatelessWidget {
                 value: 'report',
                 child: Row(
                   children: [
-                    Icon(FontAwesomeIcons.flag, size: 16, color: Colors.red),
+                    Icon(FontAwesomeIcons.flag,
+                        size: 16, color: Colors.red),
                     SizedBox(width: 8),
                     Text('Report Profile'),
                   ],
@@ -958,7 +1016,6 @@ class _SliverHeader extends StatelessWidget {
             ],
           ),
       ],
-
       flexibleSpace: FlexibleSpaceBar(
         collapseMode: CollapseMode.pin,
         background: SafeArea(
@@ -981,8 +1038,7 @@ class _SliverHeader extends StatelessWidget {
                                 ? NetworkImage(profilePhotoUrl)
                                 : const NetworkImage(
                               "https://i.pravatar.cc/160?img=8",
-                            )
-                            as ImageProvider,
+                            ) as ImageProvider,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -1080,8 +1136,8 @@ class _SliverHeader extends StatelessWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: _StatTile(
-                          label: "Matches",
-                          value: userStats['matches'] ?? 0,
+                          label: "Subs", // Changed from "Matches" to "Subs"
+                          value: userStats['subs'] ?? 0,
                         ),
                       ),
                     ],
@@ -1140,6 +1196,8 @@ class _SliverHeader extends StatelessWidget {
               Expanded(child: _buildLoadingButton()),
               const SizedBox(width: 6),
               Expanded(child: _buildLoadingButton()),
+              if (isMatched) const SizedBox(width: 6),
+              if (isMatched) Expanded(child: _buildLoadingButton()),
             ],
           );
         }
@@ -1148,6 +1206,8 @@ class _SliverHeader extends StatelessWidget {
         final isMutualFollowing = data['mutualFollowing'] ?? false;
         final isMutuallyMatched = data['mutuallyMatched'] ?? false;
 
+        // Show gift button if matched and not following
+        final showGiftButton = isMutuallyMatched && !isMutualFollowing;
         // Show chat button if both following and matched
         final showChatButton = isMutualFollowing && isMutuallyMatched;
 
@@ -1164,22 +1224,33 @@ class _SliverHeader extends StatelessWidget {
                 onPressed: onFollowTap,
               ),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: showChatButton
-                  ? _ChatButton(
-                onPressed: () => _navigateToChat(context),
-              )
-                  : _ActionButton(
-                label: isMatched ? "Matched" : "Match",
-                icon: isMatched
-                    ? FontAwesomeIcons.heartCircleCheck
-                    : FontAwesomeIcons.heart,
-                color: isMatched ? Colors.green : AppColors.primary,
-                textColor: Colors.white,
-                onPressed: onMatchTap,
+            if (showGiftButton) const SizedBox(width: 6),
+            if (showGiftButton)
+              Expanded(
+                child: _GiftButton(
+                  onPressed: onGiftTap,
+                ),
               ),
-            ),
+            if (showChatButton) const SizedBox(width: 6),
+            if (showChatButton)
+              Expanded(
+                child: _ChatButton(
+                  onPressed: () => _navigateToChat(context),
+                ),
+              ),
+            if (!showGiftButton && !showChatButton) const SizedBox(width: 6),
+            if (!showGiftButton && !showChatButton)
+              Expanded(
+                child: _ActionButton(
+                  label: isMatched ? "Matched" : "Match",
+                  icon: isMatched
+                      ? FontAwesomeIcons.heartCircleCheck
+                      : FontAwesomeIcons.heart,
+                  color: isMatched ? Colors.green : AppColors.primary,
+                  textColor: Colors.white,
+                  onPressed: onMatchTap,
+                ),
+              ),
           ],
         );
       },
@@ -1199,8 +1270,8 @@ class _SliverHeader extends StatelessWidget {
           .doc(currentUser.uid)
           .get();
       final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
-      final currentUserFollowing = List<String>.from(
-          currentUserData?['following'] ?? []);
+      final currentUserFollowing =
+      List<String>.from(currentUserData?['following'] ?? []);
 
       // Check if profile user is following current user
       final profileUserDoc = await FirebaseFirestore.instance
@@ -1208,14 +1279,15 @@ class _SliverHeader extends StatelessWidget {
           .doc(userProfile.uid)
           .get();
       final profileUserData = profileUserDoc.data() as Map<String, dynamic>?;
-      final profileUserFollowing = List<String>.from(
-          profileUserData?['following'] ?? []);
+      final profileUserFollowing =
+      List<String>.from(profileUserData?['following'] ?? []);
 
       final isMutualFollowing = currentUserFollowing.contains(userProfile.uid) &&
           profileUserFollowing.contains(currentUser.uid);
 
       // Check if users have mutually matched
-      final isMutuallyMatched = await _checkMutualMatch(currentUser.uid, userProfile.uid);
+      final isMutuallyMatched =
+      await _checkMutualMatch(currentUser.uid, userProfile.uid);
 
       return {
         'mutualFollowing': isMutualFollowing,
@@ -1243,8 +1315,12 @@ class _SliverHeader extends StatelessWidget {
           .get();
 
       // Check for mutual match or any match in both directions
-      final hasMatch1 = match1Doc.exists && (match1Doc.data()?['status'] == 'match' || match1Doc.data()?['status'] == 'like');
-      final hasMatch2 = match2Doc.exists && (match2Doc.data()?['status'] == 'match' || match2Doc.data()?['status'] == 'like');
+      final hasMatch1 = match1Doc.exists &&
+          (match1Doc.data()?['status'] == 'match' ||
+              match1Doc.data()?['status'] == 'like');
+      final hasMatch2 = match2Doc.exists &&
+          (match2Doc.data()?['status'] == 'match' ||
+              match2Doc.data()?['status'] == 'like');
 
       return hasMatch1 || hasMatch2;
     } catch (e) {
@@ -1259,7 +1335,8 @@ class _SliverHeader extends StatelessWidget {
       if (currentUser == null) return;
 
       // Generate conversation ID
-      final conversationId = _getConversationId(currentUser.uid, userProfile.uid);
+      final conversationId =
+      _getConversationId(currentUser.uid, userProfile.uid);
 
       // Get current user data
       final currentUserDoc = await FirebaseFirestore.instance
@@ -1297,7 +1374,6 @@ class _SliverHeader extends StatelessWidget {
           ),
         ),
       );
-
     } catch (e) {
       print('❌ Error navigating to chat: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1372,7 +1448,8 @@ class _SliverHeader extends StatelessWidget {
           height: 20,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            valueColor:
+            AlwaysStoppedAnimation<Color>(AppColors.primary),
           ),
         ),
       ),
@@ -1404,7 +1481,8 @@ class _SliverHeader extends StatelessWidget {
                   onTap: onInstagramTap,
                   isEnabled: true,
                 ),
-              if (userProfile.twitter?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.twitter?.isNotEmpty == true)
+                const SizedBox(width: 12),
               if (userProfile.twitter?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.xTwitter,
@@ -1412,7 +1490,8 @@ class _SliverHeader extends StatelessWidget {
                   onTap: onTwitterTap,
                   isEnabled: true,
                 ),
-              if (userProfile.facebook?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.facebook?.isNotEmpty == true)
+                const SizedBox(width: 12),
               if (userProfile.facebook?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.facebook,
@@ -1420,7 +1499,8 @@ class _SliverHeader extends StatelessWidget {
                   onTap: onFacebookTap,
                   isEnabled: true,
                 ),
-              if (userProfile.tiktok?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.tiktok?.isNotEmpty == true)
+                const SizedBox(width: 12),
               if (userProfile.tiktok?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.tiktok,
@@ -1428,7 +1508,8 @@ class _SliverHeader extends StatelessWidget {
                   onTap: onTikTokTap,
                   isEnabled: true,
                 ),
-              if (userProfile.youtube?.isNotEmpty == true) const SizedBox(width: 12),
+              if (userProfile.youtube?.isNotEmpty == true)
+                const SizedBox(width: 12),
               if (userProfile.youtube?.isNotEmpty == true)
                 _SocialMediaIcon(
                   icon: FontAwesomeIcons.youtube,
@@ -1444,7 +1525,38 @@ class _SliverHeader extends StatelessWidget {
   }
 }
 
-// New Chat Button Widget
+// New Gift Button Widget
+class _GiftButton extends StatelessWidget {
+  const _GiftButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.pink,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10)),
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+      ),
+      onPressed: onPressed,
+      icon: const Icon(FontAwesomeIcons.gift, size: 13),
+      label: const Text(
+        "Gift",
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+// Chat Button Widget
 class _ChatButton extends StatelessWidget {
   const _ChatButton({required this.onPressed});
 
@@ -1456,7 +1568,8 @@ class _ChatButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10)),
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       ),
@@ -1474,20 +1587,821 @@ class _ChatButton extends StatelessWidget {
   }
 }
 
-// Also add this helper method to UserService class
-extension UserServiceHelpers on UserService {
-  static String? getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
-    if (firstPhotos == null) return null;
-    for (var i = 1; i <= 4; i++) {
-      final photoUrl = firstPhotos['photo${i}url']?.toString();
-      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
-        return photoUrl;
-      }
-    }
-    return null;
+// Gift Popup Widget
+class GiftPopup extends StatefulWidget {
+  final String receiverId;
+  final String receiverName;
+
+  const GiftPopup({
+    super.key,
+    required this.receiverId,
+    required this.receiverName,
+  });
+
+  @override
+  State<GiftPopup> createState() => _GiftPopupState();
+}
+
+class _GiftPopupState extends State<GiftPopup>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Text(
+                  "Send to ${widget.receiverName}",
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TabBar(
+                  controller: _tabController,
+                  labelColor: Colors.pink,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.pink,
+                  tabs: const [
+                    Tab(
+                      icon: Icon(FontAwesomeIcons.gift, size: 20),
+                      text: "Gift",
+                    ),
+                    Tab(
+                      icon: Icon(FontAwesomeIcons.star, size: 20),
+                      text: "Subs",
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Tab Content
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // Gift Tab
+                _GiftTab(
+                  receiverId: widget.receiverId,
+                  receiverName: widget.receiverName,
+                ),
+                // Subs Tab
+                _SubsTab(
+                  receiverId: widget.receiverId,
+                  receiverName: widget.receiverName,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
+// Gift Tab Content
+class _GiftTab extends StatefulWidget {
+  final String receiverId;
+  final String receiverName;
+
+  const _GiftTab({
+    required this.receiverId,
+    required this.receiverName,
+  });
+
+  @override
+  State<_GiftTab> createState() => _GiftTabState();
+}
+
+class _GiftTabState extends State<_GiftTab> {
+  int _selectedGiftIndex = -1;
+  final List<Map<String, dynamic>> _gifts = [
+    {
+      'icon': '🎁',
+      'name': 'Rose',
+      'diamonds': 10,
+      'coins': 100,
+    },
+    {
+      'icon': '💝',
+      'name': 'Love',
+      'diamonds': 50,
+      'coins': 500,
+    },
+    {
+      'icon': '🚀',
+      'name': 'Rocket',
+      'diamonds': 100,
+      'coins': 1000,
+    },
+    {
+      'icon': '👑',
+      'name': 'Crown',
+      'diamonds': 500,
+      'coins': 5000,
+    },
+    {
+      'icon': '🌟',
+      'name': 'Star',
+      'diamonds': 1000,
+      'coins': 10000,
+    },
+    {
+      'icon': '💎',
+      'name': 'Diamond',
+      'diamonds': 5000,
+      'coins': 50000,
+    },
+  ];
+
+  Future<void> _sendGift(int giftIndex) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in to send gifts')),
+        );
+        return;
+      }
+
+      final gift = _gifts[giftIndex];
+      final giftType = gift['name'].toString().toLowerCase();
+      final diamondCost = gift['diamonds'] as int;
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+
+      final userData = userDoc.data() as Map<String, dynamic>?;
+      final currentDiamonds =
+          (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
+
+      if (currentDiamonds < diamondCost) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Not enough diamonds! You need $diamondCost but have $currentDiamonds',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Deduct diamonds from sender
+      batch.update(
+          FirebaseFirestore.instance.collection('users').doc(currentUser.uid), {
+        'wallet.diamond_balance': FieldValue.increment(-diamondCost),
+      });
+
+      // Convert diamonds to coins for receiver (1 diamond = 10 coins)
+      final coinValue = diamondCost * 10;
+
+      // Add coins to receiver's earnings
+      batch.update(
+        FirebaseFirestore.instance.collection('users').doc(widget.receiverId),
+        {
+          'wallet.coin_balance': FieldValue.increment(coinValue),
+          'wallet.total_earning': FieldValue.increment(coinValue.toDouble()),
+        },
+      );
+
+      // Record gift transaction
+      final giftId = 'gift_${DateTime.now().millisecondsSinceEpoch}';
+      batch.set(
+        FirebaseFirestore.instance.collection('gifts').doc(giftId),
+        {
+          'gift_id': giftId,
+          'sender_id': currentUser.uid,
+          'receiver_id': widget.receiverId,
+          'gift_type': giftType,
+          'diamond_amount': diamondCost,
+          'coin_value': coinValue,
+          'timestamp': FieldValue.serverTimestamp(),
+          'status': 'sent',
+        },
+      );
+
+      // Record sender transaction
+      batch.set(
+        FirebaseFirestore.instance
+            .collection('transactions')
+            .doc('${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}'),
+        {
+          'transaction_id': '${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}',
+          'type': 'gift_sent',
+          'UID': currentUser.uid,
+          'receiver_UID': widget.receiverId,
+          'diamond_amount': diamondCost,
+          'coin_value': coinValue,
+          'date_time': FieldValue.serverTimestamp(),
+          'gift_type': giftType,
+        },
+      );
+
+      // Record receiver transaction
+      batch.set(
+        FirebaseFirestore.instance.collection('transactions').doc(
+            '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}'),
+        {
+          'transaction_id':
+          '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}',
+          'type': 'gift_received',
+          'UID': widget.receiverId,
+          'sender_UID': currentUser.uid,
+          'diamond_amount': diamondCost,
+          'coin_value': coinValue,
+          'date_time': FieldValue.serverTimestamp(),
+          'gift_type': giftType,
+        },
+      );
+
+      await batch.commit();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sent ${gift['name']} gift worth $diamondCost diamonds!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.of(context).pop();
+    } catch (e) {
+      print('❌ Error sending gift: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send gift: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Gift Message Section
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                const Text(
+                  "Gift Message",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Send a Gift to Abdullah Khan",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            "270 coins",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.pink,
+                            ),
+                          ),
+                          SizedBox(width: 4),
+                          Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.grey,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Available Gifts
+          const Text(
+            "Select a Gift",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Each gift costs diamonds from your wallet",
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Gifts Grid
+          Expanded(
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.9,
+              ),
+              itemCount: _gifts.length,
+              itemBuilder: (context, index) {
+                final gift = _gifts[index];
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedGiftIndex = index;
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: _selectedGiftIndex == index
+                          ? Colors.pink.withOpacity(0.1)
+                          : Colors.grey.shade50,
+                      border: Border.all(
+                        color: _selectedGiftIndex == index
+                            ? Colors.pink
+                            : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          gift['icon'],
+                          style: const TextStyle(fontSize: 32),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          gift['name'],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${gift['diamonds']}',
+                              style: const TextStyle(
+                                color: Colors.blue,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(
+                              FontAwesomeIcons.diamond,
+                              size: 12,
+                              color: Colors.blue,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Send Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _selectedGiftIndex != -1
+                  ? () => _sendGift(_selectedGiftIndex)
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.pink,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                "Send Gift",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Subs Tab Content
+class _SubsTab extends StatefulWidget {
+  final String receiverId;
+  final String receiverName;
+
+  const _SubsTab({
+    required this.receiverId,
+    required this.receiverName,
+  });
+
+  @override
+  State<_SubsTab> createState() => _SubsTabState();
+}
+
+class _SubsTabState extends State<_SubsTab> {
+  int _selectedSubsAmount = 0;
+  final List<int> _subsOptions = [5, 10, 20];
+  final int _subPrice = 40; // coins per sub
+
+  Future<void> _sendSubs() async {
+    if (_selectedSubsAmount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select number of subs')),
+      );
+      return;
+    }
+
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in to send subs')),
+        );
+        return;
+      }
+
+      final totalCoins = _selectedSubsAmount * _subPrice;
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+
+      final userData = userDoc.data() as Map<String, dynamic>?;
+      final currentCoins =
+          (userData?['wallet']?['coin_balance'] as int?) ?? 0;
+
+      if (currentCoins < totalCoins) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Not enough coins! You need $totalCoins but have $currentCoins',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Deduct coins from sender
+      batch.update(
+          FirebaseFirestore.instance.collection('users').doc(currentUser.uid), {
+        'wallet.coin_balance': FieldValue.increment(-totalCoins),
+      });
+
+      // Add coins to receiver
+      batch.update(
+        FirebaseFirestore.instance.collection('users').doc(widget.receiverId),
+        {
+          'wallet.coin_balance': FieldValue.increment(totalCoins),
+          'wallet.total_earning': FieldValue.increment(totalCoins.toDouble()),
+        },
+      );
+
+      // Record subscription
+      final subId = 'sub_${DateTime.now().millisecondsSinceEpoch}';
+      batch.set(
+        FirebaseFirestore.instance.collection('subscriptions').doc(subId),
+        {
+          'subscription_id': subId,
+          'sender_id': currentUser.uid,
+          'receiver_id': widget.receiverId,
+          'subs_amount': _selectedSubsAmount,
+          'total_coins': totalCoins,
+          'timestamp': FieldValue.serverTimestamp(),
+          'status': 'active',
+          'expires_at': DateTime.now().add(const Duration(days: 30)),
+        },
+      );
+
+      // Record sender transaction
+      batch.set(
+        FirebaseFirestore.instance
+            .collection('transactions')
+            .doc('${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}'),
+        {
+          'transaction_id': '${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}',
+          'type': 'subs_sent',
+          'UID': currentUser.uid,
+          'receiver_UID': widget.receiverId,
+          'coin_amount': totalCoins,
+          'subs_amount': _selectedSubsAmount,
+          'date_time': FieldValue.serverTimestamp(),
+        },
+      );
+
+      // Record receiver transaction
+      batch.set(
+        FirebaseFirestore.instance.collection('transactions').doc(
+            '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}'),
+        {
+          'transaction_id':
+          '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}',
+          'type': 'subs_received',
+          'UID': widget.receiverId,
+          'sender_UID': currentUser.uid,
+          'coin_amount': totalCoins,
+          'subs_amount': _selectedSubsAmount,
+          'date_time': FieldValue.serverTimestamp(),
+        },
+      );
+
+      await batch.commit();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sent $_selectedSubsAmount subs to ${widget.receiverName}!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.of(context).pop();
+    } catch (e) {
+      print('❌ Error sending subs: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send subs: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                const Text(
+                  "Gift a Sub",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Support with Subs",
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "Each sub costs $_subPrice coins",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Subs Options
+          const Text(
+            "Select Number of Subs",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Subs Options Grid
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: _subsOptions.map((subs) {
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedSubsAmount = subs;
+                  });
+                },
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: _selectedSubsAmount == subs
+                        ? Colors.blue.withOpacity(0.1)
+                        : Colors.grey.shade50,
+                    border: Border.all(
+                      color: _selectedSubsAmount == subs
+                          ? Colors.blue
+                          : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '$subs',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Subs',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Price Display
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  "Total:",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  "${_selectedSubsAmount * _subPrice} coins",
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Note
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              "Subscriptions will be active for 30 days from purchase date.",
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+
+          const Spacer(),
+
+          // Send Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _selectedSubsAmount > 0 ? _sendSubs : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                "Gift Subs",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Cancel Button
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                "Cancel",
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 // UI Components
 class _StatTile extends StatelessWidget {
@@ -1626,7 +2540,8 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(color: Colors.white, child: _tabBar);
   }
 
@@ -1680,6 +2595,7 @@ class _ReportReasonTile extends StatelessWidget {
     );
   }
 }
+
 // Home Tab with Live Streams Grid
 class _HomeTab extends StatefulWidget {
   final String userId;
@@ -2563,6 +3479,7 @@ class _LiveStreamGridItem extends StatelessWidget {
     }
   }
 }
+
 class _LiveHistoryCard extends StatelessWidget {
   final LiveHistory liveHistory;
   final VoidCallback onTap;
@@ -2737,27 +3654,6 @@ class _LiveHistoryCard extends StatelessWidget {
       return '${difference.inDays} days ago';
     } else {
       return DateFormat('MMM d, y • h:mm a').format(date);
-    }
-  }
-}
-
-// Add this to your UserService class
-extension UserServiceExtensions on UserService {
-  static Future<List<LiveHistory>> getUserLiveHistory(String userId) async {
-    try {
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('live_history')
-          .where('UID', isEqualTo: userId)
-          .orderBy('end_time', descending: true)
-          .limit(20)
-          .get();
-
-      return querySnapshot.docs.map((doc) {
-        return LiveHistory.fromFirestore(doc);
-      }).toList();
-    } catch (e) {
-      print('Error getting user live history: $e');
-      return [];
     }
   }
 }
