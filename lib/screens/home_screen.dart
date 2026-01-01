@@ -1,4 +1,3 @@
-// lib/home_screen.dart
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +40,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _profiles = [];
   bool _isLoading = true;
   String _errorMessage = '';
+
+  // Bottom navigation current index
+  int _bottomNavIndex = 2; // Home is index 2 (People tab)
 
   @override
   void initState() {
@@ -141,9 +143,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadProfiles();
     }
   }
-// In lib/home_screen.dart, update the _likeProfile and _passProfile methods
 
-// Like profile function - only triggered by ❤️ icon
+  // Like profile function - only triggered by ❤️ icon
   Future<void> _likeProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
@@ -189,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-// Pass profile function - only triggered by ❌ icon
+  // Pass profile function - only triggered by ❌ icon
   Future<void> _passProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
@@ -234,6 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
+
   // Navigate to profile details - only triggered by share icon or card tap
   void _navigateToProfileDetails(Map<String, dynamic> profile) {
     final String userId = profile['uid'] ?? profile['UID'];
@@ -319,16 +321,57 @@ class _HomeScreenState extends State<HomeScreen> {
                     : _buildProfilesList(),
               ),
 
-              // Bottom nav
+              // Bottom nav - ADDED BACK
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 4, 12, 10), // Reduced padding
-                child: _BottomNav(current: 2),
+                child: _BottomNav(
+                  current: _bottomNavIndex,
+                  onTap: (index) {
+                    setState(() {
+                      _bottomNavIndex = index;
+                    });
+                    _handleBottomNavTap(index);
+                  },
+                ),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  // Handle bottom navigation tap
+  void _handleBottomNavTap(int index) {
+    switch (index) {
+      case 0: // Profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => DatingProfileScreen()),
+        );
+        break;
+      case 1: // Discover
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const DiscoverScreen()),
+        );
+        break;
+      case 2: // People (already on this screen)
+      // Do nothing, we're already here
+        break;
+      case 3: // Liked You (Activity)
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ActivityScreen()),
+        );
+        break;
+      case 4: // Chats
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MessagesScreen()),
+        );
+        break;
+    }
   }
 
   Widget _buildLoadingState() {

@@ -1,8 +1,8 @@
-// lib/home_screen_filters.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
-// Import Font Awesome
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/app_colors.dart';
 import 'home_screen.dart';
 
@@ -18,7 +18,6 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
   String whoToDate = "Women";
   RangeValues age = const RangeValues(18, 28);
   bool flexAgeIfRunOut = true;
-  // ⭐ NEW STATE FOR LOCATION
   String location = "10 miles";
   bool flexLocationIfRunOut = true;
 
@@ -30,9 +29,22 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
     "🎵 Music",
     "🏃 Fitness",
     "🍳 Cooking",
+    "✈️ Travel",
+    "📚 Reading",
+    "🎬 Movies",
+    "🎮 Gaming",
+    "🍽️ Foodie",
+    "🏋️‍♂️ Gym",
+    "🌳 Nature",
+    "📸 Photography",
+    "🎤 Singing",
+    "💃 Dancing",
+    "🧘‍♀️ Yoga",
+    "🏀 Sports",
+    "🔬 Science",
   ];
-  final Set<String> selectedInterests = {
-  };
+
+  final Set<String> selectedInterests = {};
   bool flexInterestIfRunOut = true;
   bool verifiedOnly = true;
 
@@ -50,7 +62,127 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
   ];
   bool flexIntentIfRunOut = false;
 
-  int tabIndex = 0; // 0: Basic, 1: Advanced
+  int tabIndex = 0;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserPreferences();
+  }
+
+  Future<void> _loadUserPreferences() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      setState(() => _isLoading = true);
+
+      final doc = await FirebaseFirestore.instance
+          .collection('preferences')
+          .doc(user.uid)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        setState(() {
+          whoToDate = data['whoToDate'] ?? "Women";
+          age = RangeValues(
+            (data['ageRangeStart'] ?? 18).toDouble(),
+            (data['ageRangeEnd'] ?? 28).toDouble(),
+          );
+          flexAgeIfRunOut = data['flexAgeIfRunOut'] ?? true;
+          location = data['locationPreference'] ?? "10 miles";
+          flexLocationIfRunOut = data['flexLocationIfRunOut'] ?? true;
+          selectedInterests.clear();
+          selectedInterests.addAll(
+            List<String>.from(data['selectedInterests'] ?? []),
+          );
+          flexInterestIfRunOut = data['flexInterestIfRunOut'] ?? true;
+          verifiedOnly = data['verifiedOnly'] ?? true;
+          heightCm = RangeValues(
+            (data['heightRangeStart'] ?? 140).toDouble(),
+            (data['heightRangeEnd'] ?? 200).toDouble(),
+          );
+          flexHeightIfRunOut = data['flexHeightIfRunOut'] ?? true;
+
+          final savedIntentions = List<String>.from(data['intentions'] ?? []);
+          for (final intention in intentions) {
+            intention.checked = savedIntentions.contains(intention.label);
+          }
+
+          flexIntentIfRunOut = data['flexIntentIfRunOut'] ?? false;
+        });
+      }
+    } catch (e) {
+      print('Error loading preferences: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _savePreferences() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      setState(() => _isLoading = true);
+
+      final preferencesData = {
+        'UID': user.uid,
+        'whoToDate': whoToDate,
+        'ageRangeStart': age.start.toInt(),
+        'ageRangeEnd': age.end.toInt(),
+        'flexAgeIfRunOut': flexAgeIfRunOut,
+        'locationPreference': location,
+        'flexLocationIfRunOut': flexLocationIfRunOut,
+        'selectedInterests': selectedInterests.toList(),
+        'flexInterestIfRunOut': flexInterestIfRunOut,
+        'verifiedOnly': verifiedOnly,
+        'heightRangeStart': heightCm.start.toInt(),
+        'heightRangeEnd': heightCm.end.toInt(),
+        'flexHeightIfRunOut': flexHeightIfRunOut,
+        'intentions': intentions.where((i) => i.checked).map((i) => i.label).toList(),
+        'flexIntentIfRunOut': flexIntentIfRunOut,
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('preferences')
+          .doc(user.uid)
+          .set(preferencesData, SetOptions(merge: true));
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Filters saved successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Navigate back
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving filters: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,14 +198,17 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
         child: CustomPaint(
           painter: _BackgroundLines(),
           child: SafeArea(
-            child: Column(
+            child: _isLoading
+                ? const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            )
+                : Column(
               children: [
                 // Header
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 6, 12, 8),
                   child: Row(
                     children: [
-                      // cross -> back to Discover
                       IconButton(
                         icon: const Icon(FontAwesomeIcons.xmark, size: 22),
                         onPressed: () {
@@ -101,7 +236,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 40), // balance
+                      const SizedBox(width: 40),
                     ],
                   ),
                 ),
@@ -166,10 +301,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             elevation: 2,
                           ),
-                          onPressed: () {
-                            // yahan tum apni filter apply logic laga do
-                            Navigator.pop(context); // close after apply
-                          },
+                          onPressed: _savePreferences,
                           child: const Text(
                             "Apply filters",
                             style: TextStyle(fontWeight: FontWeight.w800),
@@ -199,7 +331,6 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
           _ValueTile(value: whoToDate, onTap: () => _openWhoSheet()),
           const SizedBox(height: 18),
 
-          // ⭐ LOCATION FILTER
           const _SectionTitle("Where are they?"),
           _ValueTile(value: location, onTap: () => _openLocationSheet()),
           const SizedBox(height: 8),
@@ -211,7 +342,6 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
             ),
           ),
           const SizedBox(height: 18),
-          // ⭐ END LOCATION FILTER
 
           const _SectionTitle("How old are they?"),
           _CardBox(
@@ -305,7 +435,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
   // ---------------- ADVANCED ----------------
   Widget _buildAdvanced() {
     final bool anyHeight =
-        heightCm.start <= 140 && heightCm.end >= 200; // full span selected
+        heightCm.start <= 140 && heightCm.end >= 200;
 
     return SingleChildScrollView(
       key: const ValueKey("advanced"),
@@ -423,7 +553,6 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
     );
   }
 
-  // ⭐ NEW LOCATION SHEET
   void _openLocationSheet() {
     showModalBottomSheet(
       context: context,
@@ -484,16 +613,11 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
       whoToDate = "Women";
       age = const RangeValues(18, 28);
       flexAgeIfRunOut = true;
-      // ⭐ Reset Location
       location = "10 miles (New York, NY)";
       flexLocationIfRunOut = true;
-
-      selectedInterests
-        ..clear()
-        ..addAll({"🎨 Art", "📝 Writing", "🎟️ Gigs", "📺 Horror"});
+      selectedInterests.clear();
       flexInterestIfRunOut = true;
       verifiedOnly = true;
-
       heightCm = const RangeValues(140, 200);
       flexHeightIfRunOut = true;
       for (final it in intentions) it.checked = false;

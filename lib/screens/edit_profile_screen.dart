@@ -29,15 +29,62 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _tiktokController;
   late TextEditingController _youtubeController;
 
+  // Preferences State Variables
+  String _whoToDate = "Women";
+  RangeValues _ageRange = const RangeValues(18, 28);
+  bool _flexAgeIfRunOut = true;
+  String _locationPreference = "10 miles";
+  bool _flexLocationIfRunOut = true;
+  final Set<String> _selectedInterests = {};
+  bool _flexInterestIfRunOut = true;
+  bool _verifiedOnly = true;
+  RangeValues _heightCm = const RangeValues(140, 200);
+  bool _flexHeightIfRunOut = true;
+  final List<_CheckItem> _intentions = [
+    _CheckItem("A long-term relationship"),
+    _CheckItem("Fun, casual dates"),
+    _CheckItem("Marriage"),
+    _CheckItem("Intimacy, without commitment"),
+    _CheckItem("A life partner"),
+    _CheckItem("Ethical non-monogamy"),
+  ];
+  bool _flexIntentIfRunOut = false;
+
+  // All available interests
+  final List<String> _allInterests = [
+    "🎨 Art",
+    "📝 Writing",
+    "🎟️ Gigs",
+    "📺 Horror",
+    "🎵 Music",
+    "🏃 Fitness",
+    "🍳 Cooking",
+    "✈️ Travel",
+    "📚 Reading",
+    "🎬 Movies",
+    "🎮 Gaming",
+    "🍽️ Foodie",
+    "🏋️‍♂️ Gym",
+    "🌳 Nature",
+    "📸 Photography",
+    "🎤 Singing",
+    "💃 Dancing",
+    "🧘‍♀️ Yoga",
+    "🏀 Sports",
+    "🔬 Science",
+  ];
+
   List<File> _selectedPhotos = [];
   bool _isLoading = false;
   bool _isUploading = false;
+  int _preferencesTabIndex = 0; // 0: Basic, 1: Advanced
 
   @override
   void initState() {
     super.initState();
     _initializeControllers();
     _loadCurrentPhotos();
+    _loadExistingPreferences();
   }
 
   void _initializeControllers() {
@@ -47,8 +94,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _locationController = TextEditingController(text: widget.userProfile.location ?? '');
     _ageController = TextEditingController(text: widget.userProfile.age.toString());
     _websiteController = TextEditingController(text: widget.userProfile.website ?? '');
-
-    // Initialize social media controllers with current values
     _instagramController = TextEditingController(text: widget.userProfile.instagram ?? '');
     _twitterController = TextEditingController(text: widget.userProfile.twitter ?? '');
     _facebookController = TextEditingController(text: widget.userProfile.facebook ?? '');
@@ -57,9 +102,50 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   void _loadCurrentPhotos() {
-    // You can load current photos here if needed
-    // For now, we'll start with empty selection
     _selectedPhotos = [];
+  }
+
+  Future<void> _loadExistingPreferences() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('preferences')
+          .doc(widget.userProfile.uid)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        setState(() {
+          _whoToDate = data['whoToDate'] ?? "Women";
+          _ageRange = RangeValues(
+            (data['ageRangeStart'] ?? 18).toDouble(),
+            (data['ageRangeEnd'] ?? 28).toDouble(),
+          );
+          _flexAgeIfRunOut = data['flexAgeIfRunOut'] ?? true;
+          _locationPreference = data['locationPreference'] ?? "10 miles";
+          _flexLocationIfRunOut = data['flexLocationIfRunOut'] ?? true;
+          _selectedInterests.clear();
+          _selectedInterests.addAll(
+            List<String>.from(data['selectedInterests'] ?? []),
+          );
+          _flexInterestIfRunOut = data['flexInterestIfRunOut'] ?? true;
+          _verifiedOnly = data['verifiedOnly'] ?? true;
+          _heightCm = RangeValues(
+            (data['heightRangeStart'] ?? 140).toDouble(),
+            (data['heightRangeEnd'] ?? 200).toDouble(),
+          );
+          _flexHeightIfRunOut = data['flexHeightIfRunOut'] ?? true;
+
+          final savedIntentions = List<String>.from(data['intentions'] ?? []);
+          for (final intention in _intentions) {
+            intention.checked = savedIntentions.contains(intention.label);
+          }
+
+          _flexIntentIfRunOut = data['flexIntentIfRunOut'] ?? false;
+        });
+      }
+    } catch (e) {
+      print('Error loading preferences: $e');
+    }
   }
 
   @override
@@ -101,14 +187,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
 
     try {
-      final updates = <String, dynamic>{
+      final userUpdates = <String, dynamic>{
         'name': _nameController.text.trim(),
         'username': _usernameController.text.trim(),
         'bio': _bioController.text.trim(),
         'location': _locationController.text.trim(),
         'age': int.tryParse(_ageController.text.trim()) ?? widget.userProfile.age,
         'website': _websiteController.text.trim(),
-        // Social media updates
         'instagram': _instagramController.text.trim().isEmpty ? null : _instagramController.text.trim(),
         'twitter': _twitterController.text.trim().isEmpty ? null : _twitterController.text.trim(),
         'facebook': _facebookController.text.trim().isEmpty ? null : _facebookController.text.trim(),
@@ -117,8 +202,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'updated_at': FieldValue.serverTimestamp(),
       };
 
-      // Remove null values from updates
-      updates.removeWhere((key, value) => value == null || value == '');
+      userUpdates.removeWhere((key, value) => value == null || value == '');
 
       // Upload new photos if any were selected
       if (_selectedPhotos.isNotEmpty) {
@@ -131,26 +215,52 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           photoFiles: _selectedPhotos,
         );
 
-        updates['first_photos'] = photoUrls;
+        userUpdates['first_photos'] = photoUrls;
 
         setState(() {
           _isUploading = false;
         });
       }
 
+      // Save user profile
       await UserService.updateUserProfile(
         userId: widget.userProfile.uid,
-        updates: updates,
+        updates: userUpdates,
       );
+
+      // Save preferences to separate collection
+      final preferencesData = {
+        'UID': widget.userProfile.uid,
+        'whoToDate': _whoToDate,
+        'ageRangeStart': _ageRange.start.toInt(),
+        'ageRangeEnd': _ageRange.end.toInt(),
+        'flexAgeIfRunOut': _flexAgeIfRunOut,
+        'locationPreference': _locationPreference,
+        'flexLocationIfRunOut': _flexLocationIfRunOut,
+        'selectedInterests': _selectedInterests.toList(),
+        'flexInterestIfRunOut': _flexInterestIfRunOut,
+        'verifiedOnly': _verifiedOnly,
+        'heightRangeStart': _heightCm.start.toInt(),
+        'heightRangeEnd': _heightCm.end.toInt(),
+        'flexHeightIfRunOut': _flexHeightIfRunOut,
+        'intentions': _intentions.where((i) => i.checked).map((i) => i.label).toList(),
+        'flexIntentIfRunOut': _flexIntentIfRunOut,
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('preferences')
+          .doc(widget.userProfile.uid)
+          .set(preferencesData, SetOptions(merge: true));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profile updated successfully!'),
+            content: Text('Profile and preferences updated successfully!'),
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context, true); // Return true to indicate success
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -187,31 +297,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
   }
 
-  // Helper method to validate social media usernames
   String? _validateSocialMedia(String value, String platform) {
-    if (value.isEmpty) return null; // Optional field
-
+    if (value.isEmpty) return null;
     final cleanedValue = value.replaceAll('@', '').trim();
-
     if (cleanedValue.isEmpty) {
       return 'Please enter a valid $platform username';
     }
-
-    // Basic validation for special characters
     if (!RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(cleanedValue)) {
       return '$platform username can only contain letters, numbers, underscores, and periods';
     }
-
     return null;
   }
 
   String? _validateWebsite(String value) {
-    if (value.isEmpty) return null; // Optional field
-
+    if (value.isEmpty) return null;
     if (!value.startsWith('http://') && !value.startsWith('https://')) {
       return 'Please include http:// or https://';
     }
-
     try {
       Uri.parse(value);
       return null;
@@ -373,7 +475,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     label: 'Website URL',
                     icon: FontAwesomeIcons.globe,
                     keyboardType: TextInputType.url,
-                    // validator: _validateWebsite,
                     hintText: 'https://example.com',
                   ),
                   const SizedBox(height: 32),
@@ -381,12 +482,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   // Social Media Section
                   _buildSocialMediaSection(),
                   const SizedBox(height: 32),
+
+                  // Personal Preferences Section
+                  _buildPreferencesSection(),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
           ),
 
-          // Uploading overlay
           if (_isUploading)
             Container(
               color: Colors.black54,
@@ -446,7 +550,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   crossAxisSpacing: 8,
                   childAspectRatio: 1,
                   children: [
-                    // Display selected photos
                     ..._selectedPhotos.asMap().entries.map((entry) {
                       int index = entry.key;
                       File photo = entry.value;
@@ -456,11 +559,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       );
                     }).toList(),
 
-                    // Add button if less than 4 photos
                     if (_selectedPhotos.length < 4)
                       _AddPhotoTile(onTap: _pickAndAddPhoto),
 
-                    // Empty slots
                     ...List.generate(
                       4 - _selectedPhotos.length - (_selectedPhotos.length < 4 ? 1 : 0),
                           (index) => const _EmptyPhotoTile(),
@@ -512,7 +613,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  // Social Media Section
   Widget _buildSocialMediaSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -627,9 +727,508 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         return AppColors.primary;
     }
   }
+
+  // ===== Preferences Section =====
+  Widget _buildPreferencesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Personal Preferences'),
+        const SizedBox(height: 8),
+        const Text(
+          'Set your preferences for discovering people',
+          style: TextStyle(
+            color: Colors.black54,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Segmented tabs
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _preferencesTabIndex = 0),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    bottomLeft: Radius.circular(12),
+                  ),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _preferencesTabIndex == 0
+                          ? AppColors.primary
+                          : Colors.transparent,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        bottomLeft: Radius.circular(12),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Basic Filters',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: _preferencesTabIndex == 0
+                              ? Colors.white
+                              : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _preferencesTabIndex = 1),
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _preferencesTabIndex == 1
+                          ? AppColors.primary
+                          : Colors.transparent,
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Advanced Filters',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: _preferencesTabIndex == 1
+                              ? Colors.white
+                              : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _preferencesTabIndex == 0
+              ? _buildBasicPreferences()
+              : _buildAdvancedPreferences(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBasicPreferences() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Who would you like to date?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        _buildSelectionTile(
+          value: _whoToDate,
+          onTap: () => _openWhoSheet(),
+        ),
+        const SizedBox(height: 16),
+
+        const Text(
+          'Where are they?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        _buildSelectionTile(
+          value: _locationPreference,
+          onTap: () => _openLocationSheet(),
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchTile(
+          label: 'Show people outside this range if I run out',
+          value: _flexLocationIfRunOut,
+          onChanged: (v) => setState(() => _flexLocationIfRunOut = v),
+        ),
+        const SizedBox(height: 16),
+
+        const Text(
+          'How old are they?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Column(
+            children: [
+              Text(
+                'Between ${_ageRange.start.round()} and ${_ageRange.end.round()}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 12),
+              RangeSlider(
+                values: _ageRange,
+                min: 18,
+                max: 60,
+                divisions: 42,
+                activeColor: AppColors.primary,
+                onChanged: (v) => setState(() => _ageRange = v),
+              ),
+              _buildSwitchTile(
+                label: 'See people 2 years either side if I run out',
+                value: _flexAgeIfRunOut,
+                onChanged: (v) => setState(() => _flexAgeIfRunOut = v),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        const Text(
+          'Do they share any of your interests?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _allInterests.map((interest) {
+              return ChoiceChip(
+                label: Text(
+                  _selectedInterests.contains(interest) ? interest : "$interest  +",
+                  style: TextStyle(
+                    color: _selectedInterests.contains(interest)
+                        ? Colors.white
+                        : Colors.black87,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                selected: _selectedInterests.contains(interest),
+                onSelected: (_) {
+                  setState(() {
+                    if (_selectedInterests.contains(interest)) {
+                      _selectedInterests.remove(interest);
+                    } else {
+                      _selectedInterests.add(interest);
+                    }
+                  });
+                },
+                selectedColor: AppColors.primary,
+                backgroundColor: Colors.white,
+                side: BorderSide(color: Colors.grey[300]!),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchTile(
+          label: 'Show other people if I run out',
+          value: _flexInterestIfRunOut,
+          onChanged: (v) => setState(() => _flexInterestIfRunOut = v),
+        ),
+        const SizedBox(height: 16),
+
+        const Text(
+          'Have they verified themselves?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: _buildSwitchTile(
+            label: 'Verified profiles only',
+            value: _verifiedOnly,
+            onChanged: (v) => setState(() => _verifiedOnly = v),
+            icon: FontAwesomeIcons.certificate,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAdvancedPreferences() {
+    final bool anyHeight = _heightCm.start <= 140 && _heightCm.end >= 200;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'How tall are they?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Column(
+            children: [
+              Text(
+                anyHeight
+                    ? "Any height is just fine"
+                    : "Between ${_heightCm.start.round()} cm and ${_heightCm.end.round()} cm",
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 12),
+              RangeSlider(
+                values: _heightCm,
+                min: 140,
+                max: 200,
+                divisions: 60,
+                activeColor: AppColors.primary,
+                onChanged: (v) => setState(() => _heightCm = v),
+              ),
+              _buildSwitchTile(
+                label: 'Show other people if I run out',
+                value: _flexHeightIfRunOut,
+                onChanged: (v) => setState(() => _flexHeightIfRunOut = v),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        const Text(
+          'What are they looking for?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Column(
+            children: [
+              ..._intentions.map((intention) {
+                return CheckboxListTile(
+                  value: intention.checked,
+                  onChanged: (v) => setState(() => intention.checked = v ?? false),
+                  title: Text(intention.label),
+                  activeColor: AppColors.primary,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.trailing,
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchTile(
+          label: 'Show other people if I run out',
+          value: _flexIntentIfRunOut,
+          onChanged: (v) => setState(() => _flexIntentIfRunOut = v),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSelectionTile({required String value, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSwitchTile({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    IconData? icon,
+  }) {
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 16, color: Colors.grey[700]),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        Switch(
+          value: value,
+          activeColor: AppColors.primary,
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+
+  void _openWhoSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        final options = ["Women", "Men", "Everyone"];
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final o in options)
+                ListTile(
+                  title: Text(
+                    o,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  trailing: _whoToDate == o
+                      ? const Icon(
+                    FontAwesomeIcons.check,
+                    size: 16,
+                    color: AppColors.primary,
+                  )
+                      : null,
+                  onTap: () {
+                    setState(() => _whoToDate = o);
+                    Navigator.pop(context);
+                  },
+                ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openLocationSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        final options = [
+          "5 miles (Near Me)",
+          "10 miles (New York, NY)",
+          "25 miles (New Jersey)",
+          "50 miles (Pennsylvania)",
+          "Any distance",
+        ];
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final o in options)
+                ListTile(
+                  title: Text(
+                    o,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  trailing: _locationPreference == o
+                      ? const Icon(
+                    FontAwesomeIcons.check,
+                    size: 16,
+                    color: AppColors.primary,
+                  )
+                      : null,
+                  onTap: () {
+                    setState(() => _locationPreference = o);
+                    Navigator.pop(context);
+                  },
+                ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
-// Photo Tile Components
 class _PhotoTile extends StatelessWidget {
   final File imageFile;
   final VoidCallback onRemove;
@@ -724,4 +1323,10 @@ class _EmptyPhotoTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CheckItem {
+  _CheckItem(this.label);
+  final String label;
+  bool checked = false;
 }
