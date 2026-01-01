@@ -273,14 +273,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Expanded(child: Center(child: _Meet9jaLogo())),
                     IconButton(
                       icon: const Icon(
-                        Icons.logout,
+                        Icons.filter_list_outlined,
                         color: AppColors.primary,
                         size: 20, // Smaller icon
                       ),
                       onPressed: () {
-                        FirebaseService.signOut();
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => Signinscreen()),
+                          MaterialPageRoute(builder: (_) => HomeScreenFilters()),
                         );
                       },
                     ),

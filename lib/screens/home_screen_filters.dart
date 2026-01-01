@@ -19,7 +19,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
   RangeValues age = const RangeValues(18, 28);
   bool flexAgeIfRunOut = true;
   // ⭐ NEW STATE FOR LOCATION
-  String location = "10 miles (New York, NY)";
+  String location = "10 miles";
   bool flexLocationIfRunOut = true;
 
   final List<String> allInterests = [
@@ -32,10 +32,6 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
     "🍳 Cooking",
   ];
   final Set<String> selectedInterests = {
-    "🎨 Art",
-    "📝 Writing",
-    "🎟️ Gigs",
-    "📺 Horror",
   };
   bool flexInterestIfRunOut = true;
   bool verifiedOnly = true;
