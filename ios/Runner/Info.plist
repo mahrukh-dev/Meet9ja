@@ -24,6 +24,66 @@
         <string>youtube</string>
     </array>
 
+    <!-- ========== LOCATION PERMISSIONS ========== -->
+
+        <!-- Location Usage Description (Required) -->
+        <key>NSLocationWhenInUseUsageDescription</key>
+        <string>Meet9ja needs your location to track travel history and show nearby users</string>
+
+        <!-- For Always authorization (if needed) -->
+        <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+        <string>Meet9ja needs your location to track travel history even when the app is in the background</string>
+
+        <!-- For background location updates -->
+        <key>NSLocationAlwaysUsageDescription</key>
+        <string>Meet9ja needs your location to track travel history even when the app is in the background</string>
+
+        <!-- For significant location changes -->
+        <key>NSLocationUsageDescription</key>
+        <string>Meet9ja needs your location to track travel history and show nearby users</string>
+
+        <!-- Enable background modes for location updates -->
+        <key>UIBackgroundModes</key>
+        <array>
+            <string>location</string>
+            <string>fetch</string>
+        </array>
+
+        <!-- ========== PHOTO LIBRARY PERMISSIONS ========== -->
+
+        <!-- For picking location photos from gallery -->
+        <key>NSPhotoLibraryUsageDescription</key>
+        <string>Meet9ja needs access to your photo library to add location pictures to your travel history</string>
+
+        <!-- For iOS 14+ - Limited photo library access -->
+        <key>NSPhotoLibraryAddUsageDescription</key>
+        <string>Meet9ja needs access to add photos to your library for location pictures</string>
+
+        <!-- ========== CAMERA PERMISSIONS ========== -->
+
+        <!-- If you want to allow camera access for taking location photos -->
+        <key>NSCameraUsageDescription</key>
+        <string>Meet9ja needs camera access to take photos of your travel locations</string>
+
+        <!-- ========== OTHER PERMISSIONS ========== -->
+
+        <!-- For notifications (if you have travel alerts) -->
+        <key>NSUserNotificationsUsageDescription</key>
+        <string>Meet9ja would like to send you travel alerts and notifications</string>
+
+        <!-- For iOS 12+ notifications -->
+        <key>NSUserNotificationUsageDescription</key>
+        <string>Meet9ja would like to send you travel alerts and notifications</string>
+
+        <!-- ========== APP TRANSPORT SECURITY ========== -->
+
+        <!-- Allow arbitrary loads for Firebase/APIs -->
+        <key>NSAppTransportSecurity</key>
+        <dict>
+            <key>NSAllowsArbitraryLoads</key>
+            <true/>
+        </dict>
+
 
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>

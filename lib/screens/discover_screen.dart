@@ -1,12 +1,21 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/models/post_model.dart';
 import 'package:meet9ja/models/user_model.dart';
+import 'package:meet9ja/models/travel_history_model.dart';
+import 'package:meet9ja/db_functions/image_service.dart';
 import 'package:meet9ja/screens/dating_profile.dart';
-import 'package:meet9ja/screens/profile_screen.dart';
+import 'package:meet9ja/screens/travel_partners_screen.dart';
 import '../constants/app_colors.dart';
 import 'MatchedUserScreen.dart';
 import 'activity_screen.dart';
@@ -27,19 +36,27 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  // Location and travel history
+  List<TravelHistory> _travelHistory = [];
+  bool _isLoadingTravelHistory = false;
+  bool _isTrackingLocation = false;
+  Position? _currentPosition;
+  Placemark? _currentPlacemark;
+
   // Firebase streams
   late Stream<List<UserModel>> _recommendedUsersStream;
   late Stream<List<UserModel>> _popularUsersStream;
   late Stream<List<PostModel>> _trendingPostsStream;
   late Stream<List<UserModel>> _similarInterestsStream;
   late Stream<List<UserModel>> _sameGoalsStream;
-  late Stream<List<UserModel>> _travelingUsersStream;
 
   @override
   void initState() {
     super.initState();
     _loadFirebaseData();
     _searchController.addListener(_onSearchChanged);
+    _checkLocationPermission();
+    _loadTravelHistory();
   }
 
   @override
@@ -55,13 +72,530 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _trendingPostsStream = UserService.getTrendingPosts();
     _similarInterestsStream = UserService.getSimilarInterestsUsers();
     _sameGoalsStream = UserService.getSameGoalsUsers();
-    _travelingUsersStream = UserService.getTravelingUsers();
   }
 
   void _onSearchChanged() {
     setState(() {
       _searchQuery = _searchController.text.trim();
     });
+  }
+
+  Future<void> _checkLocationPermission() async {
+    try {
+      // First, check if service is enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showLocationServiceDialog();
+        return;
+      }
+
+      // Check permission
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _showLocationPermissionDialog();
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _showLocationPermissionDialog();
+        return;
+      }
+
+      // Get current location for display
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        await _getCurrentLocationForDisplay();
+      }
+
+    } on MissingPluginException catch (e) {
+      print('MissingPluginException: $e');
+
+      // Check if we're in debug mode and show appropriate message
+      bool isDebug = false;
+      assert(() {
+        isDebug = true;
+        return true;
+      }());
+
+      if (isDebug) {
+        // Debug mode - guide developer to fix
+        _showToast('Geolocator plugin not found. Please run:\n'
+            '1. flutter clean\n'
+            '2. flutter pub get\n'
+            '3. flutter run\n\n'
+            'If error persists, try:\n'
+            'cd ios && pod install && cd ..');
+      } else {
+        // Release mode - show user-friendly message
+        _showToast('Location features are currently unavailable. Please restart the app.');
+      }
+
+      // Set location tracking to false to prevent UI from showing loading
+      if (mounted) {
+        setState(() {
+          _isTrackingLocation = false;
+        });
+      }
+
+    } catch (e) {
+      print('Error checking location permission: $e');
+      _showToast('Error accessing location: ${e.toString()}');
+
+      if (mounted) {
+        setState(() {
+          _isTrackingLocation = false;
+        });
+      }
+    }
+  }
+  void _showLocationServiceDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Location Service Disabled'),
+        content: Text('Please enable location services to use travel features.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await Geolocator.openLocationSettings();
+            },
+            child: Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+  Future<void> _getCurrentLocationForDisplay() async {
+    try {
+      setState(() {
+        _isTrackingLocation = true;
+      });
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      );
+
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        setState(() {
+          _currentPosition = position;
+          _currentPlacemark = placemarks.first;
+        });
+      }
+
+    } catch (e) {
+      print('Error getting current location: $e');
+    } finally {
+      setState(() {
+        _isTrackingLocation = false;
+      });
+    }
+  }
+
+  // MANUAL METHOD: Add current location to travel history
+  Future<void> _addCurrentLocationToTravelHistory() async {
+    try {
+      setState(() {
+        _isTrackingLocation = true;
+      });
+
+      // Check permission again
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        _showLocationPermissionDialog();
+        return;
+      }
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // Get address from coordinates
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final placemark = placemarks.first;
+        final city = placemark.locality ?? placemark.subAdministrativeArea ?? 'Unknown City';
+        final country = placemark.country ?? 'Unknown Country';
+
+        // Show confirmation dialog
+        bool? confirm = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Add Travel Location'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Add this location to your travel history?'),
+                SizedBox(height: 8),
+                Text(
+                  '$city, $country',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Add Location'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirm == true) {
+          await _saveTravelLocation(placemark, position);
+        }
+      }
+
+    } catch (e) {
+      print('Error adding current location: $e');
+      _showToast('Failed to get location: $e');
+    } finally {
+      setState(() {
+        _isTrackingLocation = false;
+      });
+    }
+  }
+
+  // MANUAL METHOD: Add custom location (user can type)
+  Future<void> _addCustomLocation() async {
+    final TextEditingController cityController = TextEditingController();
+    final TextEditingController countryController = TextEditingController();
+
+    bool? result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add Custom Location'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: cityController,
+              decoration: InputDecoration(
+                labelText: 'City',
+                hintText: 'e.g., Lagos, London, New York',
+              ),
+            ),
+            SizedBox(height: 12),
+            TextField(
+              controller: countryController,
+              decoration: InputDecoration(
+                labelText: 'Country',
+                hintText: 'e.g., Nigeria, United Kingdom, USA',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (cityController.text.trim().isNotEmpty &&
+                  countryController.text.trim().isNotEmpty) {
+                Navigator.pop(context, true);
+              } else {
+                _showToast('Please enter both city and country');
+              }
+            },
+            child: Text('Add Location'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      await _saveCustomLocation(
+        cityController.text.trim(),
+        countryController.text.trim(),
+      );
+    }
+  }
+
+  Future<void> _saveCustomLocation(String city, String country) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Check if location already exists
+      final existingLocation = await FirebaseFirestore.instance
+          .collection('travel_history')
+          .where('userId', isEqualTo: user.uid)
+          .where('city', isEqualTo: city)
+          .where('country', isEqualTo: country)
+          .limit(1)
+          .get();
+
+      if (existingLocation.docs.isNotEmpty) {
+        _showToast('This location is already in your travel history');
+        return;
+      }
+
+      // Ask for location picture
+      final locationImageUrl = await _askForLocationPicture(city);
+
+      // Save travel history
+      final travelData = {
+        'userId': user.uid,
+        'city': city,
+        'country': country,
+        'countryCode': '',
+        'latitude': 0.0,
+        'longitude': 0.0,
+        'address': '',
+        'locationImageUrl': locationImageUrl ?? '',
+        'visitedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('travel_history')
+          .add(travelData);
+
+      _showToast('✓ $city, $country added to travel history');
+
+      // Reload travel history
+      _loadTravelHistory();
+
+    } catch (e) {
+      print('Error saving custom location: $e');
+      _showToast('Failed to save location: $e');
+    }
+  }
+
+  Future<void> _saveTravelLocation(Placemark placemark, Position position) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final city = placemark.locality ?? placemark.subAdministrativeArea ?? 'Unknown City';
+      final country = placemark.country ?? 'Unknown Country';
+      final countryCode = placemark.isoCountryCode ?? '';
+
+      // Check if this location already exists
+      final existingLocation = await FirebaseFirestore.instance
+          .collection('travel_history')
+          .where('userId', isEqualTo: user.uid)
+          .where('city', isEqualTo: city)
+          .where('country', isEqualTo: country)
+          .limit(1)
+          .get();
+
+      if (existingLocation.docs.isNotEmpty) {
+        _showToast('This location is already in your travel history');
+        return;
+      }
+
+      // Ask user to add location picture
+      final locationImageUrl = await _askForLocationPicture(city);
+
+      // Save travel history
+      final travelData = {
+        'userId': user.uid,
+        'city': city,
+        'country': country,
+        'countryCode': countryCode,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'address': placemark.street ?? '',
+        'locationImageUrl': locationImageUrl ?? '',
+        'visitedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('travel_history')
+          .add(travelData);
+
+      _showToast('✓ $city, $country added to travel history');
+
+      // Update current placemark
+      setState(() {
+        _currentPlacemark = placemark;
+      });
+
+      // Reload travel history
+      _loadTravelHistory();
+
+    } catch (e) {
+      print('Error saving travel location: $e');
+      _showToast('Failed to save location: $e');
+    }
+  }
+
+  Future<String?> _askForLocationPicture(String locationName) async {
+    // Show dialog to ask for location picture
+    bool? takePicture = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add Location Picture'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Would you like to add a picture of $locationName to your travel history?'),
+            SizedBox(height: 8),
+            Text(
+              '(Optional)',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Skip'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Add Picture'),
+          ),
+        ],
+      ),
+    );
+
+    if (takePicture == true) {
+      try {
+        final picker = ImagePicker();
+        final pickedFile = await picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 800,
+          maxHeight: 800,
+        );
+
+        if (pickedFile != null) {
+          File imageFile = File(pickedFile.path);
+          final userId = FirebaseAuth.instance.currentUser?.uid;
+          if (userId != null) {
+            final imageUrl = await ImageService.uploadTravelLocationImage(
+              userId: userId,
+              imageFile: imageFile,
+              locationName: locationName,
+            );
+            return imageUrl;
+          }
+        }
+      } catch (e) {
+        print('Error picking location picture: $e');
+        _showToast('Failed to upload picture');
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> _loadTravelHistory() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      setState(() {
+        _isLoadingTravelHistory = true;
+      });
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('travel_history')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('visitedAt', descending: true)
+          .limit(6)
+          .get();
+
+      final history = snapshot.docs.map((doc) {
+        return TravelHistory.fromFirestore(doc);
+      }).toList();
+
+      setState(() {
+        _travelHistory = history;
+        _isLoadingTravelHistory = false;
+      });
+
+    } catch (e) {
+      print('Error loading travel history: $e');
+      setState(() {
+        _isLoadingTravelHistory = false;
+      });
+    }
+  }
+
+  void _showLocationPermissionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Location Access Required'),
+        content: Text(
+          'Meet9ja needs access to your location to add places to your travel history. '
+              'Please enable location access in settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await Geolocator.openAppSettings();
+            },
+            child: Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: Colors.black87,
+      textColor: Colors.white,
+      fontSize: 14.0,
+    );
+  }
+
+  void _navigateToTravelPartners(TravelHistory travel) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TravelPartnersScreen(
+          city: travel.city,
+          country: travel.country,
+          travelHistoryId: travel.id,
+        ),
+      ),
+    );
   }
 
   @override
@@ -114,6 +648,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         },
                         liked: liked,
                         onLikeToggle: _toggleLike,
+                        travelHistory: _travelHistory,
+                        isLoadingTravelHistory: _isLoadingTravelHistory,
+                        isTrackingLocation: _isTrackingLocation,
+                        currentPlacemark: _currentPlacemark,
+                        onTravelLocationTap: _navigateToTravelPartners,
+                        onAddCurrentLocation: _addCurrentLocationToTravelHistory,
+                        onAddCustomLocation: _addCustomLocation,
                       ),
                   ],
                 ),
@@ -142,7 +683,525 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 }
 
-// Search Results Widget
+// Discover Content with Travel History Section
+class _DiscoverContent extends StatelessWidget {
+  final bool travelAlertsOn;
+  final ValueChanged<bool> onTravelAlertsChanged;
+  final Set<String> liked;
+  final void Function(String id) onLikeToggle;
+  final List<TravelHistory> travelHistory;
+  final bool isLoadingTravelHistory;
+  final bool isTrackingLocation;
+  final Placemark? currentPlacemark;
+  final Function(TravelHistory) onTravelLocationTap;
+  final VoidCallback onAddCurrentLocation;
+  final VoidCallback onAddCustomLocation;
+
+  const _DiscoverContent({
+    required this.travelAlertsOn,
+    required this.onTravelAlertsChanged,
+    required this.liked,
+    required this.onLikeToggle,
+    required this.travelHistory,
+    required this.isLoadingTravelHistory,
+    required this.isTrackingLocation,
+    this.currentPlacemark,
+    required this.onTravelLocationTap,
+    required this.onAddCurrentLocation,
+    required this.onAddCustomLocation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Location tracking status
+        if (isTrackingLocation)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.location_on, size: 20, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Getting your location...',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Current location (if available)
+        if (currentPlacemark != null && !isTrackingLocation)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.location_on, size: 20, color: Colors.green),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'You are in ${currentPlacemark!.locality ?? 'Unknown'}',
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (currentPlacemark!.country != null)
+                        Text(
+                          currentPlacemark!.country!,
+                          style: TextStyle(
+                            color: Colors.green.withOpacity(0.8),
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.add, size: 18, color: Colors.green),
+                  onPressed: onAddCurrentLocation,
+                  tooltip: 'Add to travel history',
+                ),
+              ],
+            ),
+          ),
+
+        // Trending Clips
+        const _SectionHeader("Trending Clips 🎬"),
+        const SizedBox(height: 10),
+        _TrendingClipsStrip(),
+        const SizedBox(height: 22),
+
+        // Popular Profiles
+        const _SectionHeader("Popular Profiles ⭐"),
+        const SizedBox(height: 10),
+        _PopularProfilesStrip(),
+        const SizedBox(height: 24),
+
+        // Travel History Section
+        _TravelHistorySection(
+          travelHistory: travelHistory,
+          isLoading: isLoadingTravelHistory,
+          onTravelLocationTap: onTravelLocationTap,
+          travelAlertsOn: travelAlertsOn,
+          onTravelAlertsChanged: onTravelAlertsChanged,
+          onAddCurrentLocation: onAddCurrentLocation,
+          onAddCustomLocation: onAddCustomLocation,
+        ),
+        const SizedBox(height: 22),
+
+        // Timer pill + subtext
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color.fromARGB(255, 212, 45, 137),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: const Text(
+              "See new people in 6 hours",
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          "Connect over common ground with people who match your vibe, refreshed every day.",
+          style: TextStyle(fontSize: 14.5, color: Colors.black87),
+        ),
+        const SizedBox(height: 18),
+
+        // Recommended for you
+        const _SectionHeader("Recommended for you"),
+        const SizedBox(height: 10),
+        _RecommendedStrip(liked: liked, onLikeToggle: onLikeToggle),
+        const SizedBox(height: 24),
+
+        // Similar interests section
+        _SurfaceBlock(
+          title: "Similar interests",
+          child: _SimilarInterestsGrid(liked: liked, onLikeToggle: onLikeToggle),
+        ),
+        const SizedBox(height: 18),
+
+        // Same dating goals section
+        _SurfaceBlock(
+          title: "Same dating goals",
+          child: _SameGoalsGrid(liked: liked, onLikeToggle: onLikeToggle),
+        ),
+      ],
+    );
+  }
+}
+
+// Travel History Section
+class _TravelHistorySection extends StatelessWidget {
+  final List<TravelHistory> travelHistory;
+  final bool isLoading;
+  final Function(TravelHistory) onTravelLocationTap;
+  final bool travelAlertsOn;
+  final ValueChanged<bool> onTravelAlertsChanged;
+  final VoidCallback onAddCurrentLocation;
+  final VoidCallback onAddCustomLocation;
+
+  const _TravelHistorySection({
+    required this.travelHistory,
+    required this.isLoading,
+    required this.onTravelLocationTap,
+    required this.travelAlertsOn,
+    required this.onTravelAlertsChanged,
+    required this.onAddCurrentLocation,
+    required this.onAddCustomLocation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header with alerts toggle
+        Row(
+          children: [
+            const _SectionHeader("Your Travel History ✈️"),
+            const Spacer(),
+            Icon(
+              travelAlertsOn
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_none_rounded,
+              size: 18,
+              color: travelAlertsOn ? AppColors.primary : Colors.black45,
+            ),
+            const SizedBox(width: 6),
+            Switch.adaptive(
+              value: travelAlertsOn,
+              activeColor: AppColors.primary,
+              onChanged: (v) {
+                onTravelAlertsChanged(v);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      v
+                          ? "Travel alerts enabled"
+                          : "Travel alerts turned off.",
+                    ),
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(milliseconds: 1200),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                "Places you've visited recently",
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.black54,
+                ),
+              ),
+            ),
+            // Add location buttons
+            IconButton(
+              icon: Icon(Icons.my_location, size: 18),
+              onPressed: onAddCurrentLocation,
+              tooltip: 'Add current location',
+            ),
+            IconButton(
+              icon: Icon(Icons.add_location_alt, size: 18),
+              onPressed: onAddCustomLocation,
+              tooltip: 'Add custom location',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        if (isLoading)
+          SizedBox(
+            height: 180,
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          )
+        else if (travelHistory.isEmpty)
+          Container(
+            height: 180,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    FontAwesomeIcons.plane,
+                    size: 50,
+                    color: Colors.grey.shade400,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "No travel history yet",
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Add your first travel location",
+                    style: TextStyle(
+                      color: Colors.grey.shade500,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: onAddCurrentLocation,
+                        icon: Icon(Icons.my_location, size: 16),
+                        label: Text('Current Location'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: onAddCustomLocation,
+                        icon: Icon(Icons.add_location_alt, size: 16),
+                        label: Text('Custom'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Column(
+            children: [
+              SizedBox(
+                height: 220,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: travelHistory.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (_, index) {
+                    final travel = travelHistory[index];
+                    return _TravelLocationCard(
+                      travel: travel,
+                      onTap: () => onTravelLocationTap(travel),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: onAddCurrentLocation,
+                  icon: Icon(Icons.add, size: 16),
+                  label: Text('Add more locations'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+// ... [Rest of the widgets remain the same as before] ...
+//
+
+// Travel Location Card
+class _TravelLocationCard extends StatelessWidget {
+  final TravelHistory travel;
+  final VoidCallback onTap;
+
+  const _TravelLocationCard({
+    required this.travel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 160,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Location Image
+            Container(
+              height: 120,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+                color: Colors.grey.shade200,
+                image: travel.locationImageUrl.isNotEmpty
+                    ? DecorationImage(
+                  image: NetworkImage(travel.locationImageUrl),
+                  fit: BoxFit.cover,
+                )
+                    : null,
+              ),
+              child: travel.locationImageUrl.isEmpty
+                  ? Center(
+                child: Icon(
+                  FontAwesomeIcons.locationDot,
+                  size: 40,
+                  color: Colors.grey.shade400,
+                ),
+              )
+                  : null,
+            ),
+
+            // Location Info
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    travel.city,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    travel.country,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatDate(travel.visitedAt),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 12,
+                        color: AppColors.primary,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) {
+      return 'Today';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inDays < 30) {
+      return '${difference.inDays ~/ 7}w ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
+  }
+}
+
+// Rest of your existing widgets remain the same...
 class _SearchResults extends StatelessWidget {
   final String searchQuery;
 
@@ -213,374 +1272,78 @@ class _SearchResults extends StatelessWidget {
   }
 }
 
-// Main Discover Content (when no search)
-class _DiscoverContent extends StatelessWidget {
-  final bool travelAlertsOn;
-  final ValueChanged<bool> onTravelAlertsChanged;
-  final Set<String> liked;
-  final void Function(String id) onLikeToggle;
-
-  const _DiscoverContent({
-    required this.travelAlertsOn,
-    required this.onTravelAlertsChanged,
-    required this.liked,
-    required this.onLikeToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Trending Clips
-        const _SectionHeader("Trending Clips 🎬"),
-        const SizedBox(height: 10),
-        _TrendingClipsStrip(),
-        const SizedBox(height: 22),
-
-        // Popular Profiles
-        const _SectionHeader("Popular Profiles ⭐"),
-        const SizedBox(height: 10),
-        _PopularProfilesStrip(),
-        const SizedBox(height: 24),
-
-        // Recently Traveled Section
-        _TravelSection(
-          travelAlertsOn: travelAlertsOn,
-          onTravelAlertsChanged: onTravelAlertsChanged,
-        ),
-        const SizedBox(height: 22),
-
-        // Timer pill + subtext
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color.fromARGB(255, 212, 45, 137),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: const Text(
-              "See new people in 6 hours",
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          "Connect over common ground with people who match your vibe, refreshed every day.",
-          style: TextStyle(fontSize: 14.5, color: Colors.black87),
-        ),
-        const SizedBox(height: 18),
-
-        // Recommended for you
-        const _SectionHeader("Recommended for you"),
-        const SizedBox(height: 10),
-        _RecommendedStrip(liked: liked, onLikeToggle: onLikeToggle),
-        const SizedBox(height: 24),
-
-        // Similar interests section
-        _SurfaceBlock(
-          title: "Similar interests",
-          child: _SimilarInterestsGrid(liked: liked, onLikeToggle: onLikeToggle),
-        ),
-        const SizedBox(height: 18),
-
-        // Same dating goals section
-        _SurfaceBlock(
-          title: "Same dating goals",
-          child: _SameGoalsGrid(liked: liked, onLikeToggle: onLikeToggle),
-        ),
-      ],
-    );
-  }
-}
-
-// Travel Section with Firebase Data
-class _TravelSection extends StatelessWidget {
-  final bool travelAlertsOn;
-  final ValueChanged<bool> onTravelAlertsChanged;
-
-  const _TravelSection({
-    required this.travelAlertsOn,
-    required this.onTravelAlertsChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Recently traveled section + alerts toggle
-        Row(
-          children: [
-            const _SectionHeader("Recently traveled"),
-            const Spacer(),
-            Icon(
-              travelAlertsOn
-                  ? Icons.notifications_active_rounded
-                  : Icons.notifications_none_rounded,
-              size: 18,
-              color: travelAlertsOn ? AppColors.primary : Colors.black45,
-            ),
-            const SizedBox(width: 6),
-            Switch.adaptive(
-              value: travelAlertsOn,
-              activeColor: AppColors.primary,
-              onChanged: (v) {
-                onTravelAlertsChanged(v);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      v
-                          ? "Travel alerts enabled — you'll get notified when your profile shows up in a new country."
-                          : "Travel alerts turned off.",
-                    ),
-                    behavior: SnackBarBehavior.floating,
-                    duration: const Duration(milliseconds: 1200),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _TravelingUsersStrip(),
-      ],
-    );
-  }
-}
-
-// Traveling Users Strip with Firebase Data
-class _TravelingUsersStrip extends StatelessWidget {
-  const _TravelingUsersStrip();
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<UserModel>>(
-      stream: UserService.getTravelingUsers(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          final w = MediaQuery.of(context).size.width;
-          final cardW = w * 0.68;
-          final cardH = cardW * 0.62;
-
-          return SizedBox(
-            height: cardH,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: 4,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (_, i) => Container(
-                width: cardW,
-                height: cardH,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Center(child: CircularProgressIndicator()),
-              ),
-            ),
-          );
-        }
-
-        if (snapshot.hasError || snapshot.data == null) {
-          return SizedBox(
-            height: 200,
-            child: Center(child: Text('Error loading travel data: ${snapshot.error}')),
-          );
-        }
-
-        final users = snapshot.data!;
-
-        if (users.isEmpty) {
-          return SizedBox(
-            height: 200,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(FontAwesomeIcons.plane, size: 60, color: Colors.black26),
-                  const SizedBox(height: 16),
-                  Text(
-                    "No users traveling right now",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black54,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        final w = MediaQuery.of(context).size.width;
-        final cardW = w * 0.68;
-        final cardH = cardW * 0.62;
-
-        return SizedBox(
-          height: cardH,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: users.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (_, i) => _TravelUserCard(
-              user: users[i],
-              width: cardW,
-              height: cardH,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// Travel User Card
-class _TravelUserCard extends StatelessWidget {
+// User Card Widget
+class _UserCard extends StatelessWidget {
   final UserModel user;
-  final double width;
-  final double height;
 
-  const _TravelUserCard({
-    required this.user,
-    required this.width,
-    required this.height,
-  });
+  const _UserCard({required this.user});
 
   @override
   Widget build(BuildContext context) {
     final profilePhotoUrl = UserService.getProfilePhotoUrl(user);
-    final location = _getUserLocation(user);
-    final tripType = _getTripType(user);
+    final tags = user.interests?.take(2).toList() ?? [];
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
         children: [
-          // User image with overlay
-          Container(
-            width: width,
-            height: height,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              image: DecorationImage(
-                image: NetworkImage(profilePhotoUrl ?? "https://i.pravatar.cc/400"),
-                fit: BoxFit.cover,
-              ),
-              boxShadow: const [
-                BoxShadow(color: Colors.black12, blurRadius: 12),
-              ],
-            ),
-          ),
-
-          // Gradient overlay
-          Container(
-            width: width,
-            height: height,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withOpacity(0.3),
-                  Colors.black.withOpacity(0.7),
-                ],
+          // User Image
+          Positioned.fill(
+            child: Image.network(
+              profilePhotoUrl ?? "https://i.pravatar.cc/300",
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: Colors.grey.shade300,
+                child: const Icon(FontAwesomeIcons.user, color: Colors.black38),
               ),
             ),
           ),
-
-          // User info
-          Positioned(
-            bottom: 12,
-            left: 12,
-            right: 12,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Trip type badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    tripType,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // User name and verification
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "${user.name.split(' ').first}, ${user.age}",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                    if (user.type == 'premium')
-                      const Icon(
-                        FontAwesomeIcons.certificate,
-                        size: 14,
-                        color: Colors.white,
-                      ),
+          // Bottom overlay
+          Align(
+            alignment: Alignment.bottomLeft,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(10, 48, 10, 10),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black54,
+                    Colors.black87,
                   ],
                 ),
-
-                // Location
-                Text(
-                  location,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-
-                // Interests (if available)
-                if (user.interests != null && user.interests!.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      spacing: 6,
-                      children: user.interests!
-                          .take(2)
-                          .map((interest) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (tags.isNotEmpty) _darkPill(tags.first),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
                         child: Text(
-                          interest,
+                          "${user.name.split(' ').first}, ${user.age}",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
                           ),
                         ),
-                      ))
-                          .toList(),
-                    ),
+                      ),
+                      if (user.type == 'premium')
+                        const Icon(
+                          FontAwesomeIcons.certificate,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                    ],
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
@@ -588,51 +1351,25 @@ class _TravelUserCard extends StatelessWidget {
     );
   }
 
-  String _getUserLocation(UserModel user) {
-    // You can modify this based on your user model structure
-    if (user.location != null && user.location!.isNotEmpty) {
-      return user.location!;
-    }
-    return "Traveling now";
+  Widget _darkPill(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
   }
-
-  String _getTripType(UserModel user) {
-    // Determine trip type based on user data or random selection
-    final tripTypes = ["Recent trip", "Currently traveling", "Local explorer", "Adventure seeker"];
-    final index = user.name.hashCode % tripTypes.length;
-    return tripTypes[index];
-  }
 }
 
-// Updated UserService with getTravelingUsers method
-// Add this to your UserService class:
-/*
-static Stream<List<UserModel>> getTravelingUsers() {
-  return FirebaseFirestore.instance
-      .collection('users')
-      .where('isTraveling', isEqualTo: true) // You might want to add this field
-      .limit(8)
-      .snapshots()
-      .map((snapshot) => snapshot.docs
-          .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
-          .toList());
-}
-*/
-
-// If you don't have the isTraveling field, you can use this alternative:
-/*
-static Stream<List<UserModel>> getTravelingUsers() {
-  return FirebaseFirestore.instance
-      .collection('users')
-      .limit(8)
-      .snapshots()
-      .map((snapshot) => snapshot.docs
-          .map((doc) => UserModel.fromFirestore(doc.data() as Map<String, dynamic>))
-          .toList());
-}
-*/
-
-// The rest of your existing widgets remain the same...
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
 
@@ -673,6 +1410,10 @@ class _SearchBar extends StatelessWidget {
     );
   }
 }
+
+// ... (Rest of your existing widgets remain exactly as they were)
+// Keep all the other widget classes (_TrendingClipsStrip, _PopularProfilesStrip, etc.)
+// They remain unchanged from your original code
 
 class _TrendingClipsStrip extends StatelessWidget {
   const _TrendingClipsStrip();
@@ -810,8 +1551,6 @@ class _TrendingClipCard extends StatelessWidget {
     );
   }
 }
-
-// ... [Rest of your existing widgets remain the same]
 
 class _PopularProfilesStrip extends StatelessWidget {
   const _PopularProfilesStrip();
@@ -1081,7 +1820,7 @@ class _SimilarInterestsGrid extends StatelessWidget {
           ),
           itemBuilder: (_, i) {
             final user = users[i];
-            return _UserCard(
+            return _GridUserCard(
               user: user,
               liked: liked.contains(user.uid),
               onLikeToggle: () => onLikeToggle(user.uid),
@@ -1135,7 +1874,7 @@ class _SameGoalsGrid extends StatelessWidget {
           ),
           itemBuilder: (_, i) {
             final user = users[i];
-            return _UserCard(
+            return _GridUserCard(
               user: user,
               liked: liked.contains(user.uid),
               onLikeToggle: () => onLikeToggle(user.uid),
@@ -1148,14 +1887,13 @@ class _SameGoalsGrid extends StatelessWidget {
   }
 }
 
-// Individual User Card for Grid
-class _UserCard extends StatelessWidget {
+class _GridUserCard extends StatelessWidget {
   final UserModel user;
   final bool liked;
   final VoidCallback? onLikeToggle;
   final bool showGoal;
 
-  const _UserCard({
+  const _GridUserCard({
     required this.user,
     this.liked = false,
     this.onLikeToggle,
@@ -1286,7 +2024,6 @@ class _UserCard extends StatelessWidget {
   }
 }
 
-// Big Card for Recommended Users
 class _BigCard extends StatelessWidget {
   final UserModel user;
   final double width;
@@ -1408,7 +2145,6 @@ class _BigCard extends StatelessWidget {
   }
 }
 
-// Skeleton Loaders
 class _GridSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {

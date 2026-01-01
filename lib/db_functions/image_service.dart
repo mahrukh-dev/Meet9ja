@@ -7,6 +7,36 @@ class ImageService {
   static final FirebaseStorage _storage = FirebaseStorage.instance;
   static final ImagePicker _imagePicker = ImagePicker();
 
+
+  // Add this method to your existing ImageService class
+  static Future<String> uploadTravelLocationImage({
+    required String userId,
+    required File imageFile,
+    required String locationName,
+  }) async {
+    try {
+      print('📸 Starting travel location image upload...');
+
+      // Create a unique filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'travel_${userId}_$timestamp.jpg';
+      final ref = FirebaseStorage.instance.ref().child('travel_locations/$fileName');
+
+      // Upload the image file directly
+      await ref.putFile(imageFile);
+
+      // Get the download URL
+      final downloadUrl = await ref.getDownloadURL();
+
+      print('✅ Travel location image uploaded: $downloadUrl');
+      return downloadUrl;
+
+    } catch (e) {
+      print('❌ Error uploading travel location image: $e');
+      rethrow;
+    }
+  }
+
   // Pick image from gallery
   static Future<File?> pickImageFromGallery() async {
     try {
