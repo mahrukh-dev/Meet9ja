@@ -9,19 +9,40 @@ class FirebaseService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Check if username is available
+  // Check if username is available - improved with better error handling
   static Future<bool> isUsernameAvailable(String username) async {
     try {
+      print('🔍 Checking username availability: $username');
+
+      // Normalize username: lowercase and trim
+      final normalizedUsername = username.toLowerCase().trim();
+
+      if (normalizedUsername.length < 3) {
+        print('❌ Username too short: $normalizedUsername');
+        return false;
+      }
+
+      // Check for invalid characters (more lenient)
+      final validRegex = RegExp(r'^[a-zA-Z0-9._]+$');
+      if (!validRegex.hasMatch(normalizedUsername)) {
+        print('❌ Username contains invalid characters: $normalizedUsername');
+        return false;
+      }
+
       final querySnapshot = await _firestore
           .collection('users')
-          .where('username', isEqualTo: username.toLowerCase())
+          .where('username', isEqualTo: normalizedUsername)
           .limit(1)
           .get();
 
-      return querySnapshot.docs.isEmpty;
+      final isAvailable = querySnapshot.docs.isEmpty;
+      print('✅ Username availability check complete: $normalizedUsername - Available: $isAvailable');
+
+      return isAvailable;
     } catch (e) {
       print('❌ Error checking username availability: $e');
-      throw 'Failed to check username availability: $e';
+      // Return false on error to prevent registration with potentially taken username
+      return false;
     }
   }
 
@@ -56,17 +77,22 @@ class FirebaseService {
     required int age,
     required String selectedMode,
     required String travelPreference,
-    required Map<String, String> firstPhotos, // Add this parameter
+    required Map<String, String> firstPhotos,
   }) async {
     try {
       print('💾 Saving user profile to Firestore for UID: $uid');
+
+      // Validate age is 18 or above
+      if (age < 18) {
+        throw 'User must be at least 18 years old';
+      }
 
       final userData = {
         'UID': uid,
         'email': email,
         'name': name,
         'age': age,
-        'username': username.toLowerCase(),
+        'username': username.toLowerCase().trim(),
         'mode': {
           'date': selectedMode == 'Date',
           'travel_partner': selectedMode == 'Travel partner',
@@ -81,12 +107,14 @@ class FirebaseService {
         'live_status': false,
         'wallet': {'coin_balance': 0, 'total_earning': 0},
         'interests': [],
-        'first_photos': firstPhotos, // Use the provided photos
+        'first_photos': firstPhotos,
         'bio': '',
         'location': '',
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
         'status': 'active',
+        'is_verified': false,
+        'profile_completed': true,
       };
 
       await _firestore.collection('users').doc(uid).set(userData);
@@ -114,7 +142,13 @@ class FirebaseService {
       print('🚀 Starting complete registration process...');
       print('📧 Email: $email');
       print('👤 Username: $username');
+      print('🎂 Age: $age');
       print('📸 Number of photos: ${photoFiles.length}');
+
+      // Validate age before proceeding
+      if (age < 18) {
+        throw 'You must be at least 18 years old to register';
+      }
 
       // Step 1: Create user in Firebase Auth
       user = await createUserWithEmailAndPassword(
@@ -145,7 +179,9 @@ class FirebaseService {
         throw 'No photos were successfully uploaded';
       }
 
+      // Send email verification
       await user.sendEmailVerification();
+      print('📧 Verification email sent to $email');
 
       // Step 3: Save user profile with photo URLs
       print('💾 Saving user profile to Firestore...');
@@ -279,7 +315,7 @@ class FirebaseService {
     }
   }
 
-// Password reset method
+  // Password reset method
   static Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email);
@@ -289,5 +325,4 @@ class FirebaseService {
       throw _handleAuthError(e as FirebaseAuthException);
     }
   }
-
 }

@@ -82,20 +82,32 @@ class _SignUpScreenState extends State<SignUpScreen> {
   void _checkUsernameAvailability(String username) {
     _usernameDebounceTimer?.cancel();
 
-    if (username.length < 3) {
+    final trimmedUsername = username.trim();
+
+    if (trimmedUsername.isEmpty) {
       setState(() {
         _isCheckingUsername = false;
         _isUsernameAvailable = false;
-        _usernameError = username.isEmpty ? '' : 'Username must be at least 3 characters';
+        _usernameError = '';
       });
       return;
     }
 
-    if (!_isValidUsername(username)) {
+    if (trimmedUsername.length < 3) {
       setState(() {
         _isCheckingUsername = false;
         _isUsernameAvailable = false;
-        _usernameError = 'Username can only contain letters, numbers, and underscores';
+        _usernameError = 'Username must be at least 3 characters';
+      });
+      return;
+    }
+
+    // More lenient username validation
+    if (!_isValidUsername(trimmedUsername)) {
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = false;
+        _usernameError = 'Username can contain letters, numbers, dots, and underscores';
       });
       return;
     }
@@ -107,7 +119,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     _usernameDebounceTimer = Timer(const Duration(milliseconds: 500), () async {
       try {
-        final isAvailable = await FirebaseService.isUsernameAvailable(username);
+        final isAvailable = await FirebaseService.isUsernameAvailable(trimmedUsername);
 
         if (mounted) {
           setState(() {
@@ -120,7 +132,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
         if (mounted) {
           setState(() {
             _isCheckingUsername = false;
-            _usernameError = 'Error checking username availability';
+            // Don't show error message for checking, just indicate not available
+            _isUsernameAvailable = false;
           });
         }
       }
@@ -128,7 +141,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   bool _isValidUsername(String username) {
-    final usernameRegex = RegExp(r'^[a-zA-Z0-9_]+$');
+    // More lenient regex: allows letters, numbers, dots, and underscores
+    final usernameRegex = RegExp(r'^[a-zA-Z0-9._]+$');
     return usernameRegex.hasMatch(username);
   }
 
@@ -143,6 +157,28 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (!password.contains(RegExp(r'[0-9]'))) {
       return 'Include at least one number';
     }
+    return null;
+  }
+
+  // Age validation
+  String? _validateAge(String ageText) {
+    if (ageText.isEmpty) {
+      return 'Please enter your age';
+    }
+
+    final age = int.tryParse(ageText);
+    if (age == null) {
+      return 'Please enter a valid number';
+    }
+
+    if (age < 18) {
+      return 'You must be at least 18 years old';
+    }
+
+    if (age > 100) {
+      return 'Please enter a valid age';
+    }
+
     return null;
   }
 
@@ -394,26 +430,34 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    if (!_isValidUsername(_usernameCtrl.text.trim())) {
-      _showErrorDialog('Username can only contain letters, numbers, and underscores');
+    // Validate name
+    if (_nameCtrl.text.trim().isEmpty) {
+      _showErrorDialog('Please enter your name');
       return;
     }
 
-    if (_usernameCtrl.text.length < 3) {
+    // Validate username
+    final trimmedUsername = _usernameCtrl.text.trim();
+    if (!_isValidUsername(trimmedUsername)) {
+      _showErrorDialog('Username can contain letters, numbers, dots, and underscores');
+      return;
+    }
+
+    if (trimmedUsername.length < 3) {
       _showErrorDialog('Username must be at least 3 characters long');
       return;
     }
 
     // Check username availability one more time before registration
     if (!_isUsernameAvailable) {
-      _showErrorDialog('Please choose an available username');
+      _showErrorDialog('Username "$trimmedUsername" is not available. Please choose a different one.');
       return;
     }
 
     // Validate age
-    int? age = int.tryParse(_ageCtrl.text.trim());
-    if (age == null || age < 18 || age > 100) {
-      _showErrorDialog('Please enter a valid age between 18 and 100');
+    final ageError = _validateAge(_ageCtrl.text.trim());
+    if (ageError != null) {
+      _showErrorDialog(ageError);
       return;
     }
 
@@ -450,15 +494,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
       print('📝 Starting registration process...');
       print('📧 Email: ${_emailCtrl.text.trim()}');
-      print('👤 Username: ${_usernameCtrl.text.trim()}');
+      print('👤 Username: $trimmedUsername');
       print('📸 Photos to upload: ${_selectedPhotos.length}');
 
       await FirebaseService.completeRegistration(
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text.trim(),
         name: _nameCtrl.text.trim(),
-        age: age,
-        username: _usernameCtrl.text.trim(),
+        age: int.parse(_ageCtrl.text.trim()),
+        username: trimmedUsername,
         selectedMode: _getSelectedMode(),
         travelPreference: _getTravelPreference(),
         photoFiles: _selectedPhotos,
@@ -757,20 +801,32 @@ class _SignUpScreenState extends State<SignUpScreen> {
             ],
             const SizedBox(height: 10),
 
-            // Age
+            // Age with validation
             const _SectionLabel("Age"),
             const SizedBox(height: 5),
             _PinkField(
               controller: _ageCtrl,
-              hint: "Enter your age",
+              hint: "Enter your age (18+)",
               keyboardType: TextInputType.number,
+              onChanged: (value) {
+                // Real-time age validation
+                final error = _validateAge(value);
+                setState(() {});
+              },
             ),
+            if (_ageCtrl.text.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                _validateAge(_ageCtrl.text) ?? 'Age accepted',
+                style: TextStyle(
+                  color: _validateAge(_ageCtrl.text) == null ? Colors.green : Colors.red,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
 
-            // In _buildNameStep() method of sign_up_screen.dart
-// Replace the Terms of Service section with:
-
-// Terms of Service
+            // Terms of Service
             Row(
               children: [
                 Checkbox(
@@ -1087,7 +1143,7 @@ class _UsernameField extends StatelessWidget {
                 ),
               ),
             )
-                : controller.text.length >= 3
+                : controller.text.trim().length >= 3
                 ? Icon(
               isAvailable ? Icons.check_circle : Icons.cancel,
               color: Colors.white,
@@ -1105,7 +1161,7 @@ class _UsernameField extends StatelessWidget {
               fontSize: 12,
             ),
           ),
-        ] else if (controller.text.length >= 3 && isAvailable) ...[
+        ] else if (controller.text.trim().length >= 3 && isAvailable) ...[
           const SizedBox(height: 4),
           Text(
             'Username is available!',
@@ -1299,12 +1355,14 @@ class _PinkField extends StatelessWidget {
   final String hint;
   final bool obscureText;
   final TextInputType keyboardType;
+  final ValueChanged<String>? onChanged;
 
   const _PinkField({
     required this.controller,
     required this.hint,
     this.obscureText = false,
     this.keyboardType = TextInputType.text,
+    this.onChanged,
   });
 
   @override
@@ -1315,6 +1373,7 @@ class _PinkField extends StatelessWidget {
       obscureText: obscureText,
       keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white, fontSize: 16),
+      onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white70),
