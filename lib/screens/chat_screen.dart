@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../constants/ENVconfig.dart';
 import '../constants/app_colors.dart';
 import '../db_functions/firebaseStorageService.dart';
 import '../models/post_model.dart';
@@ -607,8 +608,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       await ZegoUIKit().init(
-        appID: 51745598,
-        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+        appID: Env.zegoAppID,
+        appSign: Env.zegoAppSign,
       );
 
       final callID = 'voice_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}';
@@ -617,8 +618,8 @@ class _ChatScreenState extends State<ChatScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => ZegoUIKitPrebuiltCall(
-              appID: 51745598,
-              appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+              appID: Env.zegoAppID,
+              appSign: Env.zegoAppSign,
               callID: callID,
               userID: user.uid,
               userName: user.displayName ?? 'User',
@@ -649,8 +650,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       await ZegoUIKit().init(
-        appID: 51745598,
-        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+        appID: Env.zegoAppID,
+        appSign: Env.zegoAppSign,
       );
 
       final callID = 'video_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}';
@@ -659,8 +660,8 @@ class _ChatScreenState extends State<ChatScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => ZegoUIKitPrebuiltCall(
-              appID: 51745598,
-              appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+              appID: Env.zegoAppID,
+              appSign: Env.zegoAppSign,
               callID: callID,
               userID: user.uid,
               userName: user.displayName ?? 'User',

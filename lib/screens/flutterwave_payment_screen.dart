@@ -3,6 +3,8 @@ import 'package:flutterwave_standard/flutterwave.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/ENVconfig.dart';
+
 class FlutterwavePaymentScreen extends StatefulWidget {
   const FlutterwavePaymentScreen({super.key});
 
@@ -18,9 +20,9 @@ class _FlutterwavePaymentScreenState extends State<FlutterwavePaymentScreen> {
   bool isTestMode = true;
 
   // Corrected Flutterwave sandbox credentials from the image
-  final String publicKey = "FLWPUBK_TEST-befed163ca7c7e9909b525da24b1332d-X";
-  final String secretKey = "FLWSECK_TEST-40e21085dd94e60bb65a13d7987295af-X";
-  final String encryptionKey = "FLWSECK_TEST31158107b2db";
+  final String publicKey = Env.flutterwavePKey;
+  final String secretKey = Env.flutterwaveSKey;
+  final String encryptionKey = Env.flutterwaveEKey;
 
   @override
   void initState() {

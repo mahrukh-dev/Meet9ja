@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:meet9ja/constants/ENVconfig.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/screens/MatchedUserScreen.dart';
 import 'package:meet9ja/screens/activity_screen.dart';
@@ -52,6 +53,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _loadAllChats();
     _loadAllUsers();
     _initializeZegoCloud();
+    _debugChatData(); // Debug helper
   }
 
   @override
@@ -63,6 +65,43 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.dispose();
   }
 
+  // Debug method to check chat data
+  void _debugChatData() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      print('🔍 DEBUG: Checking chat data for user: ${user.uid}');
+
+      // Check all conversations
+      final snapshot = await _firestore
+          .collection('chat_conversations')
+          .get();
+
+      print('📊 Total conversations in DB: ${snapshot.docs.length}');
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        print('\n📄 Conversation ID: ${doc.id}');
+        print('   Participants: ${data['participants']}');
+        print('   Last message: ${data['lastMessage']}');
+        print('   Last time: ${data['lastMessageTime']}');
+
+        // Check if current user is in participants
+        if (data['participants'] != null && data['participants'] is Map) {
+          final participants = data['participants'] as Map<String, dynamic>;
+          if (participants.containsKey(user.uid)) {
+            print('   ✅ Current user FOUND in this conversation');
+          } else {
+            print('   ❌ Current user NOT in this conversation');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Debug error: $e');
+    }
+  }
+
   // Initialize ZegoCloud ZIMKit
   Future<void> _initializeZegoCloud() async {
     try {
@@ -70,13 +109,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
       if (user == null) return;
 
       await ZIMKit().init(
-        appID: 51745598,
-        appSign: '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4',
+        appID: Env.zegoAppID,
+        appSign: Env.zegoAppSign,
       );
 
       await ZIMKit().connectUser(
         id: user.uid,
-
         name: user.displayName ?? 'User',
       );
 
@@ -117,7 +155,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  // Load ALL chat conversations (not just matched users)
+  // Load ALL chat conversations
   Future<void> _loadAllChats() async {
     try {
       final user = _auth.currentUser;
@@ -128,10 +166,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       print('🔄 Loading ALL chats for user: ${user.uid}');
 
+      // Try different query strategies
       _chatSubscription = _firestore
           .collection('chat_conversations')
-          .where('participants', arrayContains: user.uid)
-          .orderBy('lastMessageTime', descending: true)
           .snapshots()
           .listen((snapshot) async {
         if (mounted) {
@@ -139,19 +176,50 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
           for (var doc in snapshot.docs) {
             try {
-              final conversation = await _Conversation.fromFirestoreWithUserData(doc.id, doc.data() as Map<String, dynamic>);
-              conversations.add(conversation);
+              final data = doc.data() as Map<String, dynamic>;
+
+              // Check if user is a participant in this conversation
+              final participants = data['participants'] as Map<String, dynamic>?;
+
+              if (participants != null && participants.containsKey(user.uid)) {
+                print('✅ Found conversation where user is participant: ${doc.id}');
+                final conversation = await _Conversation.fromFirestoreWithUserData(doc.id, data);
+                conversations.add(conversation);
+              }
             } catch (e) {
               print('❌ Error processing conversation ${doc.id}: $e');
             }
           }
+
+          // Sort by last message time (newest first)
+          conversations.sort((a, b) {
+            // If time is "Now", treat as most recent
+            if (a.time == "Now" && b.time != "Now") return -1;
+            if (b.time == "Now" && a.time != "Now") return 1;
+
+            // Try to parse time strings for sorting
+            try {
+              final aTime = _parseTimeString(a.time);
+              final bTime = _parseTimeString(b.time);
+              return bTime.compareTo(aTime);
+            } catch (e) {
+              return 0;
+            }
+          });
 
           setState(() {
             _chats = conversations;
             _filteredChats = List.from(_chats);
             _isLoading = false;
           });
-          print('✅ Loaded ${_chats.length} conversations (all users)');
+
+          print('✅ Successfully loaded ${_chats.length} conversations');
+
+          // If no conversations, try alternative query
+          if (_chats.isEmpty) {
+            print('⚠ No conversations found with current query, trying alternative...');
+            _tryAlternativeChatQuery();
+          }
         }
       }, onError: (e) {
         print('❌ Chat subscription error: $e');
@@ -163,6 +231,79 @@ class _MessagesScreenState extends State<MessagesScreen> {
       print('❌ Error loading chats: $e');
       setState(() => _isLoading = false);
     }
+  }
+
+  // Alternative query method in case the first one fails
+  Future<void> _tryAlternativeChatQuery() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      print('🔄 Trying alternative chat query...');
+
+      // Get all conversations and filter locally
+      final snapshot = await _firestore
+          .collection('chat_conversations')
+          .get();
+
+      List<_Conversation> conversations = [];
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final participants = data['participants'] as Map<String, dynamic>?;
+
+        // Check if this conversation contains the current user
+        bool containsUser = false;
+
+        // Check participants map
+        if (participants != null) {
+          containsUser = participants.containsKey(user.uid);
+
+          // Also check if participants is a list (old format)
+          if (!containsUser && participants is List) {
+            containsUser = (participants as List).contains(user.uid);
+          }
+        }
+
+        if (containsUser) {
+          final conversation = await _Conversation.fromFirestoreWithUserData(doc.id, data);
+          conversations.add(conversation);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _chats = conversations;
+          _filteredChats = List.from(_chats);
+        });
+        print('✅ Alternative query loaded ${_chats.length} conversations');
+      }
+    } catch (e) {
+      print('❌ Alternative query error: $e');
+    }
+  }
+
+  int _parseTimeString(String time) {
+    if (time == "Now") return 0;
+
+    if (time.endsWith('m')) {
+      // Minutes ago
+      final minutes = int.tryParse(time.replaceAll('m', '')) ?? 0;
+      return minutes;
+    } else if (time.endsWith('h')) {
+      // Hours ago
+      final hours = int.tryParse(time.replaceAll('h', '')) ?? 0;
+      return hours * 60;
+    } else if (time.endsWith('d')) {
+      // Days ago
+      final days = int.tryParse(time.replaceAll('d', '')) ?? 0;
+      return days * 60 * 24;
+    } else if (time.contains('/')) {
+      // Date like "12/25"
+      return 999999; // Old dates go to bottom
+    }
+
+    return 0;
   }
 
   // Load stories from followed users and current user
@@ -345,25 +486,35 @@ class _MessagesScreenState extends State<MessagesScreen> {
         final currentUserName = currentUserData?['name'] ?? 'You';
         final currentUserAvatar = _getFirstPhotoUrl(currentUserData?['first_photos']) ?? 'https://i.pravatar.cc/200';
 
+        // Create participants map (consistent with ChatScreen format)
+        final participantsMap = {
+          currentUserId: {
+            'userId': currentUserId,
+            'userName': currentUserName,
+            'userAvatar': currentUserAvatar,
+            'lastRead': FieldValue.serverTimestamp(),
+          },
+          otherUser.id: {
+            'userId': otherUser.id,
+            'userName': otherUser.name,
+            'userAvatar': otherUser.avatar,
+            'lastRead': FieldValue.serverTimestamp(),
+          }
+        };
+
         await _firestore.collection('chat_conversations').doc(conversationId).set({
-          'participants': [currentUserId, otherUser.id],
-          'participantNames': {
-            currentUserId: currentUserName,
-            otherUser.id: otherUser.name,
-          },
-          'participantAvatars': {
-            currentUserId: currentUserAvatar,
-            otherUser.id: otherUser.avatar,
-          },
+          'conversationId': conversationId,
+          'participants': participantsMap,
           'lastMessage': 'Start a conversation',
-          'lastMessageTime': FieldValue.serverTimestamp(),
           'lastMessageType': 'text',
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'lastMessageSenderId': currentUserId,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
           'unreadCount': {
             currentUserId: 0,
             otherUser.id: 0,
-          },
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
+          }
         });
         print('✅ Created new conversation: $conversationId');
       } else {
@@ -708,6 +859,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: TextField(
+            controller: TextEditingController(),
             decoration: InputDecoration(
               hintText: "Search users...",
               prefixIcon: const Icon(Icons.search, color: AppColors.primary),
@@ -867,18 +1019,71 @@ class _Conversation {
       throw Exception('User not authenticated');
     }
 
-    final participants = List<String>.from(data['participants'] ?? []);
-    final otherUserId = participants.firstWhere(
-          (uid) => uid != currentUser.uid,
-      orElse: () => '',
-    );
+    print('🔄 Parsing conversation: $id');
+    print('   Data: $data');
 
-    // If we have the other user's data in conversation, use it
-    String otherUserName = data['otherUserName'] ?? 'User';
-    String otherUserAvatar = data['otherUserAvatar'] ?? 'https://i.pravatar.cc/200';
+    // Handle participants - could be Map or List
+    dynamic participantsData = data['participants'];
+    String otherUserId = '';
+    String otherUserName = 'User';
+    String otherUserAvatar = 'https://i.pravatar.cc/200';
 
-    // If data is missing or we need to refresh, fetch from users collection
-    if (otherUserId.isNotEmpty && (otherUserName == 'User' || otherUserAvatar.contains('pravatar'))) {
+    if (participantsData is Map<String, dynamic>) {
+      // New format: participants is a Map
+      final participantsMap = participantsData;
+      final participantIds = participantsMap.keys.toList();
+
+      // Find the other user ID
+      for (var userId in participantIds) {
+        if (userId != currentUser.uid) {
+          otherUserId = userId;
+
+          // Get user info from participants map
+          final userData = participantsMap[userId] as Map<String, dynamic>?;
+          if (userData != null) {
+            otherUserName = userData['userName'] ?? 'User';
+            otherUserAvatar = userData['userAvatar'] ?? 'https://i.pravatar.cc/200';
+          }
+          break;
+        }
+      }
+    } else if (participantsData is List) {
+      // Old format: participants is a List
+      final participantsList = participantsData as List<dynamic>;
+      for (var participant in participantsList) {
+        if (participant != currentUser.uid) {
+          otherUserId = participant.toString();
+          break;
+        }
+      }
+    }
+
+    // If we couldn't find other user from participants, try alternative methods
+    if (otherUserId.isEmpty) {
+      // Try to get from participantNames or participantAvatars
+      final participantNames = data['participantNames'] as Map<String, dynamic>?;
+      if (participantNames != null) {
+        for (var userId in participantNames.keys) {
+          if (userId != currentUser.uid) {
+            otherUserId = userId;
+            otherUserName = participantNames[userId]?.toString() ?? 'User';
+            break;
+          }
+        }
+      }
+
+      final participantAvatars = data['participantAvatars'] as Map<String, dynamic>?;
+      if (participantAvatars != null && participantAvatars.containsKey(otherUserId)) {
+        otherUserAvatar = participantAvatars[otherUserId]?.toString() ?? 'https://i.pravatar.cc/200';
+      }
+    }
+
+    // If still no user ID, fetch from users collection
+    if (otherUserId.isEmpty) {
+      // This shouldn't happen, but as a fallback
+      print('⚠ Could not determine other user ID from conversation data');
+    } else if (otherUserName == 'User' || otherUserAvatar.contains('pravatar')) {
+      // Fetch user data from users collection
       try {
         final otherUserDoc = await FirebaseFirestore.instance.collection('users').doc(otherUserId).get();
         if (otherUserDoc.exists) {
@@ -898,11 +1103,11 @@ class _Conversation {
       id: id,
       name: otherUserName,
       avatar: otherUserAvatar,
-      lastMessage: data['lastMessage'] ?? 'Start a conversation',
+      lastMessage: data['lastMessage']?.toString() ?? 'Start a conversation',
       time: _formatTime(data['lastMessageTime']),
       unread: (unreadCount is int) ? unreadCount : 0,
       otherUserId: otherUserId,
-      participants: participants,
+      participants: [currentUser.uid, otherUserId],
     );
   }
 
@@ -921,17 +1126,33 @@ class _Conversation {
     if (timestamp == null) return 'Now';
 
     try {
-      final messageTime = (timestamp as Timestamp).toDate();
-      final now = DateTime.now();
-      final difference = now.difference(messageTime);
+      if (timestamp is Timestamp) {
+        final messageTime = timestamp.toDate();
+        final now = DateTime.now();
+        final difference = now.difference(messageTime);
 
-      if (difference.inMinutes < 1) return 'Now';
-      if (difference.inHours < 1) return '${difference.inMinutes}m';
-      if (difference.inDays < 1) return '${difference.inHours}h';
-      if (difference.inDays < 7) return '${difference.inDays}d';
+        if (difference.inMinutes < 1) return 'Now';
+        if (difference.inHours < 1) return '${difference.inMinutes}m';
+        if (difference.inDays < 1) return '${difference.inHours}h';
+        if (difference.inDays < 7) return '${difference.inDays}d';
 
-      return '${messageTime.month}/${messageTime.day}';
+        return '${messageTime.month}/${messageTime.day}';
+      } else if (timestamp is DateTime) {
+        final messageTime = timestamp;
+        final now = DateTime.now();
+        final difference = now.difference(messageTime);
+
+        if (difference.inMinutes < 1) return 'Now';
+        if (difference.inHours < 1) return '${difference.inMinutes}m';
+        if (difference.inDays < 1) return '${difference.inHours}h';
+        if (difference.inDays < 7) return '${difference.inDays}d';
+
+        return '${messageTime.month}/${messageTime.day}';
+      } else {
+        return 'Now';
+      }
     } catch (e) {
+      print('❌ Error formatting time: $e');
       return 'Now';
     }
   }
@@ -1074,7 +1295,13 @@ class _ChatTile extends StatelessWidget {
       leading: Stack(
         clipBehavior: Clip.none,
         children: [
-          CircleAvatar(radius: 26, backgroundImage: NetworkImage(chat.avatar)),
+          CircleAvatar(
+            radius: 26,
+            backgroundImage: NetworkImage(chat.avatar),
+            onBackgroundImageError: (exception, stackTrace) {
+              print('❌ Error loading avatar: $exception');
+            },
+          ),
           if (chat.unread > 0)
             Positioned(
               right: -2,
@@ -1103,6 +1330,8 @@ class _ChatTile extends StatelessWidget {
             child: Text(
               chat.name,
               style: const TextStyle(fontWeight: FontWeight.w900),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Text(

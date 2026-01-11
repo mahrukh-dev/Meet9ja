@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:meet9ja/constants/ENVconfig.dart';
 import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_streaming.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
@@ -33,15 +34,15 @@ class LiveStreamScreen extends StatefulWidget {
 
 class _LiveStreamScreenState extends State<LiveStreamScreen> with WidgetsBindingObserver, RouteAware {
   // Zego Configuration
-  final int _zegoAppId = 51745598;
-  final String _zegoServerSecret = 'd47d53d464da3b6ff8a8141dcb4e8b3b';
-  final String _zegoAppSign = '5bfa67bea457bf8b27014d411711518683ef0465f4a09f64832ea8d56e92e7a4';
+  final int _zegoAppId = Env.zegoAppID;
+  final String _zegoServerSecret = Env.zegoServerSecret;
+  final String _zegoAppSign = Env.zegoAppSign;
 
   // AWS S3 Configuration
-  final String _awsBucketName = 'meet9ja-recordings';
-  final String _awsRegion = 'eu-north-1';
-  final String _awsAccessKey = 'AKIAZ44G2F7RDNUFZT6U';
-  final String _awsSecretKey = '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';
+  final String _awsBucketName = Env.awsBucketName;
+  final String _awsRegion = Env.awsRegion;
+  final String _awsAccessKey = Env.awsAccessKey;
+  final String _awsSecretKey = Env.awsSecretKey;
 
   // Recording state
   bool _isRecording = false;

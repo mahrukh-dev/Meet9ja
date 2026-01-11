@@ -6,83 +6,65 @@ class NotificationService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-
-  // Trigger when someone likes post
-  static Future<void> onPostLike({
-    required String targetUserId,
-    required String postId,
-  }) async {
-    await NotificationService.createNotification(
-      type: 'post_like',
-      targetUserId: targetUserId,
-      postId: postId,
-    );
-  }
-
-  static Future<void> createScheduleReminderNotification({
-    required String userId,
-    required String scheduleId,
-    required String title,
-    required String fromUserId,
-    required String fromUserName,
-    required String fromUserPhoto,
-    required DateTime scheduledTime,
-  }) async {
-    try {
-      final notificationId = 'schedule_reminder_${scheduleId}_${DateTime.now().millisecondsSinceEpoch}';
-
-      await FirebaseFirestore.instance.collection('notifications').doc(notificationId).set({
-        'id': notificationId,
-        'userId': userId,
-        'type': 'schedule_reminder',
-        'fromUserId': fromUserId,
-        'fromUserName': fromUserName,
-        'fromUserPhoto': fromUserPhoto,
-        'commentText': title,
-        'scheduleTime': Timestamp.fromDate(scheduledTime),
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      print('✅ Schedule reminder notification created for user: $userId');
-    } catch (e) {
-      print('❌ Error creating schedule reminder notification: $e');
+  // Helper function to get first photo URL
+  static String? getFirstPhotoUrl(Map<String, dynamic>? photos) {
+    if (photos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = photos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
     }
+    return null;
   }
 
   // Create a notification
   static Future<void> createNotification({
     required String type,
     required String targetUserId,
+    String? fromUserId,
+    String? fromUserName,
+    String? fromUserPhoto,
     String? relatedUserId,
     String? postId,
     String? commentText,
     String? matchId,
   }) async {
     try {
-      final currentUser = _auth.currentUser;
-      if (currentUser == null) return;
+      String notificationFromUserId;
+      String notificationFromUserName;
+      String notificationFromUserPhoto;
 
-      // Get current user data for notification details
-      final currentUserDoc = await _firestore
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
+      // For mutual match notifications, use provided user data
+      if (type == 'mutual_match' && fromUserId != null && fromUserName != null) {
+        notificationFromUserId = fromUserId;
+        notificationFromUserName = fromUserName;
+        notificationFromUserPhoto = fromUserPhoto ?? '';
+      } else {
+        // For other notifications, use current user data
+        final currentUser = _auth.currentUser;
+        if (currentUser == null) return;
 
-      if (!currentUserDoc.exists) return;
+        final currentUserDoc = await _firestore
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
 
-      final currentUserData = currentUserDoc.data()!;
-      final currentUserName = currentUserData['name'] ?? 'Someone';
-      final currentUserPhoto =
-          currentUserData['first_photos']?['photo1url'] ?? '';
+        if (!currentUserDoc.exists) return;
+
+        final currentUserData = currentUserDoc.data()!;
+        notificationFromUserId = currentUser.uid;
+        notificationFromUserName = currentUserData['name'] ?? 'Someone';
+        notificationFromUserPhoto = getFirstPhotoUrl(currentUserData['first_photos']) ?? '';
+      }
 
       // Create notification data
       final notificationData = {
-        'id': '${currentUser.uid}_${DateTime.now().millisecondsSinceEpoch}',
+        'id': '${notificationFromUserId}_${DateTime.now().millisecondsSinceEpoch}',
         'type': type,
-        'fromUserId': currentUser.uid,
-        'fromUserName': currentUserName,
-        'fromUserPhoto': currentUserPhoto,
+        'fromUserId': notificationFromUserId,
+        'fromUserName': notificationFromUserName,
+        'fromUserPhoto': notificationFromUserPhoto,
         'targetUserId': targetUserId,
         'relatedUserId': relatedUserId,
         'postId': postId,
@@ -96,12 +78,43 @@ class NotificationService {
       // Add to notifications collection
       await _firestore
           .collection('notifications')
-          .doc(notificationData['id'])
+          .doc(notificationData['id'] as String?)
           .set(notificationData);
 
       print('✅ Notification created: $type for user $targetUserId');
     } catch (e) {
       print('❌ Error creating notification: $e');
+    }
+  }
+
+  // Create mutual match notification specifically
+  static Future<void> createMutualMatchNotification({
+    required String targetUserId,
+    required String fromUserId,
+    required String fromUserName,
+    required String fromUserPhoto,
+    required String matchId,
+  }) async {
+    try {
+      final notificationId = 'mutual_match_${matchId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      await _firestore.collection('notifications').doc(notificationId).set({
+        'id': notificationId,
+        'type': 'mutual_match',
+        'fromUserId': fromUserId,
+        'fromUserName': fromUserName,
+        'fromUserPhoto': fromUserPhoto,
+        'targetUserId': targetUserId,
+        'relatedUserId': fromUserId,
+        'matchId': matchId,
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Mutual match notification created for user: $targetUserId from: $fromUserName');
+    } catch (e) {
+      print('❌ Error creating mutual match notification: $e');
     }
   }
 
@@ -179,7 +192,7 @@ class NotificationTriggers {
     );
   }
 
-  // Trigger when someone likes a post - FIXED
+  // Trigger when someone likes a post
   static Future<void> onPostLike({
     required String targetUserId,
     required String postId,
@@ -196,7 +209,7 @@ class NotificationTriggers {
     }
   }
 
-  // Trigger when someone goes live - NEW
+  // Trigger when someone goes live
   static Future<void> onUserLive({
     required String userId,
     required String liveId,
@@ -219,13 +232,13 @@ class NotificationTriggers {
           targetUserId: followerId,
           relatedUserId: userId,
           matchId: liveId,
-          commentText: liveTitle, // Using commentText field for live title
+          commentText: liveTitle,
         );
       }
     }
   }
 
-  // Trigger when live ends - NEW
+  // Trigger when live ends
   static Future<void> onLiveEnded({
     required String userId,
     required String liveId,
@@ -239,7 +252,7 @@ class NotificationTriggers {
     );
   }
 
-  // Trigger when someone gifts during live - NEW
+  // Trigger when someone gifts during live
   static Future<void> onLiveGift({
     required String targetUserId,
     required String gifterUserId,
@@ -254,24 +267,57 @@ class NotificationTriggers {
     );
   }
 
-
-  // Trigger when it's a mutual match
+  // Trigger when it's a mutual match - FIXED
   static Future<void> onMutualMatch(String user1Id, String user2Id) async {
-    // Create notification for user1
-    await NotificationService.createNotification(
-      type: 'mutual_match',
-      targetUserId: user1Id,
-      relatedUserId: user2Id,
-      matchId: '${user1Id}_$user2Id',
-    );
+    try {
+      // Fetch both users' data
+      final user1Doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user1Id)
+          .get();
 
-    // Create notification for user2
-    await NotificationService.createNotification(
-      type: 'mutual_match',
-      targetUserId: user2Id,
-      relatedUserId: user1Id,
-      matchId: '${user1Id}_$user2Id',
-    );
+      final user2Doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user2Id)
+          .get();
+
+      if (!user1Doc.exists || !user2Doc.exists) {
+        print('❌ One or both users not found');
+        return;
+      }
+
+      final user1Data = user1Doc.data()!;
+      final user2Data = user2Doc.data()!;
+
+      final user1Name = user1Data['name'] ?? 'User';
+      final user2Name = user2Data['name'] ?? 'User';
+      final user1Photo = NotificationService.getFirstPhotoUrl(user1Data['first_photos']) ?? '';
+      final user2Photo = NotificationService.getFirstPhotoUrl(user2Data['first_photos']) ?? '';
+
+      final matchId = '${user1Id}_$user2Id';
+
+      // Create notification for user1 - from user2's perspective
+      await NotificationService.createMutualMatchNotification(
+        targetUserId: user1Id,
+        fromUserId: user2Id,
+        fromUserName: user2Name,
+        fromUserPhoto: user2Photo,
+        matchId: matchId,
+      );
+
+      // Create notification for user2 - from user1's perspective
+      await NotificationService.createMutualMatchNotification(
+        targetUserId: user2Id,
+        fromUserId: user1Id,
+        fromUserName: user1Name,
+        fromUserPhoto: user1Photo,
+        matchId: matchId,
+      );
+
+      print('✅ Mutual match notifications created: $user1Name & $user2Name');
+    } catch (e) {
+      print('❌ Error creating mutual match notifications: $e');
+    }
   }
 
   // Trigger when someone comments on post
@@ -287,8 +333,6 @@ class NotificationTriggers {
       commentText: commentText,
     );
   }
-
-
 
   // Trigger when someone follows
   static Future<void> onFollow({required String targetUserId}) async {
@@ -324,5 +368,31 @@ class NotificationTriggers {
       type: 'gift_received',
       targetUserId: targetUserId,
     );
+  }
+
+  // Create schedule reminder notification
+  static Future<void> createScheduleReminderNotification({
+    required String userId,
+    required String scheduleId,
+    required String title,
+    required String fromUserId,
+    required String fromUserName,
+    required String fromUserPhoto,
+    required DateTime scheduledTime,
+  }) async {
+    try {
+      await NotificationService.createNotification(
+        type: 'schedule_reminder',
+        targetUserId: userId,
+        fromUserId: fromUserId,
+        fromUserName: fromUserName,
+        fromUserPhoto: fromUserPhoto,
+        commentText: title,
+        matchId: scheduleId,
+      );
+      print('✅ Schedule reminder notification created for user: $userId');
+    } catch (e) {
+      print('❌ Error creating schedule reminder notification: $e');
+    }
   }
 }

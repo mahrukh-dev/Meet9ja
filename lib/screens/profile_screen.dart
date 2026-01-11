@@ -8,6 +8,7 @@ import 'package:flutterwave_standard/models/requests/customer.dart';
 import 'package:flutterwave_standard/models/requests/customizations.dart';
 import 'package:flutterwave_standard/models/responses/charge_response.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:meet9ja/constants/ENVconfig.dart';
 import 'package:meet9ja/screens/home_screen.dart';
 import 'package:meet9ja/screens/messages_screen.dart' hide StoryModel;
 import 'package:meet9ja/screens/post_detail_screen.dart';
@@ -4209,8 +4210,8 @@ class _WalletTabState extends State<_WalletTab> {
   bool _isWithdrawing = false;
 
   // Flutterwave credentials - TEST MODE
-  final String publicKey = "FLWPUBK_TEST-befed163ca7c7e9909b525da24b1332d-X";
-  final String secretKey = "FLWSECK_TEST-40e21085dd94e60bb65a13d7987295af-X";
+  final String publicKey = Env.flutterwavePKey;
+  final String secretKey = Env.flutterwaveSKey;
 
   // Diamond packages in USD
   final List<Map<String, dynamic>> _diamondPackages = [

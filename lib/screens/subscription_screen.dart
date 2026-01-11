@@ -5,6 +5,7 @@ import 'package:flutterwave_standard/models/requests/customer.dart';
 import 'package:flutterwave_standard/models/requests/customizations.dart';
 import 'package:flutterwave_standard/models/responses/charge_response.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:meet9ja/constants/ENVconfig.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -25,9 +26,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   bool isTestMode = true;
 
   // Corrected Flutterwave sandbox credentials from the image
-  final String publicKey = "FLWPUBK_TEST-befed163ca7c7e9909b525da24b1332d-X";
-  final String secretKey = "FLWSECK_TEST-40e21085dd94e60bb65a13d7987295af-X";
-  final String encryptionKey = "FLWSECK_TEST31158107b2db";
+  final String publicKey = Env.flutterwavePKey;
+  final String secretKey = Env.flutterwaveSKey;
+  final String encryptionKey = Env.flutterwaveEKey;
 
   @override
   void initState() {
