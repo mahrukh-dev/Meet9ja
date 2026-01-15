@@ -51,7 +51,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.initState();
     _searchController.addListener(_performSearch);
     _loadAllChats();
-    _loadAllUsers();
+    _loadMatchedUsers();
     _initializeZegoCloud();
     _debugChatData(); // Debug helper
   }
@@ -125,36 +125,87 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   // Load all users for messaging
-  Future<void> _loadAllUsers() async {
+  // Load matched users for messaging
+  Future<void> _loadMatchedUsers() async {
     try {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      _usersSubscription = _firestore
+      // Get mutual matches
+      final matchesSnapshot = await _firestore
+          .collection('matches')
+          .where('UID', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'match')
+          .where('is_mutual', isEqualTo: true)
+          .get();
+
+      final matchedUserIds = matchesSnapshot.docs
+          .map((doc) => doc.data()['matched_user_ID'] as String)
+          .toList();
+
+      if (matchedUserIds.isEmpty) {
+        setState(() {
+          _allUsers = [];
+        });
+        return;
+      }
+
+      // Load user data for matched users
+      final usersQuery = await _firestore
           .collection('users')
-          .where('UID', isNotEqualTo: user.uid)
-          .snapshots()
-          .listen((snapshot) {
-        if (mounted) {
-          setState(() {
-            _allUsers = snapshot.docs.map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              return _User(
-                id: data['UID'] ?? doc.id,
-                name: data['name'] ?? 'User',
-                avatar: _getFirstPhotoUrl(data['first_photos']) ?? 'https://i.pravatar.cc/200',
-                isOnline: data['is_online'] ?? false,
-              );
-            }).toList();
-          });
-          print('✅ Loaded ${_allUsers.length} users for messaging');
-        }
-      });
+          .where('UID', whereIn: matchedUserIds)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _allUsers = usersQuery.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return _User(
+              id: data['UID'] ?? doc.id,
+              name: data['name'] ?? 'User',
+              avatar: _getFirstPhotoUrl(data['first_photos']) ?? 'https://i.pravatar.cc/200',
+              isOnline: data['is_online'] ?? false,
+            );
+          }).toList();
+        });
+        print('✅ Loaded ${_allUsers.length} matched users for messaging');
+      }
     } catch (e) {
-      print('❌ Error loading users: $e');
+      print('❌ Error loading matched users: $e');
+      // Fallback: load all users if there's an error
+      _loadAllUsersAsFallback();
     }
   }
 
+// Fallback method to load all users
+  Future<void> _loadAllUsersAsFallback() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      final usersQuery = await _firestore
+          .collection('users')
+          .where('UID', isNotEqualTo: user.uid)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _allUsers = usersQuery.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return _User(
+              id: data['UID'] ?? doc.id,
+              name: data['name'] ?? 'User',
+              avatar: _getFirstPhotoUrl(data['first_photos']) ?? 'https://i.pravatar.cc/200',
+              isOnline: data['is_online'] ?? false,
+            );
+          }).toList();
+        });
+        print('⚠ Loaded ${_allUsers.length} users (fallback)');
+      }
+    } catch (e) {
+      print('❌ Fallback error: $e');
+    }
+  }
   // Load ALL chat conversations
   Future<void> _loadAllChats() async {
     try {
@@ -592,6 +643,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   // View user stories
+  // View user stories - updated to handle current user
   void _viewUserStory(_StoryDisplay storyDisplay) async {
     try {
       final user = _auth.currentUser;
@@ -619,6 +671,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ),
           ),
         );
+      } else {
+        // If no stories exist for current user, allow them to create one
+        if (storyDisplay.isCurrentUser) {
+          _createNewStory();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No stories available')),
+          );
+        }
       }
     } catch (e) {
       print('❌ Error viewing story: $e');
@@ -627,7 +688,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
       );
     }
   }
-
   Widget _buildTitleBar(BuildContext context) {
     if (_isSearching) {
       return Expanded(
@@ -707,14 +767,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     if (!_isSearching)
                       Row(
                         children: [
-                          IconButton(
-                            icon: FaIcon(
-                              _showNewChatOptions ? FontAwesomeIcons.comments : FontAwesomeIcons.plus,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                            onPressed: _toggleNewChatOptions,
-                          ),
+                          // IconButton(
+                          //   icon: FaIcon(
+                          //     _showNewChatOptions ? FontAwesomeIcons.comments : FontAwesomeIcons.plus,
+                          //     color: AppColors.primary,
+                          //     size: 20,
+                          //   ),
+                          //   onPressed: _toggleNewChatOptions,
+                          // ),
                           IconButton(
                             icon: const FaIcon(
                               FontAwesomeIcons.magnifyingGlass,
@@ -901,13 +961,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            FontAwesomeIcons.users,
+            FontAwesomeIcons.heart,
             size: 64,
             color: Colors.grey[300],
           ),
           const SizedBox(height: 16),
           const Text(
-            'No users found',
+            'No matches yet',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -918,16 +978,31 @@ class _MessagesScreenState extends State<MessagesScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              'There are no other users to chat with yet',
+              'You need to match with users before you can message them',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey),
             ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const DiscoverScreen(),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Discover People'),
           ),
         ],
       ),
     );
   }
-
   Widget _buildEmptyChatsState() {
     return Container(
       padding: const EdgeInsets.all(40),
@@ -1218,6 +1293,7 @@ class _UserTile extends StatelessWidget {
 }
 
 // ---------- Stories Circle ----------
+// ---------- Stories Circle ----------
 class _StoryCircle extends StatelessWidget {
   const _StoryCircle({
     required this.storyDisplay,
@@ -1231,15 +1307,9 @@ class _StoryCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isYou = storyDisplay.isCurrentUser;
-
     return GestureDetector(
       onTap: () {
-        if (isYou) {
-          onCreateStory();
-        } else {
-          onViewStory(storyDisplay);
-        }
+        onViewStory(storyDisplay);
       },
       child: Column(
         children: [
@@ -1247,20 +1317,46 @@ class _StoryCircle extends StatelessWidget {
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: (!isYou)
+              gradient: (!storyDisplay.isCurrentUser && storyDisplay.story != null)
                   ? const LinearGradient(
                 colors: [AppColors.primary, Color(0xFFFFC107)],
               )
-                  : LinearGradient(
+                  : storyDisplay.isCurrentUser
+                  ? LinearGradient(
                 colors: [AppColors.primary.withOpacity(0.35), Colors.white],
-              ),
+              )
+                  : null,
             ),
             child: CircleAvatar(
               radius: 30,
               backgroundColor: Colors.white,
-              child: CircleAvatar(
-                radius: 28,
-                backgroundImage: NetworkImage(storyDisplay.userAvatar),
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundImage: NetworkImage(storyDisplay.userAvatar),
+                  ),
+                  if (storyDisplay.isCurrentUser)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: Icon(
+                          storyDisplay.story != null
+                              ? Icons.check
+                              : Icons.add,
+                          size: 12,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -1280,7 +1376,6 @@ class _StoryCircle extends StatelessWidget {
     );
   }
 }
-
 // ---------- Chat List Tile ----------
 class _ChatTile extends StatelessWidget {
   const _ChatTile({required this.chat, required this.onTap});
