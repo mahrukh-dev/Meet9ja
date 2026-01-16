@@ -151,13 +151,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Future<int> _getSubscriptionCount(String userId) async {
     try {
-      final subsSnapshot = await FirebaseFirestore.instance
-          .collection('subscriptions')
-          .where('receiver_id', isEqualTo: userId)
-          .where('status', isEqualTo: 'active')
-          .get();
-
-      return subsSnapshot.docs.length;
+      // Use the new method from UserService
+      return await UserService.getSubscriptionCount(userId);
     } catch (e) {
       print('❌ Error getting subscription count: $e');
       return 0;
@@ -1757,7 +1752,9 @@ class _GiftTabState extends State<_GiftTab> {
       final gift = _gifts[giftIndex];
       final giftType = gift['name'].toString().toLowerCase();
       final diamondCost = gift['diamonds'] as int;
+      final coinValue = diamondCost * 10; // 1 diamond = 10 coins
 
+      // Check if user has enough diamonds
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid)
@@ -1778,77 +1775,14 @@ class _GiftTabState extends State<_GiftTab> {
         return;
       }
 
-      final batch = FirebaseFirestore.instance.batch();
-
-      // Deduct diamonds from sender
-      batch.update(
-          FirebaseFirestore.instance.collection('users').doc(currentUser.uid), {
-        'wallet.diamond_balance': FieldValue.increment(-diamondCost),
-      });
-
-      // Convert diamonds to coins for receiver (1 diamond = 10 coins)
-      final coinValue = diamondCost * 10;
-
-      // Add coins to receiver's earnings
-      batch.update(
-        FirebaseFirestore.instance.collection('users').doc(widget.receiverId),
-        {
-          'wallet.coin_balance': FieldValue.increment(coinValue),
-          'wallet.total_earning': FieldValue.increment(coinValue.toDouble()),
-        },
+      // Use UserService to process the gift
+      await UserService.processGiftTransaction(
+        senderId: currentUser.uid,
+        receiverId: widget.receiverId,
+        giftType: giftType,
+        diamondCost: diamondCost,
+        coinValue: coinValue,
       );
-
-      // Record gift transaction
-      final giftId = 'gift_${DateTime.now().millisecondsSinceEpoch}';
-      batch.set(
-        FirebaseFirestore.instance.collection('gifts').doc(giftId),
-        {
-          'gift_id': giftId,
-          'sender_id': currentUser.uid,
-          'receiver_id': widget.receiverId,
-          'gift_type': giftType,
-          'diamond_amount': diamondCost,
-          'coin_value': coinValue,
-          'timestamp': FieldValue.serverTimestamp(),
-          'status': 'sent',
-        },
-      );
-
-      // Record sender transaction
-      batch.set(
-        FirebaseFirestore.instance
-            .collection('transactions')
-            .doc('${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}'),
-        {
-          'transaction_id': '${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}',
-          'type': 'gift_sent',
-          'UID': currentUser.uid,
-          'receiver_UID': widget.receiverId,
-          'diamond_amount': diamondCost,
-          'coin_value': coinValue,
-          'date_time': FieldValue.serverTimestamp(),
-          'gift_type': giftType,
-        },
-      );
-
-      // Record receiver transaction
-      batch.set(
-        FirebaseFirestore.instance.collection('transactions').doc(
-            '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}'),
-        {
-          'transaction_id':
-          '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}',
-          'type': 'gift_received',
-          'UID': widget.receiverId,
-          'sender_UID': currentUser.uid,
-          'diamond_amount': diamondCost,
-          'coin_value': coinValue,
-          'date_time': FieldValue.serverTimestamp(),
-          'gift_type': giftType,
-        },
-      );
-
-      await batch.commit();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1875,65 +1809,8 @@ class _GiftTabState extends State<_GiftTab> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // Gift Message Section
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                const Text(
-                  "Gift Message",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Send a Gift",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          Text(
-                            "270 coins",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.pink,
-                            ),
-                          ),
-                          SizedBox(width: 4),
-                          Icon(
-                            Icons.close,
-                            size: 16,
-                            color: Colors.grey,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
 
-          const SizedBox(height: 20),
+
 
           // Available Gifts
           const Text(
@@ -2096,92 +1973,34 @@ class _SubsTabState extends State<_SubsTab> {
 
       final totalCoins = _selectedSubsAmount * _subPrice;
 
+      // Check if user has enough diamonds (subs are paid with diamonds)
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid)
           .get();
 
       final userData = userDoc.data() as Map<String, dynamic>?;
-      final currentCoins =
-          (userData?['wallet']?['coin_balance'] as int?) ?? 0;
+      final currentDiamonds = (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
+      final requiredDiamonds = _selectedSubsAmount * 40; // 40 diamonds per sub
 
-      if (currentCoins < totalCoins) {
+      if (currentDiamonds < requiredDiamonds) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Not enough coins! You need $totalCoins but have $currentCoins',
+              'Not enough diamonds! You need $requiredDiamonds but have $currentDiamonds',
             ),
           ),
         );
         return;
       }
 
-      final batch = FirebaseFirestore.instance.batch();
-
-      // Deduct coins from sender
-      batch.update(
-          FirebaseFirestore.instance.collection('users').doc(currentUser.uid), {
-        'wallet.coin_balance': FieldValue.increment(-totalCoins),
-      });
-
-      // Add coins to receiver
-      batch.update(
-        FirebaseFirestore.instance.collection('users').doc(widget.receiverId),
-        {
-          'wallet.coin_balance': FieldValue.increment(totalCoins),
-          'wallet.total_earning': FieldValue.increment(totalCoins.toDouble()),
-        },
+      // Use UserService to process subscription
+      await UserService.processSubscriptionTransaction(
+        senderId: currentUser.uid,
+        receiverId: widget.receiverId,
+        subsAmount: _selectedSubsAmount,
+        totalCoins: totalCoins,
       );
-
-      // Record subscription
-      final subId = 'sub_${DateTime.now().millisecondsSinceEpoch}';
-      batch.set(
-        FirebaseFirestore.instance.collection('subscriptions').doc(subId),
-        {
-          'subscription_id': subId,
-          'sender_id': currentUser.uid,
-          'receiver_id': widget.receiverId,
-          'subs_amount': _selectedSubsAmount,
-          'total_coins': totalCoins,
-          'timestamp': FieldValue.serverTimestamp(),
-          'status': 'active',
-          'expires_at': DateTime.now().add(const Duration(days: 30)),
-        },
-      );
-
-      // Record sender transaction
-      batch.set(
-        FirebaseFirestore.instance
-            .collection('transactions')
-            .doc('${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}'),
-        {
-          'transaction_id': '${DateTime.now().millisecondsSinceEpoch}_${currentUser.uid}',
-          'type': 'subs_sent',
-          'UID': currentUser.uid,
-          'receiver_UID': widget.receiverId,
-          'coin_amount': totalCoins,
-          'subs_amount': _selectedSubsAmount,
-          'date_time': FieldValue.serverTimestamp(),
-        },
-      );
-
-      // Record receiver transaction
-      batch.set(
-        FirebaseFirestore.instance.collection('transactions').doc(
-            '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}'),
-        {
-          'transaction_id':
-          '${DateTime.now().millisecondsSinceEpoch}_${widget.receiverId}',
-          'type': 'subs_received',
-          'UID': widget.receiverId,
-          'sender_UID': currentUser.uid,
-          'coin_amount': totalCoins,
-          'subs_amount': _selectedSubsAmount,
-          'date_time': FieldValue.serverTimestamp(),
-        },
-      );
-
-      await batch.commit();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2234,7 +2053,7 @@ class _SubsTabState extends State<_SubsTab> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  "Each sub costs $_subPrice coins",
+                  "Each sub costs $_subPrice diamonds",
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.blue,
@@ -4549,27 +4368,49 @@ class _WalletTabState extends State<_WalletTab> {
 
                   const SizedBox(height: 16),
 
-                  // Info
+                  // In the info section of _WalletTabState
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(top: 20),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.blue[50],
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
                     ),
-                    child: const Column(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '💡 Important Information:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        const Text(
+                          '💡 How it works:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
                         ),
-                        SizedBox(height: 4),
-                        Text(
-                          '• Withdrawals processed within 1-3 business days\n'
-                              '• Available in supported countries\n'
-                              '• No hidden fees\n'
-                              '• Minimum withdrawal: \$10 USD',
-                          style: TextStyle(fontSize: 11),
+                        const SizedBox(height: 8),
+                        _InfoBullet(
+                          icon: '💎',
+                          text: 'Diamonds: Purchased currency for sending gifts & subscriptions',
+                        ),
+                        _InfoBullet(
+                          icon: '🪙',
+                          text: 'Coins: Earned from gifts & subscriptions received from others',
+                        ),
+                        _InfoBullet(
+                          icon: '💰',
+                          text: 'Exchange Rate: 1 Diamond = 10 Coins | 100 Coins = \$1 USD',
+                        ),
+                        _InfoBullet(
+                          icon: '🎁',
+                          text: 'Gifts & Subs: Use Diamonds to send gifts and subscriptions',
+                        ),
+                        _InfoBullet(
+                          icon: '🏦',
+                          text: 'Withdraw: Convert Coins to USD and withdraw to bank account',
+                        ),
+                        _InfoBullet(
+                          icon: '⚡',
+                          text: 'Processing: Withdrawals processed in 1-3 business days',
                         ),
                       ],
                     ),
@@ -5144,6 +4985,7 @@ class _WalletTabState extends State<_WalletTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Balance Overview Section
+          // In the build method of _WalletTabState, update the balance section:
           Card(
             elevation: 4,
             shape: RoundedRectangleBorder(
@@ -5172,46 +5014,84 @@ class _WalletTabState extends State<_WalletTab> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Balances
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _BalanceItem(
-                        label: 'Diamonds',
-                        value: '$diamondBalance 💎',
-                        subtitle: 'Purchased',
-                        color: Colors.white,
-                      ),
-                      _BalanceItem(
-                        label: 'Coins',
-                        value: '$coinBalance 🪙',
-                        subtitle: 'Earned',
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Available USD
+                  // Diamonds Balance (Purchased - For Gifting)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Column(
                       children: [
-                        const Icon(FontAwesomeIcons.dollarSign,
-                            color: Colors.white, size: 16),
-                        const SizedBox(width: 8),
+                        Text(
+                          '$diamondBalance 💎',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const Text(
+                          'DIAMONDS',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'For sending gifts & subscriptions',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Coins Balance (Earned - For Withdrawal)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          '$coinBalance 🪙',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const Text(
+                          'COINS',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
                         Text(
                           'Available: \$${availableUSD.toStringAsFixed(2)} USD',
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            color: Colors.white70,
+                            fontSize: 10,
+                          ),
+                        ),
+                        const Text(
+                          'Can be withdrawn to bank account',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
                           ),
                         ),
                       ],

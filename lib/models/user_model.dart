@@ -6,6 +6,7 @@ class UserModel {
   final String name;
   final String username;
   final int age;
+  final String gender;
   final String? photoUrl;
   final Map<String, dynamic> mode;
   final String preferences;
@@ -36,6 +37,7 @@ class UserModel {
     required this.email,
     required this.name,
     required this.age,
+    required this.gender,
     required this.username,
     this.photoUrl,
     required this.mode,
@@ -68,6 +70,7 @@ class UserModel {
       uid: data['UID'] ?? '',
       email: data['email'] ?? '',
       name: data['name'] ?? '',
+      gender: data['gender'] ?? '',
       age: data['age'] ?? 0,
       username: data['username'] ?? '',
       photoUrl: data['photo_url'],
@@ -103,6 +106,7 @@ class UserModel {
       'email': email,
       'name': name,
       'age': age,
+      'gender': gender,
       'username': username,
       'photo_url': photoUrl,
       'mode': mode,

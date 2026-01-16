@@ -30,6 +30,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   int? _modeIndex = 1;
   int? _travelWithIndex = 3;
   bool _acceptedTerms = false;
+  String? _selectedGender;
 
   bool _isCheckingUsername = false;
   bool _isUsernameAvailable = false;
@@ -400,9 +401,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   void _next() async {
-    if (_step < 3) {
+    if (_step < 4) { // Changed from 3 to 4 (now 5 steps total)
       // Validate current step before proceeding
-      if (_step == 1 && _selectedPhotos.length < 2) {
+      if (_step == 1 && _selectedGender == null) { // Gender step validation
+        _showErrorDialog('Please select your gender to continue');
+        return;
+      }
+
+      if (_step == 2 && _selectedPhotos.length < 2) { // Changed step index
         _showErrorDialog('Please add at least 2 photos to continue');
         return;
       }
@@ -418,21 +424,27 @@ class _SignUpScreenState extends State<SignUpScreen> {
       await _completeRegistration();
     }
   }
-
   Future<void> _completeRegistration() async {
     // Validate all fields before registration
     if (_nameCtrl.text.isEmpty ||
         _emailCtrl.text.isEmpty ||
         _passwordCtrl.text.isEmpty ||
         _ageCtrl.text.isEmpty ||
-        _usernameCtrl.text.isEmpty) {
-      _showErrorDialog('Please fill in all fields');
+        _usernameCtrl.text.isEmpty ||
+        _selectedGender == null) { // Add gender validation
+      _showErrorDialog('Please fill in all fields including gender');
       return;
     }
 
     // Validate name
     if (_nameCtrl.text.trim().isEmpty) {
       _showErrorDialog('Please enter your name');
+      return;
+    }
+
+    // Validate gender
+    if (_selectedGender == null) {
+      _showErrorDialog('Please select your gender');
       return;
     }
 
@@ -495,6 +507,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       print('📝 Starting registration process...');
       print('📧 Email: ${_emailCtrl.text.trim()}');
       print('👤 Username: $trimmedUsername');
+      print('🚻 Gender: $_selectedGender');
       print('📸 Photos to upload: ${_selectedPhotos.length}');
 
       await FirebaseService.completeRegistration(
@@ -503,6 +516,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         name: _nameCtrl.text.trim(),
         age: int.parse(_ageCtrl.text.trim()),
         username: trimmedUsername,
+        gender: _selectedGender!, // Add gender parameter
         selectedMode: _getSelectedMode(),
         travelPreference: _getTravelPreference(),
         photoFiles: _selectedPhotos,
@@ -535,7 +549,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
       setState(() => _isUploadingPhotos = false);
     }
   }
-
   void _showVerificationReminder() {
     showDialog(
       context: context,
@@ -680,7 +693,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: kSide),
                       child: _ProgressLine(
-                        progress: (_step + 1) / 4.0,
+                        progress: (_step + 1) / 5.0,
                         trackColor: Colors.black12,
                         barColor: AppColors.primary,
                       ),
@@ -694,6 +707,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         children: [
                           _buildNameStep(),
+                          _buildGenderStep(),
                           _buildPhotosStep(),
                           _buildModeStep(),
                           _buildTravelWithStep(),
@@ -888,7 +902,112 @@ class _SignUpScreenState extends State<SignUpScreen> {
       ),
     );
   }
+// ---------- Step 2: Gender Selection ----------
+  Widget _buildGenderStep() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: kSide),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _H1("What's your gender?"),
+          const SizedBox(height: 8),
+          const _BodyText("This helps us match you with people you're interested in"),
+          const SizedBox(height: 20),
 
+          // Gender selection cards
+          Column(
+            children: [
+              // Male card
+              _GenderCard(
+                label: "Male",
+                icon: Icons.male_rounded,
+                iconColor: Colors.blue,
+                selected: _selectedGender == 'male',
+                onTap: () => setState(() => _selectedGender = 'male'),
+              ),
+              const SizedBox(height: 16),
+
+              // Female card
+              _GenderCard(
+                label: "Female",
+                icon: Icons.female_rounded,
+                iconColor: Colors.pink,
+                selected: _selectedGender == 'female',
+                onTap: () => setState(() => _selectedGender = 'female'),
+              ),
+              const SizedBox(height: 16),
+
+              // Non-binary/Other card
+              _GenderCard(
+                label: "Prefer not to say",
+                icon: Icons.person_rounded,
+                iconColor: Colors.purple,
+                selected: _selectedGender == 'other',
+                onTap: () => setState(() => _selectedGender = 'other'),
+              ),
+            ],
+          ),
+
+          // Info text
+          Container(
+            margin: const EdgeInsets.only(top: 24),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, color: AppColors.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      "How gender matching works",
+                      style: TextStyle(
+                        color: Colors.black87,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "• By default, male users will see female profiles\n"
+                      "• Female users will see male profiles\n"
+                      "• You can adjust this in your preferences later",
+                  style: TextStyle(
+                    color: Colors.black54,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+
+          // Validation message
+          if (_selectedGender == null)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Please select your gender to continue',
+                style: TextStyle(
+                  color: Colors.orange[700],
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
   // ---------- Step 2: Photos ----------
   Widget _buildPhotosStep() {
     return Padding(
@@ -1090,7 +1209,89 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 }
+// ===== Gender Card Widget =====
+class _GenderCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color iconColor;
+  final bool selected;
+  final VoidCallback onTap;
 
+  const _GenderCard({
+    required this.label,
+    required this.icon,
+    required this.iconColor,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Ink(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withOpacity(0.15) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? AppColors.primary : Colors.grey.shade300,
+            width: selected ? 2.5 : 1.5,
+          ),
+          boxShadow: selected
+              ? [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ]
+              : [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                size: 30,
+                color: iconColor,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? AppColors.primary : Colors.black87,
+                ),
+              ),
+            ),
+            if (selected)
+              Icon(
+                Icons.check_circle,
+                color: AppColors.primary,
+                size: 24,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 // ===== Username Field with Validation =====
 class _UsernameField extends StatelessWidget {
   final TextEditingController controller;

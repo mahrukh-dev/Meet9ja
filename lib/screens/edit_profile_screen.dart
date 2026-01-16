@@ -29,6 +29,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _tiktokController;
   late TextEditingController _youtubeController;
 
+  // Add gender variable
+  String? _selectedGender;
+  // Gender options
+  final List<String> _genderOptions = ['Male', 'Female', 'Prefer not to say'];
+
   // Preferences State Variables
   String _whoToDate = "Women";
   RangeValues _ageRange = const RangeValues(18, 28);
@@ -99,6 +104,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _facebookController = TextEditingController(text: widget.userProfile.facebook ?? '');
     _tiktokController = TextEditingController(text: widget.userProfile.tiktok ?? '');
     _youtubeController = TextEditingController(text: widget.userProfile.youtube ?? '');
+    final userGender = widget.userProfile.gender?.toLowerCase() ?? 'male';
+    if (userGender == 'male') {
+      _selectedGender = 'Male';
+    } else if (userGender == 'female') {
+      _selectedGender = 'Female';
+    } else {
+      _selectedGender = 'Prefer not to say';
+    }
+
   }
 
   void _loadCurrentPhotos() {
@@ -187,10 +201,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
 
     try {
+
+      String genderForDB = 'male'; // default
+      if (_selectedGender == 'Male') {
+        genderForDB = 'male';
+      } else if (_selectedGender == 'Female') {
+        genderForDB = 'female';
+      } else if (_selectedGender == 'Prefer not to say') {
+        genderForDB = 'other';
+      }
+
       final userUpdates = <String, dynamic>{
         'name': _nameController.text.trim(),
         'username': _usernameController.text.trim(),
         'bio': _bioController.text.trim(),
+        'gender': genderForDB,
         'location': _locationController.text.trim(),
         'age': int.tryParse(_ageController.text.trim()) ?? widget.userProfile.age,
         'website': _websiteController.text.trim(),
@@ -394,6 +419,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(height: 16),
 
+// Add gender dropdown here
+                  _buildGenderDropdown(),
+                  const SizedBox(height: 16),
+
                   _buildTextField(
                     controller: _usernameController,
                     label: 'Username',
@@ -512,7 +541,80 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
     );
   }
-
+  Widget _buildGenderDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Gender',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey),
+          ),
+          child: DropdownButtonFormField<String>(
+            value: _selectedGender,
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: InputBorder.none,
+              prefixIcon: Icon(
+                _getGenderIcon(_selectedGender),
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+            items: _genderOptions.map((String gender) {
+              return DropdownMenuItem<String>(
+                value: gender,
+                child: Text(
+                  gender,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
+                ),
+              );
+            }).toList(),
+            onChanged: (String? newValue) {
+              setState(() {
+                _selectedGender = newValue;
+              });
+            },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please select your gender';
+              }
+              return null;
+            },
+            dropdownColor: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
+            style: const TextStyle(color: Colors.black87),
+            isExpanded: true,
+          ),
+        ),
+      ],
+    );
+  }
+  IconData _getGenderIcon(String? gender) {
+    switch (gender) {
+      case 'Male':
+        return FontAwesomeIcons.mars;
+      case 'Female':
+        return FontAwesomeIcons.venus;
+      case 'Prefer not to say':
+        return FontAwesomeIcons.person;
+      default:
+        return FontAwesomeIcons.user;
+    }
+  }
   Widget _buildSectionHeader(String title) {
     return Text(
       title,

@@ -1,4 +1,6 @@
 import 'dart:ui';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -59,6 +61,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Load profiles from Firebase
+  // In your _HomeScreenState class, update the _loadProfiles method:
+
   Future<void> _loadProfiles() async {
     try {
       print('🔄 Starting to load profiles...');
@@ -67,22 +71,27 @@ class _HomeScreenState extends State<HomeScreen> {
         _errorMessage = '';
       });
 
-      final profiles = await getDiscoveryProfiles();
-      print('📥 Loaded ${profiles.length} profiles from Firebase');
+      // First get current user's gender
+      final currentUserGender = await _getCurrentUserGender();
+      print('👤 Current user gender: $currentUserGender');
+
+      // Get all discovery profiles
+      final allProfiles = await getDiscoveryProfiles();
+
+      // Filter profiles based on opposite gender
+      final filteredProfiles = allProfiles.where((profile) {
+        final profileGender = (profile['gender'] ?? 'male').toString().toLowerCase();
+        final targetGender = currentUserGender == 'male' ? 'female' : 'male';
+        return profileGender == targetGender;
+      }).toList();
+
+      print('📥 Loaded ${filteredProfiles.length} filtered profiles (${currentUserGender == 'male' ? 'female' : 'male'})');
 
       if (mounted) {
         setState(() {
-          _profiles = profiles;
+          _profiles = filteredProfiles;
           _isLoading = false;
         });
-
-        // Auto-refresh if no profiles found
-        if (profiles.isEmpty) {
-          print('🔄 No profiles found, scheduling refresh...');
-          Future.delayed(const Duration(seconds: 3), _loadProfiles);
-        }
-
-        print('✅ Profiles state updated: ${_profiles.length} profiles');
       }
     } catch (e) {
       print('❌ Error in _loadProfiles: $e');
@@ -95,6 +104,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+// Add this helper method to get current user's gender
+  Future<String> _getCurrentUserGender() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return 'male'; // Default to male if no user
+
+      // Get user data from Firestore
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+
+      if (userDoc.exists) {
+        return (userDoc.data()?['gender'] ?? 'male').toString().toLowerCase();
+      }
+      return 'male'; // Default to male
+    } catch (e) {
+      print('❌ Error getting user gender: $e');
+      return 'male'; // Default to male on error
+    }
+  }
   // Dummy data fallback
   void _loadDummyData() {
     setState(() {

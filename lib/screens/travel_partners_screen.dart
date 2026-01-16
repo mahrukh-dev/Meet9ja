@@ -5,6 +5,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:meet9ja/models/user_model.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
 import 'package:meet9ja/screens/other_dating_profile_screen.dart';
+import 'package:meet9ja/db_functions/likeProfile.dart';
+import 'package:meet9ja/db_functions/passProfile.dart';
+import 'package:meet9ja/db_functions/getUserName.dart';
+import 'package:meet9ja/db_functions/isUserPremium.dart';
 import '../constants/app_colors.dart';
 
 class TravelPartnersScreen extends StatefulWidget {
@@ -28,6 +32,7 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
   bool _isLoading = true;
   String _errorMessage = '';
   final Set<String> _likedUsers = {};
+  final Set<String> _passedUsers = {};
 
   @override
   void initState() {
@@ -81,8 +86,11 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
       // Fetch user profiles
       final users = await UserService.getUsersByIds(limitedUserIds);
 
+      // Filter out already liked/passed users
+      final filteredUsers = await _filterLikedAndPassedUsers(users, currentUserId);
+
       setState(() {
-        _travelPartners = users;
+        _travelPartners = filteredUsers;
         _isLoading = false;
       });
 
@@ -95,31 +103,108 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
     }
   }
 
-  Future<void> _likeUser(String userId) async {
+  Future<List<UserModel>> _filterLikedAndPassedUsers(List<UserModel> users, String currentUserId) async {
     try {
-      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-      if (currentUserId == null) return;
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUserId)
+          .get();
 
-      await UserService.likeProfile(currentUserId, userId);
+      if (!userDoc.exists) return users;
 
-      setState(() {
-        _likedUsers.add(userId);
-      });
+      final userData = userDoc.data() as Map<String, dynamic>;
+
+      // Get arrays from user document
+      final likedProfiles = List<String>.from(userData['liked_profiles'] ?? []);
+      final passedProfiles = List<String>.from(userData['passed_profiles'] ?? []);
+
+      // Filter out users already liked or passed
+      return users.where((user) {
+        return !likedProfiles.contains(user.uid) &&
+            !passedProfiles.contains(user.uid);
+      }).toList();
+
+    } catch (e) {
+      print('Error filtering users: $e');
+      return users;
+    }
+  }
+
+  // Like user function - same logic as HomeScreen
+  Future<void> _likeUser(UserModel user) async {
+    try {
+      final userId = user.uid;
+      final name = user.name;
+
+      print('❤️ Liking travel partner: $userId');
+
+      // Call the same likeProfile function as HomeScreen
+      await likeProfile(userId);
+
+      // Immediately remove from list and add to liked set
+      if (mounted) {
+        setState(() {
+          _travelPartners.removeWhere((u) => u.uid == userId);
+          _likedUsers.add(userId);
+        });
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Liked user profile'),
+          content: Text("You liked $name"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 800),
           backgroundColor: Colors.green,
-          duration: Duration(seconds: 1),
         ),
       );
     } catch (e) {
-      print('Error liking user: $e');
+      print('❌ Error in _likeUser: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to like user: $e'),
+          content: Text("Error: $e"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1500),
           backgroundColor: Colors.red,
-          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  // Pass user function - same logic as HomeScreen
+  Future<void> _passUser(UserModel user) async {
+    try {
+      final userId = user.uid;
+      final name = user.name;
+
+      print('👎 Passing on travel partner: $userId');
+
+      // Call the same passProfile function as HomeScreen
+      await passProfile(userId);
+
+      // Immediately remove from list and add to passed set
+      if (mounted) {
+        setState(() {
+          _travelPartners.removeWhere((u) => u.uid == userId);
+          _passedUsers.add(userId);
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("You passed on $name"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 700),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      print('❌ Error in _passUser: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1500),
+          backgroundColor: Colors.red,
         ),
       );
     }
@@ -263,6 +348,32 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
                 fontSize: 13,
               ),
             ),
+            SizedBox(height: 16),
+            // Show if all users were liked/passed
+            if (_likedUsers.isNotEmpty || _passedUsers.isNotEmpty)
+              Column(
+                children: [
+                  SizedBox(height: 20),
+                  Text(
+                    'You\'ve liked or passed on all available travel partners',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _loadTravelPartners,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text('Check for new travelers'),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
@@ -325,7 +436,37 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
               color: Colors.grey.shade600,
             ),
           ),
-          SizedBox(height: 16),
+
+          // Stats row
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Row(
+              children: [
+                _StatChip(
+                  icon: FontAwesomeIcons.heart,
+                  count: _likedUsers.length,
+                  label: 'Liked',
+                  color: Colors.green,
+                ),
+                SizedBox(width: 8),
+                _StatChip(
+                  icon: FontAwesomeIcons.xmark,
+                  count: _passedUsers.length,
+                  label: 'Passed',
+                  color: Colors.orange,
+                ),
+                SizedBox(width: 8),
+                _StatChip(
+                  icon: FontAwesomeIcons.users,
+                  count: _travelPartners.length,
+                  label: 'Available',
+                  color: AppColors.primary,
+                ),
+              ],
+            ),
+          ),
+
+          SizedBox(height: 4),
 
           // Travel Partners Grid
           GridView.builder(
@@ -344,7 +485,8 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
               return _TravelPartnerCard(
                 user: user,
                 isLiked: isLiked,
-                onLike: () => _likeUser(user.uid),
+                onLike: () => _likeUser(user),
+                onPass: () => _passUser(user),
                 onTap: () => _viewUserProfile(user),
               );
             },
@@ -400,6 +542,17 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
                   '• Discover new places through friends',
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
+                SizedBox(height: 12),
+                Divider(),
+                SizedBox(height: 8),
+                Text(
+                  'Note: When you like or pass on someone, they will be removed from this list just like in the main discovery feed.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ],
             ),
           ),
@@ -408,16 +561,19 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
     );
   }
 }
+
 class _TravelPartnerCard extends StatelessWidget {
   final UserModel user;
   final bool isLiked;
   final VoidCallback onLike;
+  final VoidCallback onPass;
   final VoidCallback onTap;
 
   const _TravelPartnerCard({
     required this.user,
     required this.isLiked,
     required this.onLike,
+    required this.onPass,
     required this.onTap,
   });
 
@@ -470,31 +626,102 @@ class _TravelPartnerCard extends StatelessWidget {
               )
                   : Stack(
                 children: [
-                  // Like button
+                  // Like button (top right)
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.9),
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        onPressed: onLike,
-                        icon: Icon(
-                          isLiked
-                              ? FontAwesomeIcons.solidHeart
-                              : FontAwesomeIcons.heart,
-                          size: 16,
-                          color: isLiked
-                              ? AppColors.primary
-                              : Colors.grey.shade600,
+                    child: GestureDetector(
+                      onTap: onLike,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        padding: EdgeInsets.all(6),
-                        constraints: BoxConstraints(),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            isLiked
+                                ? FontAwesomeIcons.solidHeart
+                                : FontAwesomeIcons.heart,
+                            size: 16,
+                            color: isLiked
+                                ? AppColors.primary
+                                : Colors.grey.shade600,
+                          ),
+                        ),
                       ),
                     ),
                   ),
+
+                  // Pass button (bottom left)
+                  Positioned(
+                    bottom: 8,
+                    left: 8,
+                    child: GestureDetector(
+                      onTap: onPass,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            FontAwesomeIcons.xmark,
+                            size: 16,
+                            color: Colors.red.shade600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Premium badge (top left)
+                  if (user.type == 'premium')
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              FontAwesomeIcons.crown,
+                              size: 10,
+                              color: AppColors.primary,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'Premium',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -519,12 +746,6 @@ class _TravelPartnerCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (user.type == 'premium')
-                        Icon(
-                          FontAwesomeIcons.certificate,
-                          size: 12,
-                          color: AppColors.primary,
-                        ),
                     ],
                   ),
                   SizedBox(height: 4),
@@ -570,6 +791,51 @@ class _TravelPartnerCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  final String label;
+  final Color color;
+
+  const _StatChip({
+    required this.icon,
+    required this.count,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 12,
+            color: color,
+          ),
+          SizedBox(width: 6),
+          Text(
+            '$count $label',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

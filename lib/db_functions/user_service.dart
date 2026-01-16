@@ -996,6 +996,206 @@ class UserService {
         .toList());
   }
 
+  // Add these methods to your UserService class
+
+// Calculate subscription count properly (count each sub individually)
+  static Future<int> getSubscriptionCount(String userId) async {
+    try {
+      final subsSnapshot = await FirebaseFirestore.instance
+          .collection('subscriptions')
+          .where('receiver_id', isEqualTo: userId)
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      int totalSubs = 0;
+
+      for (final doc in subsSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final subsAmount = data['subs_amount'] as int? ?? 1; // Default to 1 if not specified
+        totalSubs += subsAmount;
+      }
+
+      return totalSubs;
+    } catch (e) {
+      print('❌ Error getting subscription count: $e');
+      return 0;
+    }
+  }
+
+// Process gift transaction with proper diamond/coin handling
+  static Future<void> processGiftTransaction({
+    required String senderId,
+    required String receiverId,
+    required String giftType,
+    required int diamondCost,
+    required int coinValue,
+  }) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 1. Deduct diamonds from sender
+      final senderRef = FirebaseFirestore.instance.collection('users').doc(senderId);
+      batch.update(senderRef, {
+        'wallet.diamond_balance': FieldValue.increment(-diamondCost),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // 2. Add coins to receiver (NOT diamonds)
+      final receiverRef = FirebaseFirestore.instance.collection('users').doc(receiverId);
+      batch.update(receiverRef, {
+        'wallet.coin_balance': FieldValue.increment(coinValue),
+        'wallet.total_earning': FieldValue.increment(coinValue.toDouble()),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Record gift transaction
+      final giftId = 'gift_${DateTime.now().millisecondsSinceEpoch}';
+      final giftRef = FirebaseFirestore.instance.collection('gifts').doc(giftId);
+      batch.set(giftRef, {
+        'gift_id': giftId,
+        'sender_id': senderId,
+        'receiver_id': receiverId,
+        'gift_type': giftType,
+        'diamond_amount': diamondCost,
+        'coin_value': coinValue,
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'sent',
+      });
+
+      // 4. Record transactions for both users
+      await _recordTransaction(
+        userId: senderId,
+        type: 'gift_sent',
+        details: {
+          'diamond_amount': diamondCost,
+          'coin_value': coinValue,
+          'receiver_id': receiverId,
+          'gift_type': giftType,
+        },
+      );
+
+      await _recordTransaction(
+        userId: receiverId,
+        type: 'gift_received',
+        details: {
+          'diamond_amount': diamondCost,
+          'coin_value': coinValue,
+          'sender_id': senderId,
+          'gift_type': giftType,
+        },
+      );
+
+      await batch.commit();
+      print('✅ Gift transaction processed: $diamondCost diamonds -> $coinValue coins');
+
+    } catch (e) {
+      print('❌ Error processing gift transaction: $e');
+      throw 'Failed to process gift: $e';
+    }
+  }
+
+// Process subscription transaction
+  static Future<void> processSubscriptionTransaction({
+    required String senderId,
+    required String receiverId,
+    required int subsAmount,
+    required int totalCoins,
+  }) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 1. Deduct diamonds from sender (subs are paid with diamonds)
+      final senderRef = FirebaseFirestore.instance.collection('users').doc(senderId);
+      batch.update(senderRef, {
+        'wallet.diamond_balance': FieldValue.increment(-_getDiamondCostForSubs(subsAmount)),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // 2. Add coins to receiver for each subscription
+      final receiverRef = FirebaseFirestore.instance.collection('users').doc(receiverId);
+      batch.update(receiverRef, {
+        'wallet.coin_balance': FieldValue.increment(totalCoins),
+        'wallet.total_earning': FieldValue.increment(totalCoins.toDouble()),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Record subscription (store each sub individually for proper counting)
+      for (int i = 0; i < subsAmount; i++) {
+        final subId = 'sub_${DateTime.now().millisecondsSinceEpoch}_$i';
+        final subRef = FirebaseFirestore.instance.collection('subscriptions').doc(subId);
+        batch.set(subRef, {
+          'subscription_id': subId,
+          'sender_id': senderId,
+          'receiver_id': receiverId,
+          'subs_amount': 1, // Each subscription counts as 1
+          'total_coins': totalCoins ~/ subsAmount, // Divide coins equally among subs
+          'timestamp': FieldValue.serverTimestamp(),
+          'status': 'active',
+          'expires_at': DateTime.now().add(const Duration(days: 30)),
+        });
+      }
+
+      // 4. Record transactions
+      await _recordTransaction(
+        userId: senderId,
+        type: 'subs_sent',
+        details: {
+          'subs_amount': subsAmount,
+          'total_coins': totalCoins,
+          'receiver_id': receiverId,
+        },
+      );
+
+      await _recordTransaction(
+        userId: receiverId,
+        type: 'subs_received',
+        details: {
+          'subs_amount': subsAmount,
+          'total_coins': totalCoins,
+          'sender_id': senderId,
+        },
+      );
+
+      await batch.commit();
+      print('✅ Subscription processed: $subsAmount subs for $totalCoins coins');
+
+    } catch (e) {
+      print('❌ Error processing subscription: $e');
+      throw 'Failed to process subscription: $e';
+    }
+  }
+
+// Helper method to calculate diamond cost for subs
+  static int _getDiamondCostForSubs(int subsAmount) {
+    // 40 diamonds per sub (adjust as needed)
+    return subsAmount * 40;
+  }
+
+// Helper method to record transactions
+  static Future<void> _recordTransaction({
+    required String userId,
+    required String type,
+    required Map<String, dynamic> details,
+  }) async {
+    try {
+      final transactionId = '${DateTime.now().millisecondsSinceEpoch}_$userId';
+
+      await FirebaseFirestore.instance
+          .collection('transactions')
+          .doc(transactionId)
+          .set({
+        'transaction_id': transactionId,
+        'type': type,
+        'UID': userId,
+        'date_time': FieldValue.serverTimestamp(),
+        ...details,
+      });
+
+    } catch (e) {
+      print('❌ Error recording transaction: $e');
+    }
+  }
+
   // Get diamond balance (purchased currency)
   static int getDiamondBalance(UserModel user) {
     final balance = user.wallet['diamond_balance'];
