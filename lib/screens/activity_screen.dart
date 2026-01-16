@@ -619,6 +619,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
         );
 
       case 'mutual_match':
+        final targetUserName = notification['targetUserName'] ?? 'You';
         return RichText(
           text: TextSpan(
             style: const TextStyle(
@@ -629,7 +630,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             children: [
               const TextSpan(text: "It's a match! "),
               TextSpan(
-                text: 'You and $fromUserName ',
+                text: '$targetUserName and $fromUserName ',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const TextSpan(text: 'liked each other '),

@@ -39,19 +39,39 @@ class UserService {
 
         if (targetLikedProfiles.contains(currentUserId)) {
           // It's a match! Create a match document
-          final matchId = '${currentUserId}${targetUserId}${DateTime.now().millisecondsSinceEpoch}';
+          final matchId = '${currentUserId}_${targetUserId}_${DateTime.now().millisecondsSinceEpoch}';
+
+          // Get both users' data for notifications
+          final currentUserDoc = await _firestore.collection('users').doc(currentUserId).get();
+          final currentUserData = currentUserDoc.data() as Map<String, dynamic>;
+
+          final targetUserDoc = await _firestore.collection('users').doc(targetUserId).get();
+          final targetUserData = targetUserDoc.data() as Map<String, dynamic>;
+
+          final currentUserName = currentUserData['name'] ?? 'User';
+          final targetUserName = targetUserData['name'] ?? 'User';
+          final currentUserPhoto = getFirstPhotoUrl(currentUserData['first_photos']);
+          final targetUserPhoto = getFirstPhotoUrl(targetUserData['first_photos']);
+
           await _firestore.collection('matches').doc(matchId).set({
             'matchId': matchId,
             'user1Id': currentUserId,
+            'user1Name': currentUserName,
             'user2Id': targetUserId,
+            'user2Name': targetUserName,
             'matchedAt': FieldValue.serverTimestamp(),
             'status': 'active',
           });
 
-          // Send match notification to both users
+          // Send match notification to both users with proper user data
           await NotificationTriggers.onMutualMatch(
-            currentUserId,
-            targetUserId
+            user1Id: currentUserId,
+            user1Name: currentUserName,
+            user1Photo: currentUserPhoto,
+            user2Id: targetUserId,
+            user2Name: targetUserName,
+            user2Photo: targetUserPhoto,
+            matchId: matchId,
           );
         }
       }
@@ -62,6 +82,18 @@ class UserService {
       print('❌ Error liking profile: $e');
       throw 'Failed to like profile: $e';
     }
+  }
+
+// Helper method to get first photo
+  static String? getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
   }
 
   static Future<void> unlikeProfile(String currentUserId, String targetUserId) async {

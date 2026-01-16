@@ -88,6 +88,7 @@ class NotificationService {
   }
 
   // Create mutual match notification specifically
+  // Create mutual match notification specifically
   static Future<void> createMutualMatchNotification({
     required String targetUserId,
     required String fromUserId,
@@ -96,6 +97,15 @@ class NotificationService {
     required String matchId,
   }) async {
     try {
+      // Get target user's name for personalized message
+      final targetUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(targetUserId)
+          .get();
+
+      final targetUserData = targetUserDoc.data();
+      final targetUserName = targetUserData?['name'] ?? 'You';
+
       final notificationId = 'mutual_match_${matchId}_${DateTime.now().millisecondsSinceEpoch}';
 
       await _firestore.collection('notifications').doc(notificationId).set({
@@ -105,6 +115,7 @@ class NotificationService {
         'fromUserName': fromUserName,
         'fromUserPhoto': fromUserPhoto,
         'targetUserId': targetUserId,
+        'targetUserName': targetUserName, // Add target user's name
         'relatedUserId': fromUserId,
         'matchId': matchId,
         'isRead': false,
@@ -268,40 +279,23 @@ class NotificationTriggers {
   }
 
   // Trigger when it's a mutual match - FIXED
-  static Future<void> onMutualMatch(String user1Id, String user2Id) async {
+  // Trigger when it's a mutual match - UPDATED VERSION
+  static Future<void> onMutualMatch({
+    required String user1Id,
+    required String user1Name,
+    required String? user1Photo,
+    required String user2Id,
+    required String user2Name,
+    required String? user2Photo,
+    required String matchId,
+  }) async {
     try {
-      // Fetch both users' data
-      final user1Doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user1Id)
-          .get();
-
-      final user2Doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user2Id)
-          .get();
-
-      if (!user1Doc.exists || !user2Doc.exists) {
-        print('❌ One or both users not found');
-        return;
-      }
-
-      final user1Data = user1Doc.data()!;
-      final user2Data = user2Doc.data()!;
-
-      final user1Name = user1Data['name'] ?? 'User';
-      final user2Name = user2Data['name'] ?? 'User';
-      final user1Photo = NotificationService.getFirstPhotoUrl(user1Data['first_photos']) ?? '';
-      final user2Photo = NotificationService.getFirstPhotoUrl(user2Data['first_photos']) ?? '';
-
-      final matchId = '${user1Id}_$user2Id';
-
       // Create notification for user1 - from user2's perspective
       await NotificationService.createMutualMatchNotification(
         targetUserId: user1Id,
         fromUserId: user2Id,
         fromUserName: user2Name,
-        fromUserPhoto: user2Photo,
+        fromUserPhoto: user2Photo ?? '',
         matchId: matchId,
       );
 
@@ -310,7 +304,7 @@ class NotificationTriggers {
         targetUserId: user2Id,
         fromUserId: user1Id,
         fromUserName: user1Name,
-        fromUserPhoto: user1Photo,
+        fromUserPhoto: user1Photo ?? '',
         matchId: matchId,
       );
 
@@ -319,7 +313,6 @@ class NotificationTriggers {
       print('❌ Error creating mutual match notifications: $e');
     }
   }
-
   // Trigger when someone comments on post
   static Future<void> onPostComment({
     required String targetUserId,
