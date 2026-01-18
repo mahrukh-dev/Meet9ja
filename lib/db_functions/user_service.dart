@@ -826,6 +826,26 @@ class UserService {
     return user.type == 'premium';
   }
 
+  // In UserService class, add these methods:
+
+  static Future<bool> isUserPremium(String userId) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        return userData['type'] == 'premium';
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error checking premium status: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> canAccessTravelMode(String userId) async {
+    return await isUserPremium(userId);
+  }
+
   // Live stream functionality
   static Future<void> startLiveStream({
     required String userId,

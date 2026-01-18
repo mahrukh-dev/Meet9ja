@@ -15,6 +15,7 @@ import 'package:meet9ja/models/user_model.dart';
 import 'package:meet9ja/models/travel_history_model.dart';
 import 'package:meet9ja/db_functions/image_service.dart';
 import 'package:meet9ja/screens/dating_profile.dart';
+import 'package:meet9ja/screens/subscription_screen.dart';
 import 'package:meet9ja/screens/travel_partners_screen.dart';
 import '../constants/app_colors.dart';
 import 'MatchedUserScreen.dart';
@@ -64,6 +65,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
+  }
+  // Add this method to your _DiscoverScreenState class:
+  Future<bool> _checkIfUserCanAccessTravelMode() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    return await UserService.canAccessTravelMode(user.uid);
   }
 
   void _loadFirebaseData() {
@@ -639,26 +647,43 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     if (_searchQuery.isNotEmpty)
                       _SearchResults(searchQuery: _searchQuery)
                     else
-                      _DiscoverContent(
-                        travelAlertsOn: _travelAlertsOn,
-                        onTravelAlertsChanged: (value) {
-                          setState(() {
-                            _travelAlertsOn = value;
-                          });
+                      FutureBuilder<bool>(
+                        future: _checkIfUserCanAccessTravelMode(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return Center(child: CircularProgressIndicator());
+                          }
+
+                          final canAccessTravelMode = snapshot.data ?? false;
+
+                          return _DiscoverContent(
+                            travelAlertsOn: _travelAlertsOn,
+                            onTravelAlertsChanged: (value) {
+                              setState(() {
+                                _travelAlertsOn = value;
+                              });
+                            },
+                            liked: liked,
+                            onLikeToggle: _toggleLike,
+                            travelHistory: _travelHistory,
+                            isLoadingTravelHistory: _isLoadingTravelHistory,
+                            isTrackingLocation: _isTrackingLocation,
+                            currentPlacemark: _currentPlacemark,
+                            onTravelLocationTap: _navigateToTravelPartners,
+                            onAddCurrentLocation: canAccessTravelMode
+                                ? _addCurrentLocationToTravelHistory
+                                : null,
+                            onAddCustomLocation: canAccessTravelMode
+                                ? _addCustomLocation
+                                : null,
+                            canAccessTravelMode: canAccessTravelMode,
+                          );
                         },
-                        liked: liked,
-                        onLikeToggle: _toggleLike,
-                        travelHistory: _travelHistory,
-                        isLoadingTravelHistory: _isLoadingTravelHistory,
-                        isTrackingLocation: _isTrackingLocation,
-                        currentPlacemark: _currentPlacemark,
-                        onTravelLocationTap: _navigateToTravelPartners,
-                        onAddCurrentLocation: _addCurrentLocationToTravelHistory,
-                        onAddCustomLocation: _addCustomLocation,
                       ),
                   ],
                 ),
               ),
+
 
               // Bottom nav — Discover selected
               Padding(
@@ -694,8 +719,9 @@ class _DiscoverContent extends StatelessWidget {
   final bool isTrackingLocation;
   final Placemark? currentPlacemark;
   final Function(TravelHistory) onTravelLocationTap;
-  final VoidCallback onAddCurrentLocation;
-  final VoidCallback onAddCustomLocation;
+  final VoidCallback? onAddCurrentLocation;  // Make nullable
+  final VoidCallback? onAddCustomLocation;   // Make nullable
+  final bool canAccessTravelMode;
 
   const _DiscoverContent({
     required this.travelAlertsOn,
@@ -707,8 +733,9 @@ class _DiscoverContent extends StatelessWidget {
     required this.isTrackingLocation,
     this.currentPlacemark,
     required this.onTravelLocationTap,
-    required this.onAddCurrentLocation,
-    required this.onAddCustomLocation,
+    this.onAddCurrentLocation,
+    this.onAddCustomLocation,
+    required this.canAccessTravelMode,
   });
 
   @override
@@ -716,6 +743,7 @@ class _DiscoverContent extends StatelessWidget {
     return Column(
       children: [
         // Location tracking status
+        // In _DiscoverContent widget, update the location tracking section:
         if (isTrackingLocation)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -750,8 +778,8 @@ class _DiscoverContent extends StatelessWidget {
             ),
           ),
 
-        // Current location (if available)
-        if (currentPlacemark != null && !isTrackingLocation)
+// Current location (if available)
+        if (currentPlacemark != null && !isTrackingLocation && canAccessTravelMode)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             margin: const EdgeInsets.only(bottom: 16),
@@ -786,15 +814,15 @@ class _DiscoverContent extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: Icon(Icons.add, size: 18, color: Colors.green),
-                  onPressed: onAddCurrentLocation,
-                  tooltip: 'Add to travel history',
-                ),
+                if (canAccessTravelMode)
+                  IconButton(
+                    icon: Icon(Icons.add, size: 18, color: Colors.green),
+                    onPressed: onAddCurrentLocation,
+                    tooltip: 'Add to travel history',
+                  ),
               ],
             ),
           ),
-
         // Trending Clips
         const _SectionHeader("Trending Clips 🎬"),
         const SizedBox(height: 10),
@@ -807,16 +835,20 @@ class _DiscoverContent extends StatelessWidget {
         _PopularProfilesStrip(),
         const SizedBox(height: 24),
 
-        // Travel History Section
-        _TravelHistorySection(
-          travelHistory: travelHistory,
-          isLoading: isLoadingTravelHistory,
-          onTravelLocationTap: onTravelLocationTap,
-          travelAlertsOn: travelAlertsOn,
-          onTravelAlertsChanged: onTravelAlertsChanged,
-          onAddCurrentLocation: onAddCurrentLocation,
-          onAddCustomLocation: onAddCustomLocation,
-        ),
+        // Travel History Section - Only show if user can access travel mode
+        if (canAccessTravelMode)
+          _TravelHistorySection(
+            travelHistory: travelHistory,
+            isLoading: isLoadingTravelHistory,
+            onTravelLocationTap: onTravelLocationTap,
+            travelAlertsOn: travelAlertsOn,
+            onTravelAlertsChanged: onTravelAlertsChanged,
+            onAddCurrentLocation: onAddCurrentLocation ?? () {},
+            onAddCustomLocation: onAddCustomLocation ?? () {},
+          )
+        else
+          _PremiumTravelModePromotion(),  // Show promotion for non-premium users
+
         const SizedBox(height: 22),
 
         // Timer pill + subtext
@@ -863,6 +895,131 @@ class _DiscoverContent extends StatelessWidget {
           child: _SameGoalsGrid(liked: liked, onLikeToggle: onLikeToggle),
         ),
       ],
+    );
+  }
+}
+
+class _PremiumTravelModePromotion extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary.withOpacity(0.1),
+            Colors.blue.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                FontAwesomeIcons.plane,
+                color: AppColors.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Travel Mode",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  "PREMIUM",
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.amber.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "Track your travels and connect with people in locations you've visited. Upgrade to Premium to unlock Travel Mode features:",
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Column(
+            children: [
+              _FeatureItem(icon: Icons.location_on, text: "Add travel locations"),
+              _FeatureItem(icon: Icons.people, text: "Find travel partners"),
+              _FeatureItem(icon: Icons.travel_explore, text: "View travel history"),
+              _FeatureItem(icon: Icons.notifications, text: "Travel alerts"),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () {
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => SubscriptionPage()),
+              );
+            },
+            icon: Icon(FontAwesomeIcons.crown),
+            label: Text("Upgrade to Premium"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              minimumSize: Size(double.infinity, 50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureItem extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _FeatureItem({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: Colors.black87),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -926,29 +1083,12 @@ class _TravelHistorySection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                "Places you've visited recently",
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black54,
-                ),
-              ),
-            ),
-            // Add location buttons
-            IconButton(
-              icon: Icon(Icons.my_location, size: 18),
-              onPressed: onAddCurrentLocation,
-              tooltip: 'Add current location',
-            ),
-            IconButton(
-              icon: Icon(Icons.add_location_alt, size: 18),
-              onPressed: onAddCustomLocation,
-              tooltip: 'Add custom location',
-            ),
-          ],
+        Text(
+          "Places you've visited recently",
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.black54,
+          ),
         ),
         const SizedBox(height: 12),
 
@@ -957,74 +1097,6 @@ class _TravelHistorySection extends StatelessWidget {
             height: 180,
             child: Center(
               child: CircularProgressIndicator(color: AppColors.primary),
-            ),
-          )
-        else if (travelHistory.isEmpty)
-          Container(
-            height: 180,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    FontAwesomeIcons.plane,
-                    size: 50,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    "No travel history yet",
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Add your first travel location",
-                    style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: onAddCurrentLocation,
-                        icon: Icon(Icons.my_location, size: 16),
-                        label: Text('Current Location'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: onAddCustomLocation,
-                        icon: Icon(Icons.add_location_alt, size: 16),
-                        label: Text('Custom'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
           )
         else
@@ -1046,16 +1118,29 @@ class _TravelHistorySection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: onAddCurrentLocation,
-                  icon: Icon(Icons.add, size: 16),
-                  label: Text('Add more locations'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.primary,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.my_location, size: 18),
+                    onPressed: onAddCurrentLocation,
+                    tooltip: 'Add current location',
                   ),
-                ),
+                  IconButton(
+                    icon: Icon(Icons.add_location_alt, size: 18),
+                    onPressed: onAddCustomLocation,
+                    tooltip: 'Add custom location',
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: onAddCurrentLocation,
+                    icon: Icon(Icons.add, size: 16),
+                    label: Text('Add more locations'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1063,7 +1148,6 @@ class _TravelHistorySection extends StatelessWidget {
     );
   }
 }
-
 // ... [Rest of the widgets remain the same as before] ...
 //
 
