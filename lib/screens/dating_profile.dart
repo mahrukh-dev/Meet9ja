@@ -9,6 +9,7 @@ import 'package:meet9ja/screens/subscription_management_screen.dart';
 import 'package:meet9ja/screens/subscription_screen.dart';
 import 'package:meet9ja/screens/edit_profile_screen.dart';
 import 'package:meet9ja/models/user_model.dart';
+import '../db_functions/getUserAgeFIn.dart';
 import '../db_functions/user_service.dart';
 import 'MatchedUserScreen.dart';
 import 'activity_screen.dart';
@@ -185,19 +186,54 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
 }
 
 // -------------------- HEADER --------------------
-class _Header extends StatelessWidget {
+// -------------------- HEADER --------------------
+class _Header extends StatefulWidget {
   const _Header({this.user, required this.stats, this.onEditProfile});
   final UserModel? user;
   final Map<String, int> stats;
   final VoidCallback? onEditProfile;
 
   @override
-  Widget build(BuildContext context) {
-    // Calculate age from date of birth
-    final age = 18; // Default age
+  State<_Header> createState() => _HeaderState();
+}
 
-    // Get profile photo URL - using the actual user's profile photo
-    final profilePhotoUrl = UserService.getProfilePhotoUrl(user!);
+class _HeaderState extends State<_Header> {
+  int? _userAge;
+  bool _isLoadingAge = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserAge();
+  }
+
+  Future<void> _fetchUserAge() async {
+    final currentUserId = UserService.currentUserId;
+    if (currentUserId == null) return;
+
+    setState(() {
+      _isLoadingAge = true;
+    });
+
+    try {
+      final age = await getUserAgeFin(currentUserId);
+      setState(() {
+        _userAge = age;
+        _isLoadingAge = false;
+      });
+    } catch (e) {
+      print('Error fetching age: $e');
+      setState(() {
+        _isLoadingAge = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Get profile photo URL
+    final profilePhotoUrl = UserService.getProfilePhotoUrl(widget.user!);
+
     return Row(
       children: [
         Stack(
@@ -219,7 +255,7 @@ class _Header extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                "${stats['followers'] ?? 0}",
+                "${widget.stats['followers'] ?? 0}",
                 style: const TextStyle(color: Colors.white, fontSize: 11),
               ),
             ),
@@ -230,12 +266,45 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                "${user?.name ?? 'User'}, $age",
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                ),
+              Row(
+                children: [
+                  Text(
+                    "${widget.user?.name ?? 'User'}",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  if (_isLoadingAge)
+                    SizedBox(
+                      width: 20,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.grey[400]!,
+                        ),
+                      ),
+                    )
+                  else if (_userAge != null)
+                    Text(
+                      ", $_userAge",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                      ),
+                    )
+                  else
+                    Text(
+                      ", --",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 6),
             ],
@@ -249,7 +318,7 @@ class _Header extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          onPressed: onEditProfile,
+          onPressed: widget.onEditProfile,
           child: const Text(
             "Complete profile",
             style: TextStyle(fontWeight: FontWeight.w700),
@@ -259,7 +328,6 @@ class _Header extends StatelessWidget {
     );
   }
 }
-
 // -------------------- STAT ITEM WIDGET --------------------
 class _StatItem extends StatelessWidget {
   const _StatItem({required this.count, required this.label});
