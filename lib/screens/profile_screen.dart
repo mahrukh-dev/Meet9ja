@@ -36,6 +36,7 @@ import 'package:intl/intl.dart';
 import 'live_history_screen.dart';
 import 'livestream_screen.dart';
 import 'create_schedule_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool isMyProfile;
@@ -2473,6 +2474,8 @@ class _HomeTabState extends State<_HomeTab> {
     super.dispose();
   }
 
+  // In _HomeTabState class, update _loadLiveHistory method:
+
   Future<void> _loadLiveHistory() async {
     try {
       setState(() {
@@ -2482,8 +2485,15 @@ class _HomeTabState extends State<_HomeTab> {
 
       final history = await UserService.getUserLiveHistory(widget.userId);
 
+      // FILTER OUT FAILED LIVES - Only show successful or partially successful
+      final filteredHistory = history.where((live) {
+        return live.uploadStatus != 'failed' &&
+            live.uploadStatus != 'Failed' &&
+            live.uploadStatus.toLowerCase() != 'failed';
+      }).toList();
+
       setState(() {
-        _liveHistory = history;
+        _liveHistory = filteredHistory; // Use filtered list
         _isLoading = false;
       });
 
@@ -2497,12 +2507,68 @@ class _HomeTabState extends State<_HomeTab> {
     }
   }
 
+// Also update the UserService.getUserLiveHistory method to filter at query level
+// If you can modify UserService, update the query to filter failed lives:
+  // In _HomeTabState class, update thumbnail loading:
+
   void _preloadThumbnails() async {
-    for (final live in _liveHistory) {
-      if (live.liveReplayMediaUrl.isNotEmpty &&
+    // Only preload first 3 thumbnails initially
+    final thumbnailsToPreload = _liveHistory.take(3).where((live) {
+      return live.liveReplayMediaUrl.isNotEmpty &&
           (live.liveReplayMediaUrl.endsWith('.mp4') ||
-              live.liveReplayMediaUrl.contains('.mp4?'))) {
-        await _loadThumbnailForVideo(live);
+              live.liveReplayMediaUrl.contains('.mp4?'));
+    }).toList();
+
+    for (final live in thumbnailsToPreload) {
+      try {
+        final controller = VideoPlayerController.network(live.liveReplayMediaUrl);
+        await controller.initialize();
+
+        // Get thumbnail at 1-second mark for consistency
+        if (controller.value.duration.inSeconds > 0) {
+          await controller.seekTo(const Duration(seconds: 1));
+        }
+
+        setState(() {
+          _thumbnailControllers[live.uid] = controller;
+        });
+      } catch (e) {
+        print('❌ Error loading thumbnail for video ${live.uid}: $e');
+        // Don't set controller if there's an error
+      }
+    }
+
+    // Preload remaining thumbnails in background
+    if (_liveHistory.length > 3) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _preloadRemainingThumbnails();
+      });
+    }
+  }
+
+  void _preloadRemainingThumbnails() async {
+    final remainingLives = _liveHistory.skip(3).where((live) {
+      return live.liveReplayMediaUrl.isNotEmpty &&
+          (live.liveReplayMediaUrl.endsWith('.mp4') ||
+              live.liveReplayMediaUrl.contains('.mp4?'));
+    }).toList();
+
+    for (final live in remainingLives) {
+      try {
+        final controller = VideoPlayerController.network(live.liveReplayMediaUrl);
+        await controller.initialize();
+
+        if (controller.value.duration.inSeconds > 0) {
+          await controller.seekTo(const Duration(seconds: 1));
+        }
+
+        if (mounted) {
+          setState(() {
+            _thumbnailControllers[live.uid] = controller;
+          });
+        }
+      } catch (e) {
+        // Silently fail for background loading
       }
     }
   }
@@ -3501,6 +3567,33 @@ class _LiveHistoryCard extends StatelessWidget {
   }
 }
 
+
+// Add this ShimmerLoading widget for better UX:
+class ShimmerLoading extends StatelessWidget {
+  final double height;
+  final double width;
+  final BorderRadius borderRadius;
+
+  const ShimmerLoading({
+    super.key,
+    required this.height,
+    required this.width,
+    this.borderRadius = BorderRadius.zero,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        color: Colors.grey[300],
+        borderRadius: borderRadius,
+      ),
+    );
+  }
+}
+
 // Clips Tab
 class _ClipsTab extends StatefulWidget {
   final String userId;
@@ -3513,55 +3606,262 @@ class _ClipsTab extends StatefulWidget {
 
 class _ClipsTabState extends State<_ClipsTab> {
   late Stream<List<StoryModel>> _storiesStream;
+  late Stream<List<PostModel>> _postsStream;
   late UniqueKey _storiesKey;
+  List<PostModel> _posts = [];
+  bool _isLoadingPosts = true;
+  String? _error;
+  bool _isRefreshing = false;
+  StreamSubscription<List<PostModel>>? _postsSubscription;
 
   @override
   void initState() {
     super.initState();
     _storiesKey = UniqueKey();
     _storiesStream = UserService.getUserStoriesStream(widget.userId);
+    _postsStream = UserService.getUserPostsStream(widget.userId);
+    _subscribeToPosts();
+  }
+
+  @override
+  void dispose() {
+    _postsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeToPosts() {
+    _postsSubscription?.cancel(); // Cancel existing subscription
+
+    _postsSubscription = _postsStream.listen(
+          (posts) {
+        if (mounted) {
+          setState(() {
+            _posts = posts;
+            _isLoadingPosts = false;
+            _isRefreshing = false;
+            _error = null;
+          });
+
+          // Preload first few images
+          if (posts.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _preloadPostImages(posts.take(4).toList());
+            });
+          }
+        }
+      },
+      onError: (error) {
+        print('❌ Error loading posts: $error');
+        if (mounted) {
+          setState(() {
+            _error = 'Failed to load posts: $error';
+            _isLoadingPosts = false;
+            _isRefreshing = false;
+          });
+        }
+      },
+    );
+  }
+
+  Future<void> _refreshContent() async {
+    setState(() {
+      _storiesKey = UniqueKey(); // Force refresh stories
+      _isRefreshing = true;
+    });
+
+    // Re-subscribe to posts stream to get fresh data
+    _subscribeToPosts();
+
+    // Add a small delay to show refresh indicator
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
+
+  void _preloadPostImages(List<PostModel> posts) {
+    for (final post in posts) {
+      if (post.displayUrl.isNotEmpty) {
+        try {
+          precacheImage(NetworkImage(post.displayUrl), context);
+        } catch (e) {
+          // Silent fail for preloading
+        }
+      }
+    }
+  }
+
+  Future<void> _preloadStoryMedia(StoryModel story) async {
+    try {
+      await precacheImage(
+        NetworkImage(story.mediaUrl),
+        context,
+      );
+    } catch (e) {
+      // Silent fail for preloading
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Stories Section - Fixed height
-        _buildStoriesSection(),
-        const SizedBox(height: 20),
-        // Add Post Button (only for my profile)
-        if (widget.isMyProfile) _buildAddPostButton(),
+    return RefreshIndicator(
+      onRefresh: _refreshContent,
+      child: CustomScrollView(
+        slivers: [
+          // Stories Section
+          _buildStoriesSection(),
 
-        const SizedBox(height: 16),
-        // Posts Grid - Takes remaining space
-        Expanded(
-          child: _buildPostsGrid(),
-        ),
-      ],
+          // Add Post Button (only for my profile)
+          if (widget.isMyProfile) _buildAddPostButton(),
+
+          // Posts Header
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Text(
+                    "Posts",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_posts.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${_posts.length}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Posts Grid
+          _buildPostsGrid(),
+
+          // Loading indicator
+          if (_isLoadingPosts && _posts.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+
+          // Error state
+          if (_error != null && _posts.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 60,
+                      color: Colors.red[300],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error loading posts',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black45,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _isLoadingPosts = true;
+                          _error = null;
+                        });
+                        _subscribeToPosts();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Empty state
+          if (!_isLoadingPosts && _posts.isEmpty && _error == null)
+            SliverToBoxAdapter(
+              child: _buildEmptyPostsState(),
+            ),
+
+          // Refreshing indicator
+          if (_isRefreshing && _posts.isNotEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildAddPostButton() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: _createNewPost,
-          icon: const Icon(FontAwesomeIcons.plus, size: 16),
-          label: const Text(
-            'Create New Post',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _createNewPost,
+            icon: const Icon(FontAwesomeIcons.plus, size: 16),
+            label: const Text(
+              'Create New Post',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
             ),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ),
@@ -3578,9 +3878,7 @@ class _ClipsTabState extends State<_ClipsTab> {
     );
 
     if (result == true && mounted) {
-      // Refresh the posts grid
-      setState(() {});
-
+      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Post created successfully!'),
@@ -3606,41 +3904,49 @@ class _ClipsTabState extends State<_ClipsTab> {
 
         // If no stories and not my profile, don't show stories section
         if (stories.isEmpty && !widget.isMyProfile) {
-          return const SizedBox.shrink();
+          return const SliverToBoxAdapter(child: SizedBox.shrink());
         }
 
-        return Container(
-          key: _storiesKey,
-          height: 140,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Stories',
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+        return SliverToBoxAdapter(
+          child: Container(
+            key: _storiesKey,
+            height: 140,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Stories',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  children: [
-                    // Add Story Button (only for my profile)
-                    if (widget.isMyProfile) _buildAddStoryButton(),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    itemCount: widget.isMyProfile ? stories.length + 1 : stories.length,
+                    itemBuilder: (context, index) {
+                      if (widget.isMyProfile && index == 0) {
+                        return _buildAddStoryButton();
+                      }
 
-                    // User's Stories with unique keys
-                    ...stories.map((story) => _buildStoryCircle(
-                      story,
-                      key: ValueKey('story_${story.id}_${story.createdAt.millisecondsSinceEpoch}'),
-                    )),
-                  ],
+                      final storyIndex = widget.isMyProfile ? index - 1 : index;
+                      if (storyIndex < stories.length) {
+                        return _buildStoryCircle(
+                          stories[storyIndex],
+                          key: ValueKey('story_${stories[storyIndex].id}_${DateTime.now().millisecondsSinceEpoch}'),
+                        );
+                      }
+
+                      return const SizedBox.shrink();
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -3648,61 +3954,66 @@ class _ClipsTabState extends State<_ClipsTab> {
   }
 
   Widget _buildStoriesLoading() {
-    return Container(
-      height: 140,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Stories',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+    return SliverToBoxAdapter(
+      child: Container(
+        height: 140,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Stories',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              children: [
-                if (widget.isMyProfile)
-                  _buildAddStoryButtonSkeleton(),
-                _buildStoryCircleSkeleton(),
-                _buildStoryCircleSkeleton(),
-              ],
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                children: [
+                  if (widget.isMyProfile)
+                    _buildAddStoryButtonSkeleton(),
+                  _buildStoryCircleSkeleton(),
+                  _buildStoryCircleSkeleton(),
+                  _buildStoryCircleSkeleton(),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildStoriesError(String error) {
-    return Container(
-      height: 140,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Stories',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Center(
+    return SliverToBoxAdapter(
+      child: Container(
+        height: 140,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                'Error loading stories',
-                style: TextStyle(color: Colors.red),
+                'Stories',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Expanded(
+              child: Center(
+                child: Text(
+                  'Error loading stories',
+                  style: TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3723,11 +4034,10 @@ class _ClipsTabState extends State<_ClipsTab> {
             child: Icon(Icons.add, size: 30, color: Colors.grey[600]),
           ),
           const SizedBox(height: 4),
-          Text(
-            'Your Story',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          Container(
+            width: 50,
+            height: 12,
+            color: Colors.grey[300],
           ),
         ],
       ),
@@ -3801,16 +4111,15 @@ class _ClipsTabState extends State<_ClipsTab> {
       setState(() {
         _storiesKey = UniqueKey();
       });
-
-      await Future.delayed(Duration(milliseconds: 500));
-
-      if (mounted) {
-        setState(() {});
-      }
     }
   }
 
   Widget _buildStoryCircle(StoryModel story, {Key? key}) {
+    // Preload story image when widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _preloadStoryMedia(story);
+    });
+
     return Container(
       key: key,
       width: 70,
@@ -3846,7 +4155,7 @@ class _ClipsTabState extends State<_ClipsTab> {
                   shape: BoxShape.circle,
                   color: Colors.white,
                   image: DecorationImage(
-                    image: NetworkImage(story.mediaUrl),
+                    image: CachedNetworkImageProvider(story.mediaUrl),
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -3881,67 +4190,84 @@ class _ClipsTabState extends State<_ClipsTab> {
   }
 
   Widget _buildPostsGrid() {
-    return StreamBuilder<List<PostModel>>(
-      stream: UserService.getUserPostsStream(widget.userId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
+    if (_posts.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    return SliverPadding(
+      padding: const EdgeInsets.all(8),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+          childAspectRatio: 0.8,
+        ),
+        delegate: SliverChildBuilderDelegate(
+              (context, index) {
+            final post = _posts[index];
 
-        final posts = snapshot.data ?? [];
+            // Preload images for posts that will be visible soon
+            if (index < _posts.length - 1 && index % 3 == 0) {
+              final nextPosts = _posts.sublist(index + 1, index + 4).where((p) => p.displayUrl.isNotEmpty);
+              for (final p in nextPosts) {
+                precacheImage(NetworkImage(p.displayUrl), context);
+              }
+            }
 
-        if (posts.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(FontAwesomeIcons.video, size: 60, color: Colors.black26),
-                const SizedBox(height: 16),
-                Text(
-                  "No posts yet.",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black54,
-                  ),
-                ),
-                if (widget.isMyProfile) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    "Create posts to share with your followers!",
-                    style: TextStyle(fontSize: 14, color: Colors.black45),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ],
-            ),
-          );
-        }
-
-        return GridView.builder(
-          padding: const EdgeInsets.all(8),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 2,
-            mainAxisSpacing: 2,
-            childAspectRatio: 0.8,
-          ),
-          itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
             return _PostGridItem(post: post);
           },
-        );
-      },
+          childCount: _posts.length,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyPostsState() {
+    return Container(
+      height: 300,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(FontAwesomeIcons.video, size: 60, color: Colors.black26),
+            const SizedBox(height: 16),
+            Text(
+              "No posts yet.",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54,
+              ),
+            ),
+            if (widget.isMyProfile) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  "Share your moments with your followers!",
+                  style: TextStyle(fontSize: 14, color: Colors.black45),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _createNewPost,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Create Your First Post'),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
 
-// Post Grid Item Widget for displaying posts with thumbnails
+// Post Grid Item Widget - Optimized for your PostModel
 class _PostGridItem extends StatelessWidget {
   final PostModel post;
 
@@ -3961,7 +4287,7 @@ class _PostGridItem extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           image: DecorationImage(
-            image: NetworkImage(post.displayUrl), // Uses thumbnail for videos, original for images
+            image: CachedNetworkImageProvider(post.displayUrl),
             fit: BoxFit.cover,
           ),
         ),
