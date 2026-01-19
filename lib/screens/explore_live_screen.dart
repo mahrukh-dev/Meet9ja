@@ -55,23 +55,36 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   // Bottom navigation state
   int _currentBottomNavIndex = 0;
 
-  // Track active video controllers
+  // Video controllers management
   final Map<String, VideoPlayerController> _videoControllers = {};
   final Map<String, ChewieController> _chewieControllers = {};
+  final Map<String, bool> _videoInitialized = {};
   String? _currentPlayingVideoId;
 
-  // Track visibility of play/pause overlay for each video
+  // Track visibility of play/pause overlay
   final Map<String, bool> _showPlayPauseOverlay = {};
   Timer? _hideOverlayTimer;
 
-  // Track PageController for each tab
+  // Page controllers
   final PageController _followingPageController = PageController();
   final PageController _clipsPageController = PageController();
   int _currentFollowingPage = 0;
   int _currentClipsPage = 0;
 
-  // Track if we're in the foreground
+  // Screen state tracking
   bool _isScreenActive = true;
+  bool _isDisposed = false;
+
+  // Optimization flags
+  bool _shouldLoadClips = true;
+  bool _clipsLoaded = false;
+  Completer<void>? _clipsLoadingCompleter;
+
+  // Pagination for clips
+  int _clipsPage = 0;
+  final int _clipsPerPage = 10;
+  bool _loadingMoreClips = false;
+  bool _hasMoreClips = true;
 
   @override
   void initState() {
@@ -81,14 +94,19 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
     WidgetsBinding.instance.addObserver(this);
 
+    // Load initial data
+    _loadFollowingUsers();
     _loadLiveData();
     _setupLiveStreamListener();
     _loadMatchedUsers();
-    _loadFollowingUsers();
 
+    // Add listeners
     _tab.addListener(_handleTabChange);
     _followingPageController.addListener(_handleFollowingPageChange);
     _clipsPageController.addListener(_handleClipsPageChange);
+
+    // Initialize clips loading completer
+    _clipsLoadingCompleter = Completer<void>();
   }
 
   Future<void> _loadFollowingUsers() async {
@@ -113,6 +131,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 
   void _handleFollowingPageChange() {
+    if (_isDisposed) return;
+
     final page = _followingPageController.page?.round() ?? 0;
     if (page != _currentFollowingPage) {
       if (_currentFollowingPage < _followingReels.length) {
@@ -136,8 +156,17 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 
   void _handleClipsPageChange() {
+    if (_isDisposed) return;
+
     final page = _clipsPageController.page?.round() ?? 0;
+
+    // Load more clips if we're near the end
+    if (page >= _clipsReels.length - 3 && _hasMoreClips && !_loadingMoreClips) {
+      _loadMoreClips();
+    }
+
     if (page != _currentClipsPage) {
+      // Pause previous video
       if (_currentClipsPage < _clipsReels.length) {
         final prevItem = _clipsReels[_currentClipsPage];
         if (prevItem.mediaType == 'video') {
@@ -149,6 +178,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       }
 
       _currentClipsPage = page;
+
+      // Play current video if applicable
       if (_clipsReels.isNotEmpty && page < _clipsReels.length) {
         final item = _clipsReels[page];
         if (item.mediaType == 'video') {
@@ -162,6 +193,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
+    if (_isDisposed) return;
+
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -171,10 +204,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         break;
       case AppLifecycleState.resumed:
         _isScreenActive = true;
-        if (_currentPlayingVideoId != null &&
-            _videoControllers.containsKey(_currentPlayingVideoId) &&
-            _tab.index != 1) {
-          _videoControllers[_currentPlayingVideoId]?.play();
+        // Only resume if we're on clips tab
+        if (_tab.index == 2 && _currentPlayingVideoId != null) {
+          _playVideo(_currentPlayingVideoId!);
         }
         break;
       case AppLifecycleState.detached:
@@ -185,19 +217,26 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 
   void _handleTabChange() {
-    if (_tab.index == 1) {
-      _pauseAllVideos();
-    } else if (_tab.index == 0 || _tab.index == 2) {
-      if (_tab.index == 0 && _followingReels.isNotEmpty && _currentFollowingPage < _followingReels.length) {
-        final item = _followingReels[_currentFollowingPage];
-        if (item.mediaType == 'video') {
-          _playVideo(item.postId);
-        }
-      } else if (_tab.index == 2 && _clipsReels.isNotEmpty && _currentClipsPage < _clipsReels.length) {
-        final item = _clipsReels[_currentClipsPage];
-        if (item.mediaType == 'video') {
-          _playVideo(item.postId);
-        }
+    if (_isDisposed) return;
+
+    // Pause all videos when switching tabs
+    _pauseAllVideos();
+
+    // Load clips only when switching to clips tab
+    if (_tab.index == 2 && !_clipsLoaded && _shouldLoadClips) {
+      _loadClipsData();
+    }
+
+    // Play video only if we're on clips tab and have a current page
+    if (_tab.index == 2 && _clipsReels.isNotEmpty && _currentClipsPage < _clipsReels.length) {
+      final item = _clipsReels[_currentClipsPage];
+      if (item.mediaType == 'video') {
+        // Initialize video if needed, then play
+        _initializeVideoController(item).then((_) {
+          if (mounted && !_isDisposed) {
+            _playVideo(item.postId);
+          }
+        });
       }
     }
   }
@@ -208,10 +247,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         controller.pause();
       }
     }
+    _currentPlayingVideoId = null;
   }
 
   void _disposeAllVideoControllers() {
     _hideOverlayTimer?.cancel();
+    _hideOverlayTimer = null;
+
     for (var controller in _chewieControllers.values) {
       controller.dispose();
     }
@@ -220,15 +262,20 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
     _videoControllers.clear();
     _chewieControllers.clear();
+    _videoInitialized.clear();
     _showPlayPauseOverlay.clear();
   }
 
   Future<void> _initializeVideoController(_ReelItem item) async {
-    if (item.mediaType != 'video' || _videoControllers.containsKey(item.postId)) {
+    if (_isDisposed) return;
+
+    if (item.mediaType != 'video' || _videoInitialized[item.postId] == true) {
       return;
     }
 
     try {
+      print('📹 Initializing video for ${item.postId}');
+
       final videoController = VideoPlayerController.network(item.thumb)
         ..setLooping(true)
         ..setVolume(1.0);
@@ -250,88 +297,71 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         ),
       );
 
-      // Add listener to hide overlay when video starts playing
-      videoController.addListener(() {
-        if (!mounted) return;
-
-        final isPlaying = videoController.value.isPlaying;
-        final postId = item.postId;
-
-        if (isPlaying && (_showPlayPauseOverlay[postId] ?? false)) {
-          // Hide overlay immediately when video starts playing
-          setState(() {
-            _showPlayPauseOverlay[postId] = false;
-          });
-          _hideOverlayTimer?.cancel(); // Cancel any existing timer
-        }
-      });
-
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         setState(() {
           _videoControllers[item.postId] = videoController;
           _chewieControllers[item.postId] = chewieController;
+          _videoInitialized[item.postId] = true;
           _showPlayPauseOverlay[item.postId] = false;
         });
       }
     } catch (e) {
       print('❌ Error initializing video for ${item.postId}: $e');
+      // Mark as initialized even on error to prevent retries
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _videoInitialized[item.postId] = true;
+        });
+      }
     }
   }
 
-  // Toggle play/pause with overlay handling
-  void _togglePlayPause(_ReelItem item) {
-    final postId = item.postId;
-    if (!_videoControllers.containsKey(postId)) return;
-
-    if (_videoControllers[postId]!.value.isPlaying) {
-      _pauseVideo(postId);
-    } else {
-      _playVideo(postId);
-    }
-  }
-// Handle tap on video area - UPDATED VERSION
   void _onVideoTap(_ReelItem item) {
+    if (_isDisposed || item.mediaType != 'video') return;
+
     final postId = item.postId;
-    if (!_videoControllers.containsKey(postId)) return;
 
     // Cancel any existing hide timer
     _hideOverlayTimer?.cancel();
 
-    // Check if video is currently playing
-    final isCurrentlyPlaying = _videoControllers[postId]!.value.isPlaying;
+    final isCurrentlyPlaying = _videoControllers.containsKey(postId) &&
+        _videoControllers[postId]!.value.isPlaying;
 
     if (isCurrentlyPlaying) {
-      // Video is playing - toggle to pause
+      // Video is playing - pause it
       _pauseVideo(postId);
 
-      // Show pause overlay (it will stay visible since video is paused)
+      // Show pause overlay
       setState(() {
         _showPlayPauseOverlay[postId] = true;
       });
     } else {
-      // Video is paused - toggle to play
+      // Video is paused - play it
       _playVideo(postId);
 
-      // Show play overlay briefly when starting to play
+      // Show play overlay briefly
       setState(() {
         _showPlayPauseOverlay[postId] = true;
       });
 
       // Hide overlay after 1.5 seconds
       _hideOverlayTimer = Timer(const Duration(milliseconds: 1500), () {
-        if (mounted &&
-            _videoControllers.containsKey(postId) &&
-            _videoControllers[postId]!.value.isPlaying) {
-          setState(() {
-            _showPlayPauseOverlay[postId] = false;
-          });
+        if (mounted && !_isDisposed && _videoControllers.containsKey(postId)) {
+          final isStillPlaying = _videoControllers[postId]!.value.isPlaying;
+          if (isStillPlaying) {
+            setState(() {
+              _showPlayPauseOverlay[postId] = false;
+            });
+          }
         }
       });
     }
   }
 
   void _playVideo(String postId) {
-    print('Playing video $postId');
+    if (_isDisposed || !_videoControllers.containsKey(postId)) return;
+
+    print('▶️ Playing video $postId');
 
     // Cancel any existing hide timer
     _hideOverlayTimer?.cancel();
@@ -342,50 +372,43 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
 
     // Play new video
-    if (_videoControllers.containsKey(postId)) {
-      _videoControllers[postId]!.play();
+    _videoControllers[postId]!.play();
 
-      Future.microtask(() {
-        if (mounted) {
-          setState(() {
-            _currentPlayingVideoId = postId;
-            // Show overlay briefly when starting to play
-            _showPlayPauseOverlay[postId] = true;
-          });
+    if (mounted && !_isDisposed) {
+      setState(() {
+        _currentPlayingVideoId = postId;
+        _showPlayPauseOverlay[postId] = true;
+      });
 
-          // Hide overlay after 1.5 seconds
-          _hideOverlayTimer = Timer(const Duration(milliseconds: 1500), () {
-            if (mounted &&
-                _videoControllers.containsKey(postId) &&
-                _videoControllers[postId]!.value.isPlaying) {
-              setState(() {
-                _showPlayPauseOverlay[postId] = false;
-              });
-            }
-          });
+      // Hide overlay after 1.5 seconds
+      _hideOverlayTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (mounted && !_isDisposed && _videoControllers.containsKey(postId)) {
+          final isStillPlaying = _videoControllers[postId]!.value.isPlaying;
+          if (isStillPlaying) {
+            setState(() {
+              _showPlayPauseOverlay[postId] = false;
+            });
+          }
         }
       });
     }
   }
 
   void _pauseVideo(String postId) {
-    print('Pausing video $postId');
+    if (_isDisposed || !_videoControllers.containsKey(postId)) return;
+
+    print('⏸️ Pausing video $postId');
 
     // Cancel hide timer
     _hideOverlayTimer?.cancel();
 
-    if (_videoControllers.containsKey(postId)) {
-      _videoControllers[postId]!.pause();
+    _videoControllers[postId]!.pause();
 
-      Future.microtask(() {
-        if (mounted) {
-          setState(() {
-            // Show overlay when paused
-            _showPlayPauseOverlay[postId] = true;
-            if (_currentPlayingVideoId == postId) {
-              _currentPlayingVideoId = null;
-            }
-          });
+    if (mounted && !_isDisposed) {
+      setState(() {
+        _showPlayPauseOverlay[postId] = true;
+        if (_currentPlayingVideoId == postId) {
+          _currentPlayingVideoId = null;
         }
       });
     }
@@ -398,7 +421,9 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
   @override
   void dispose() {
+    _isDisposed = true;
     _isScreenActive = false;
+
     _liveStreamSubscription?.cancel();
     _tab.removeListener(_handleTabChange);
     _tab.dispose();
@@ -407,7 +432,12 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _followingPageController.dispose();
     _clipsPageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
+
+    _hideOverlayTimer?.cancel();
+    _hideOverlayTimer = null;
+
     _disposeAllVideoControllers();
+
     super.dispose();
   }
 
@@ -418,7 +448,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     return true;
   }
 
-  // Load matched users for sharing
   Future<void> _loadMatchedUsers() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -602,7 +631,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         senderId: currentUser.uid,
       );
 
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -614,7 +643,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
     } catch (e) {
       print('❌ Error sharing ${item.type}: $e');
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to share ${item.type}: $e'),
@@ -632,38 +661,92 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       final liveStreams = await _getActiveLiveStreams();
       final followingLiveStreams = await _getFollowingLiveStreams();
       final followingReels = await _getAllStories();
-      final clipsReels = await _getAllPosts();
 
-      for (var clip in clipsReels) {
-        if (clip.mediaType == 'video') {
-          await _initializeVideoController(clip);
-        }
-      }
-
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         setState(() {
           _liveRooms = liveStreams;
           _followingLiveRooms = followingLiveStreams;
           _followingReels = followingReels;
-          _clipsReels = clipsReels;
           _isLoading = false;
         });
+      }
+    } catch (e) {
+      print('❌ Error loading live data: $e');
+      if (mounted && !_isDisposed) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
-        if (_clipsReels.isNotEmpty) {
-          final firstClip = _clipsReels.first;
+  Future<void> _loadClipsData() async {
+    if (!_shouldLoadClips || _clipsLoaded || _loadingMoreClips) return;
+
+    try {
+      setState(() => _loadingMoreClips = true);
+      _clipsPage = 0;
+
+      final clips = await _getClipsPage(_clipsPage);
+
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _clipsReels = clips;
+          _clipsLoaded = true;
+          _loadingMoreClips = false;
+          _hasMoreClips = clips.length == _clipsPerPage;
+        });
+
+        // Complete the completer so widgets know clips are loaded
+        if (!_clipsLoadingCompleter!.isCompleted) {
+          _clipsLoadingCompleter!.complete();
+        }
+
+        // Initialize first video if we're on clips tab
+        if (_tab.index == 2 && clips.isNotEmpty) {
+          final firstClip = clips.first;
           if (firstClip.mediaType == 'video') {
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (mounted && _isScreenActive) {
-                _playVideo(firstClip.postId);
-              }
-            });
+            await _initializeVideoController(firstClip);
+            if (mounted && !_isDisposed && _isScreenActive && _tab.index == 2) {
+              _playVideo(firstClip.postId);
+            }
           }
         }
       }
     } catch (e) {
-      print('❌ Error loading live data: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
+      print('❌ Error loading clips: $e');
+      if (mounted && !_isDisposed) {
+        setState(() => _loadingMoreClips = false);
+      }
+    }
+  }
+
+  Future<void> _loadMoreClips() async {
+    if (_loadingMoreClips || !_hasMoreClips) return;
+
+    try {
+      setState(() => _loadingMoreClips = true);
+
+      final nextPage = _clipsPage + 1;
+      final moreClips = await _getClipsPage(nextPage);
+
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _clipsReels.addAll(moreClips);
+          _clipsPage = nextPage;
+          _loadingMoreClips = false;
+          _hasMoreClips = moreClips.length == _clipsPerPage;
+        });
+
+        // Initialize videos for new clips
+        for (final clip in moreClips) {
+          if (clip.mediaType == 'video') {
+            _initializeVideoController(clip);
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading more clips: $e');
+      if (mounted && !_isDisposed) {
+        setState(() => _loadingMoreClips = false);
       }
     }
   }
@@ -674,6 +757,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .collection('liveStreams')
           .where('isLive', isEqualTo: true)
           .orderBy('startedAt', descending: true)
+          .limit(20)
           .get();
 
       return snapshot.docs.map((doc) {
@@ -708,6 +792,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .where('isLive', isEqualTo: true)
           .where('hostId', whereIn: _followingUserIds)
           .orderBy('startedAt', descending: true)
+          .limit(10)
           .get();
 
       print('📱 Found ${snapshot.docs.length} live streams from followed users');
@@ -740,7 +825,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           .collection('stories')
           .where('expires_at', isGreaterThan: Timestamp.now())
           .orderBy('expires_at', descending: true)
-          .limit(50)
+          .limit(20)
           .get();
 
       print('📱 Found ${snapshot.docs.length} stories in database');
@@ -805,13 +890,20 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-  Future<List<_ReelItem>> _getAllPosts() async {
+  Future<List<_ReelItem>> _getClipsPage(int page) async {
     try {
-      final snapshot = await FirebaseFirestore.instance
+      final startAfter = page == 0 ? null : _getLastDocForPage(page);
+
+      Query query = FirebaseFirestore.instance
           .collection('user_feed')
           .orderBy('date_time', descending: true)
-          .limit(50)
-          .get();
+          .limit(_clipsPerPage);
+
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+
+      final snapshot = await query.get();
 
       if (snapshot.docs.isEmpty) return [];
 
@@ -830,37 +922,52 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
           if (!isVideo) return null;
 
-          final userDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .get();
+          try {
+            final userDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
+                .get();
 
-          if (!userDoc.exists) return null;
+            if (!userDoc.exists) return null;
 
-          final userData = userDoc.data() as Map<String, dynamic>?;
+            final userData = userDoc.data() as Map<String, dynamic>?;
 
-          return _ReelItem(
-            user: userData?['username'] ?? 'User',
-            title: data['caption'] ?? 'New Post',
-            viewers: (data['likes']?.length ?? 0) + (data['comments']?.length ?? 0),
-            thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
-            type: 'video',
-            postId: doc.id,
-            userId: userId,
-            userPhoto: userData?['photo_url'] ?? '',
-            timestamp: data['date_time'] as Timestamp?,
-            likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
-            comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
-            mediaType: 'video',
-          );
+            return _ReelItem(
+              user: userData?['username'] ?? 'User',
+              title: data['caption'] ?? 'New Post',
+              viewers: (data['likes']?.length ?? 0) + (data['comments']?.length ?? 0),
+              thumb: data['media_url'] ?? 'https://images.unsplash.com/photo-1517705008128-361805f42e86?q=80&w=1080&auto=format&fit=crop',
+              type: 'video',
+              postId: doc.id,
+              userId: userId,
+              userPhoto: userData?['photo_url'] ?? '',
+              timestamp: data['date_time'] as Timestamp?,
+              likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
+              comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
+              mediaType: 'video',
+            );
+          } catch (e) {
+            print('❌ Error loading user data for clip: $e');
+            return null;
+          }
         }),
       );
 
       return reels.whereType<_ReelItem>().toList();
     } catch (e) {
-      print('Error getting all posts: $e');
+      print('Error getting clips page $page: $e');
       return [];
     }
+  }
+
+  DocumentSnapshot? _getLastDocForPage(int page) {
+    final itemIndex = page * _clipsPerPage - 1;
+    if (itemIndex >= 0 && itemIndex < _clipsReels.length) {
+      // We need to store document snapshots along with clips
+      // For now, return null - you'll need to implement proper pagination
+      return null;
+    }
+    return null;
   }
 
   void _setupLiveStreamListener() {
@@ -869,7 +976,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         .where('isLive', isEqualTo: true)
         .snapshots()
         .listen((snapshot) {
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         final allLiveStreams = snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
           return _LiveCard(
@@ -899,9 +1006,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     try {
       final currentUserId = _currentUserId;
       if (currentUserId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please login to like posts')),
-        );
+        if (mounted && !_isDisposed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please login to like posts')),
+          );
+        }
         return;
       }
 
@@ -913,12 +1022,36 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         await UserService.likePost(item.postId, currentUserId);
       }
 
-      _loadLiveData();
+      // Update local state
+      setState(() {
+        final index = _clipsReels.indexWhere((clip) => clip.postId == item.postId);
+        if (index != -1) {
+          final updatedItem = _ReelItem(
+            user: item.user,
+            title: item.title,
+            viewers: item.viewers,
+            thumb: item.thumb,
+            type: item.type,
+            postId: item.postId,
+            userId: item.userId,
+            userPhoto: item.userPhoto,
+            timestamp: item.timestamp,
+            likes: isLiked
+                ? item.likes.where((like) => like['likerUID'] != currentUserId).toList()
+                : [...item.likes, {'likerUID': currentUserId, 'timestamp': Timestamp.now()}],
+            comments: item.comments,
+            mediaType: item.mediaType,
+          );
+          _clipsReels[index] = updatedItem;
+        }
+      });
     } catch (e) {
       print('Error liking post: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to like: $e')),
-      );
+      if (mounted && !_isDisposed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to like: $e')),
+        );
+      }
     }
   }
 
@@ -1145,15 +1278,19 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Shared with ${user.username}')),
-      );
+      if (mounted && !_isDisposed) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Shared with ${user.username}')),
+        );
+      }
     } catch (e) {
       print('Error sharing post: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to share: $e')),
-      );
+      if (mounted && !_isDisposed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to share: $e')),
+        );
+      }
     }
   }
 
@@ -1184,9 +1321,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       }
     } catch (e) {
       print('Error navigating to profile: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cannot open profile: $e')),
-      );
+      if (mounted && !_isDisposed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cannot open profile: $e')),
+        );
+      }
     }
   }
 
@@ -1194,9 +1333,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please login to go live')),
-        );
+        if (mounted && !_isDisposed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please login to go live')),
+          );
+        }
         return;
       }
 
@@ -1220,9 +1361,11 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       _startLiveStream(context);
     } catch (e) {
       print('Error checking premium status: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      if (mounted && !_isDisposed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     }
   }
 
@@ -1240,6 +1383,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              // TODO: Implement upgrade flow
             },
             child: const Text('Upgrade'),
           ),
@@ -1280,32 +1424,38 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         'thumbnailUrl': userData?['photo_url'] ?? '',
       });
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LiveStreamScreen(
-            liveId: liveId,
-            userId: user.uid,
-            userName: userData?['name'] ?? 'Host',
-            isHost: true,
-            hostId: '',
+      if (mounted && !_isDisposed) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LiveStreamScreen(
+              liveId: liveId,
+              userId: user.uid,
+              userName: userData?['name'] ?? 'Host',
+              isHost: true,
+              hostId: '',
+            ),
           ),
-        ),
-      );
+        );
+      }
     } catch (e) {
       print('Error starting live stream: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start live stream: $e')),
-      );
+      if (mounted && !_isDisposed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start live stream: $e')),
+        );
+      }
     }
   }
 
   void _joinLiveStream(BuildContext context, _LiveCard room) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login to join live streams')),
-      );
+      if (mounted && !_isDisposed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please login to join live streams')),
+        );
+      }
       return;
     }
 
@@ -1441,19 +1591,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
                       ),
                     ],
                   ),
-                  _ReelsFeed(
-                    items: _clipsReels,
-                    showStories: false,
-                    onLike: _likePost,
-                    onComment: _showComments,
-                    onShare: _sharePost,
-                    onProfileTap: _navigateToUserProfile,
-                    onVideoTap: _onVideoTap,
-                    onPlayPause: _togglePlayPause,
-                    isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
-                    showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
-                    pageController: _clipsPageController,
-                  ),
+                  _buildClipsTab(),
                 ],
               ),
             ),
@@ -1500,6 +1638,64 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildClipsTab() {
+    return FutureBuilder(
+      future: _clipsLoadingCompleter?.future,
+      builder: (context, snapshot) {
+        if (!_clipsLoaded) {
+          return _buildLoadingClips();
+        }
+
+        return _ReelsFeed(
+          items: _clipsReels,
+          showStories: false,
+          onLike: _likePost,
+          onComment: _showComments,
+          onShare: _sharePost,
+          onProfileTap: _navigateToUserProfile,
+          onVideoTap: _onVideoTap,
+          onPlayPause: (item) => _onVideoTap(item),
+          isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
+          showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
+          pageController: _clipsPageController,
+          isLoadingMore: _loadingMoreClips,
+          hasMore: _hasMoreClips,
+        );
+      },
+    );
+  }
+
+  Widget _buildLoadingClips() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Loading Clips...',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _shouldLoadClips = true;
+              });
+              _loadClipsData();
+            },
+            child: const Text(
+              'Retry',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1755,7 +1951,31 @@ class _LiveTile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(room.thumb, fit: BoxFit.cover),
+            Image.network(
+              room.thumb,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  color: Colors.grey[800],
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  color: Colors.grey[800],
+                  child: const Center(
+                    child: Icon(Icons.error, color: Colors.white),
+                  ),
+                );
+              },
+            ),
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -1878,7 +2098,7 @@ class _LiveTile extends StatelessWidget {
   }
 }
 
-class _ReelsFeed extends StatelessWidget {
+class _ReelsFeed extends StatefulWidget {
   const _ReelsFeed({
     required this.items,
     this.showStories = false,
@@ -1891,6 +2111,8 @@ class _ReelsFeed extends StatelessWidget {
     required this.isVideoPlaying,
     required this.showPlayPauseOverlay,
     this.pageController,
+    this.isLoadingMore = false,
+    this.hasMore = true,
   });
 
   final List<_ReelItem> items;
@@ -1904,37 +2126,54 @@ class _ReelsFeed extends StatelessWidget {
   final bool Function(_ReelItem) isVideoPlaying;
   final bool Function(_ReelItem) showPlayPauseOverlay;
   final PageController? pageController;
+  final bool isLoadingMore;
+  final bool hasMore;
+
+  @override
+  State<_ReelsFeed> createState() => _ReelsFeedState();
+}
+
+class _ReelsFeedState extends State<_ReelsFeed> {
+  @override
+  void dispose() {
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return items.isEmpty
+    return widget.items.isEmpty
         ? _buildEmptyState()
         : PageView.builder(
-      controller: pageController,
+      controller: widget.pageController,
       scrollDirection: Axis.vertical,
-      itemCount: items.length,
-      onPageChanged: (index) {
-        if (items.isNotEmpty && index < items.length) {
-          final item = items[index];
-          if (item.mediaType == 'video') {
-            final exploreState = context.findAncestorStateOfType<_ExploreLiveScreenState>();
-            exploreState?._playVideo(item.postId);
-          }
-        }
-      },
+      itemCount: widget.items.length + (widget.hasMore ? 1 : 0),
       itemBuilder: (_, i) {
-        final it = items[i];
+        if (i >= widget.items.length) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: widget.isLoadingMore
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text(
+                'No more clips',
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+          );
+        }
+
+        final it = widget.items[i];
         return _ReelContent(
           item: it,
-          showStories: showStories,
-          onLike: onLike,
-          onComment: onComment,
-          onShare: onShare,
-          onProfileTap: onProfileTap,
-          onVideoTap: onVideoTap,
-          onPlayPause: onPlayPause,
-          isVideoPlaying: isVideoPlaying(it),
-          showPlayPauseOverlay: showPlayPauseOverlay(it),
+          showStories: widget.showStories,
+          onLike: widget.onLike,
+          onComment: widget.onComment,
+          onShare: widget.onShare,
+          onProfileTap: widget.onProfileTap,
+          onVideoTap: widget.onVideoTap,
+          onPlayPause: widget.onPlayPause,
+          isVideoPlaying: widget.isVideoPlaying(it),
+          showPlayPauseOverlay: widget.showPlayPauseOverlay(it),
         );
       },
     );
@@ -1992,8 +2231,6 @@ class _ReelContent extends StatefulWidget {
 }
 
 class _ReelContentState extends State<_ReelContent> {
-  bool _isMuted = false;
-
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
@@ -2016,9 +2253,30 @@ class _ReelContentState extends State<_ReelContent> {
               fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  color: Colors.grey[800],
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  color: Colors.grey[800],
+                  child: const Center(
+                    child: Icon(Icons.error, color: Colors.white),
+                  ),
+                );
+              },
             ),
 
-          // Play/Pause Overlay - Only show when video is NOT playing OR when showPlayPauseOverlay is true
+          // Play/Pause Overlay
           if (widget.item.mediaType == 'video' && widget.showPlayPauseOverlay)
             Center(
               child: AnimatedOpacity(
@@ -2223,6 +2481,19 @@ class _ReelContentState extends State<_ReelContent> {
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                color: Colors.black,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                        : null,
+                  ),
+                ),
+              );
+            },
           ),
           Container(
             color: Colors.black.withOpacity(0.3),
@@ -2317,86 +2588,86 @@ class _ShareBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
-        color: Color(0xFF333333),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Row(
-              children: [
-                const Text(
-                  'Share with Matched Users',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '(${matchedUsers.length})',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(FontAwesomeIcons.xmark, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-
-          Expanded(
-            child: matchedUsers.isEmpty
-                ? const Center(
-              child: Text(
-                'No matched users found',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-                : ListView.builder(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: const BoxDecoration(
+          color: Color(0xFF333333),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Container(
               padding: const EdgeInsets.all(16),
-              itemCount: matchedUsers.length,
-              itemBuilder: (context, index) {
-                final user = matchedUsers[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    radius: 25,
-                    backgroundImage: NetworkImage(
-                      user.photoUrl![0].isNotEmpty
-                          ? user.photoUrl![0]
-                          : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop',
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.3),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Row(
+                children: [
+                  const Text(
+                    'Share with Matched Users',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
                     ),
                   ),
-                  title: Text(
-                    user.username,
+                  const SizedBox(width: 8),
+                  Text(
+                    '(${matchedUsers.length})',
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: Colors.white70,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-
-                  trailing: IconButton(
-                    icon: const Icon(FontAwesomeIcons.paperPlane, color: AppColors.primary),
-                    onPressed: () => onShare(user, item),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(FontAwesomeIcons.xmark, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                );
-              },
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+
+            Expanded(
+              child: matchedUsers.isEmpty
+                  ? const Center(
+                child: Text(
+                  'No matched users found',
+                  style: TextStyle(color: Colors.white54),
+                ),
+              )
+                  : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: matchedUsers.length,
+                itemBuilder: (context, index) {
+                  final user = matchedUsers[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      radius: 25,
+                      backgroundImage: NetworkImage(
+                        user.photoUrl![0].isNotEmpty
+                            ? user.photoUrl![0]
+                            : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop',
+                      ),
+                    ),
+                    title: Text(
+                      user.username,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    trailing: IconButton(
+                      icon: const Icon(FontAwesomeIcons.paperPlane, color: AppColors.primary),
+                      onPressed: () => onShare(user, item),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        )
     );
   }
 }
