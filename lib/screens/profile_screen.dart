@@ -1754,21 +1754,13 @@ class _GiftTabState extends State<_GiftTab> {
       final diamondCost = gift['diamonds'] as int;
       final coinValue = diamondCost * 10; // 1 diamond = 10 coins
 
-      // Check if user has enough diamonds
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
-
-      final userData = userDoc.data() as Map<String, dynamic>?;
-      final currentDiamonds =
-          (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
-
-      if (currentDiamonds < diamondCost) {
+      // Check if user has enough diamonds using UserService
+      final hasEnough = await _checkDiamondBalance(currentUser.uid, diamondCost);
+      if (!hasEnough) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Not enough diamonds! You need $diamondCost but have $currentDiamonds',
+              'Not enough diamonds! You need $diamondCost diamonds for this gift.',
             ),
           ),
         );
@@ -1800,6 +1792,25 @@ class _GiftTabState extends State<_GiftTab> {
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Future<bool> _checkDiamondBalance(String userId, int requiredDiamonds) async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>?;
+        final currentDiamonds = (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
+        return currentDiamonds >= requiredDiamonds;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error checking diamond balance: $e');
+      return false;
     }
   }
 
@@ -1954,6 +1965,25 @@ class _SubsTabState extends State<_SubsTab> {
   final List<int> _subsOptions = [5, 10, 20];
   final int _subPrice = 40; // coins per sub
 
+  Future<bool> _checkDiamondBalance(String userId, int requiredDiamonds) async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>?;
+        final currentDiamonds = (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
+        return currentDiamonds >= requiredDiamonds;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error checking diamond balance: $e');
+      return false;
+    }
+  }
+
   Future<void> _sendSubs() async {
     if (_selectedSubsAmount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1972,22 +2002,15 @@ class _SubsTabState extends State<_SubsTab> {
       }
 
       final totalCoins = _selectedSubsAmount * _subPrice;
-
-      // Check if user has enough diamonds (subs are paid with diamonds)
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
-
-      final userData = userDoc.data() as Map<String, dynamic>?;
-      final currentDiamonds = (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
       final requiredDiamonds = _selectedSubsAmount * 40; // 40 diamonds per sub
 
-      if (currentDiamonds < requiredDiamonds) {
+      // Check if user has enough diamonds
+      final hasEnough = await _checkDiamondBalance(currentUser.uid, requiredDiamonds);
+      if (!hasEnough) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Not enough diamonds! You need $requiredDiamonds but have $currentDiamonds',
+              'Not enough diamonds! You need $requiredDiamonds diamonds for $_selectedSubsAmount subs.',
             ),
           ),
         );
@@ -2146,7 +2169,7 @@ class _SubsTabState extends State<_SubsTab> {
                   ),
                 ),
                 Text(
-                  "${_selectedSubsAmount * _subPrice} coins",
+                  "${_selectedSubsAmount * _subPrice} diamonds",
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,

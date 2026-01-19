@@ -743,17 +743,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
-      // Fetch reports from Firestore
-      final reportsQuery = await SettingsScreen._firestore
-          .collection('problem_reports')
-          .where('userId', isEqualTo: currentUser.uid)
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
+      final userId = currentUser.uid;
+
+      // Fetch reports from BOTH collections
+      final List<Future<QuerySnapshot>> futures = [
+        // Problem reports from settings
+        SettingsScreen._firestore
+            .collection('problem_reports')
+            .where('userId', isEqualTo: userId)
+            .orderBy('createdAt', descending: true)
+            .limit(50)
+            .get(),
+
+        // Profile reports from matched users screen
+        SettingsScreen._firestore
+            .collection('reports')
+            .where('reporterId', isEqualTo: userId)
+            .orderBy('createdAt', descending: true)
+            .limit(50)
+            .get(),
+      ];
+
+      final List<QuerySnapshot> results = await Future.wait(futures);
+
+      final problemReports = results[0].docs;
+      final profileReports = results[1].docs;
+
+      // Combine all reports
+      final List<Map<String, dynamic>> allReports = [];
+
+      // Process problem reports (from settings)
+      for (final doc in problemReports) {
+        final data = doc.data() as Map<String, dynamic>;
+        allReports.add({
+          'type': 'problem_report',
+          'data': data,
+          'timestamp': data['createdAt'],
+          'id': doc.id,
+        });
+      }
+
+      // Process profile reports (from matched users screen)
+      for (final doc in profileReports) {
+        final data = doc.data() as Map<String, dynamic>;
+
+        // Fetch reported user's name for display
+        String reportedUserName = 'User';
+        try {
+          final reportedUserId = data['reportedUserId'];
+          if (reportedUserId != null) {
+            final reportedUserDoc = await SettingsScreen._firestore
+                .collection('users')
+                .doc(reportedUserId)
+                .get();
+            if (reportedUserDoc.exists) {
+              final userData = reportedUserDoc.data() as Map<String, dynamic>?;
+              reportedUserName = userData?['name'] ?? 'User';
+            }
+          }
+        } catch (e) {
+          print('❌ Error fetching reported user data: $e');
+        }
+
+        // Format profile report data
+        allReports.add({
+          'type': 'profile_report',
+          'data': {
+            ...data,
+            'reportedUserName': reportedUserName,
+          },
+          'timestamp': data['createdAt'],
+          'id': doc.id,
+        });
+      }
+
+      // Sort all reports by timestamp (newest first)
+      allReports.sort((a, b) {
+        final aTime = a['timestamp'] as Timestamp?;
+        final bTime = b['timestamp'] as Timestamp?;
+
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+
+        return bTime.compareTo(aTime);
+      });
 
       Navigator.pop(context); // Close loading dialog
 
-      if (reportsQuery.docs.isEmpty) {
+      if (allReports.isEmpty) {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -764,7 +842,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Text('Report History'),
               ],
             ),
-            content: const Text('No reports found.'),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(FontAwesomeIcons.file, size: 60, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'No reports found',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'You haven\'t submitted any reports yet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -780,33 +874,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(FontAwesomeIcons.history, color: Colors.blue),
-              SizedBox(width: 12),
-              Text('Report History'),
-            ],
+          title: Container(
+            padding: const EdgeInsets.only(right: 12),
+            child: Row(
+              children: [
+                const Icon(FontAwesomeIcons.history, color: Colors.blue),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Report History',
+                        style: TextStyle(fontSize: 18),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Total: ${allReports.length} reports',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
           content: SizedBox(
             width: double.maxFinite,
-            height: MediaQuery.of(context).size.height * 0.6,
+            height: MediaQuery.of(context).size.height * 0.7,
             child: Column(
               children: [
-                Text(
-                  'Total Reports: ${reportsQuery.docs.length}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                // Summary Statistics
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _ReportStat(
+                        count: allReports
+                            .where((r) => r['type'] == 'profile_report')
+                            .length,
+                        label: 'Profile Reports',
+                        color: Colors.red,
+                      ),
+                      _ReportStat(
+                        count: allReports
+                            .where((r) => r['type'] == 'problem_report')
+                            .length,
+                        label: 'Problem Reports',
+                        color: Colors.blue,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                // Report Type Filter
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      FilterChip(
+                        label: const Text('All Reports'),
+                        selected: true,
+                        onSelected: null,
+                        backgroundColor: AppColors.primary.withOpacity(0.1),
+                        labelStyle: const TextStyle(color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Reports List
                 Expanded(
-                  child: SingleChildScrollView(
+                  child: allReports.isEmpty
+                      ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(FontAwesomeIcons.file, size: 60, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text('No reports found'),
+                      ],
+                    ),
+                  )
+                      : SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        for (final doc in reportsQuery.docs)
-                          _ReportHistoryItem(doc.data()),
+                        for (final report in allReports)
+                          _CombinedReportItem(
+                            report: report,
+                            onViewDetails: () => _showReportDetails(
+                              context,
+                              report,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -824,6 +997,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     } catch (e) {
       if (mounted) Navigator.pop(context);
+      print('❌ Error loading reports: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error loading reports: ${e.toString()}'),
@@ -831,6 +1005,203 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     }
+  }
+
+// Show detailed report view
+  void _showReportDetails(BuildContext context, Map<String, dynamic> report) {
+    final type = report['type'];
+    final data = report['data'] as Map<String, dynamic>;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              type == 'profile_report'
+                  ? FontAwesomeIcons.user
+                  : FontAwesomeIcons.flag,
+              color: type == 'profile_report' ? Colors.red : Colors.blue,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              type == 'profile_report'
+                  ? 'Profile Report Details'
+                  : 'Problem Report Details',
+              style: const TextStyle(fontSize: 16),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Report Type Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: type == 'profile_report'
+                      ? Colors.red.withOpacity(0.1)
+                      : Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  type == 'profile_report' ? 'PROFILE REPORT' : 'PROBLEM REPORT',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: type == 'profile_report' ? Colors.red : Colors.blue,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              if (type == 'profile_report') ...[
+                // Profile Report Details
+                _DetailItem(
+                  label: 'Reported User:',
+                  value: data['reportedUserName'] ?? 'User',
+                  icon: FontAwesomeIcons.user,
+                ),
+                _DetailItem(
+                  label: 'Reason:',
+                  value: data['reason'] ?? 'Not specified',
+                  icon: FontAwesomeIcons.exclamationTriangle,
+                ),
+                if (data['details'] != null && data['details'].toString().isNotEmpty)
+                  _DetailItem(
+                    label: 'Additional Details:',
+                    value: data['details'].toString(),
+                    icon: FontAwesomeIcons.noteSticky,
+                  ),
+              ] else if (type == 'problem_report') ...[
+                // Problem Report Details
+                _DetailItem(
+                  label: 'Category:',
+                  value: data['category'] ?? 'General',
+                  icon: FontAwesomeIcons.tags,
+                ),
+                _DetailItem(
+                  label: 'Description:',
+                  value: data['description'] ?? 'No description',
+                  icon: FontAwesomeIcons.comment,
+                ),
+              ],
+
+              const SizedBox(height: 16),
+
+              // Status Information
+              _DetailItem(
+                label: 'Status:',
+                value: _getStatusText(data['status']),
+                icon: FontAwesomeIcons.circle,
+                valueColor: _getStatusColor(data['status']),
+              ),
+
+              // Timestamps
+              if (data['createdAt'] != null) ...[
+                const SizedBox(height: 12),
+                _DetailItem(
+                  label: 'Submitted:',
+                  value: _formatTimestamp(data['createdAt']),
+                  icon: FontAwesomeIcons.calendar,
+                ),
+              ],
+
+              if (data['updatedAt'] != null) ...[
+                const SizedBox(height: 8),
+                _DetailItem(
+                  label: 'Last Updated:',
+                  value: _formatTimestamp(data['updatedAt']),
+                  icon: FontAwesomeIcons.clock,
+                ),
+              ],
+
+              // Report ID
+              const SizedBox(height: 16),
+              _DetailItem(
+                label: 'Report ID:',
+                value: data['reportId']?.toString().substring(0, 12) ?? 'N/A',
+                icon: FontAwesomeIcons.fingerprint,
+                copyable: true,
+                onCopy: () => _copyToClipboard(context, data['reportId'].toString()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          if (type == 'profile_report')
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                // Optionally navigate to user profile
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Report details closed'),
+                    backgroundColor: Colors.grey,
+                  ),
+                );
+              },
+              child: const Text('View Profile'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _getStatusText(String? status) {
+    if (status == null) return 'Pending';
+
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 'Pending Review';
+      case 'reviewed':
+        return 'Under Review';
+      case 'resolved':
+        return 'Resolved';
+      case 'closed':
+        return 'Closed';
+      default:
+        return status;
+    }
+  }
+
+  Color _getStatusColor(String? status) {
+    if (status == null) return Colors.orange;
+
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'reviewed':
+        return Colors.blue;
+      case 'resolved':
+        return Colors.green;
+      case 'closed':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    try {
+      if (timestamp is Timestamp) {
+        final date = timestamp.toDate();
+        return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+      } else if (timestamp is String) {
+        return timestamp;
+      } else if (timestamp is DateTime) {
+        return '${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
+      }
+    } catch (e) {
+      print('❌ Error formatting timestamp: $e');
+    }
+    return 'Date not available';
   }
 
   // ============ COMING SOON FEATURES ============
@@ -2293,6 +2664,388 @@ class _TransactionItem extends StatelessWidget {
           Text(
             'Date: ${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour}:${timestamp.minute}',
             style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Report Stat Widget
+class _ReportStat extends StatelessWidget {
+  final int count;
+  final String label;
+  final Color color;
+
+  const _ReportStat({
+    required this.count,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withOpacity(0.3), width: 2),
+          ),
+          child: Center(
+            child: Text(
+              '$count',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: color,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Combined Report Item Widget
+class _CombinedReportItem extends StatelessWidget {
+  final Map<String, dynamic> report;
+  final VoidCallback onViewDetails;
+
+  const _CombinedReportItem({
+    required this.report,
+    required this.onViewDetails,
+  });
+
+  // Add these static helper methods in the _SettingsScreenState class
+  static Color _getStatusColor(String? status) {
+    if (status == null) return Colors.orange;
+
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'reviewed':
+        return Colors.blue;
+      case 'resolved':
+        return Colors.green;
+      case 'closed':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  static String _getStatusText(String? status) {
+    if (status == null) return 'Pending';
+
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 'Pending Review';
+      case 'reviewed':
+        return 'Under Review';
+      case 'resolved':
+        return 'Resolved';
+      case 'closed':
+        return 'Closed';
+      default:
+        return status;
+    }
+  }
+
+  static String _formatTimestamp(dynamic timestamp) {
+    try {
+      if (timestamp is Timestamp) {
+        final date = timestamp.toDate();
+        return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+      } else if (timestamp is String) {
+        return timestamp;
+      } else if (timestamp is DateTime) {
+        return '${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
+      }
+    } catch (e) {
+      print('❌ Error formatting timestamp: $e');
+    }
+    return 'Date not available';
+  }
+
+  String _getDescriptionPreview(String description) {
+    if (description.isEmpty) return 'No description';
+
+    // Use the shorter of: description length or 50
+    final maxLength = description.length < 50 ? description.length : 50;
+    return description.substring(0, maxLength);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final type = report['type'];
+    final data = report['data'] as Map<String, dynamic>;
+    final status = data['status'] ?? 'pending';
+
+    // Determine colors and icons based on report type
+    Color typeColor = type == 'profile_report' ? Colors.red : Colors.blue;
+    IconData typeIcon = type == 'profile_report'
+        ? FontAwesomeIcons.user
+        : FontAwesomeIcons.flag;
+
+    // Determine status color
+    Color statusColor = _getStatusColor(status);
+
+    // Get report title
+    String title = type == 'profile_report'
+        ? data['reportedUserName'] ?? 'Profile Report'
+        : data['category'] ?? 'Problem Report';
+
+    // Get description preview
+// Get description preview
+    String description = type == 'profile_report'
+        ? data['reason'] ?? 'Profile report'
+        : _getDescriptionPreview(data['description']?.toString() ?? 'No description');
+
+// Add this helper method to get a safe substring
+
+    // Format timestamp
+    final timestamp = data['createdAt'];
+    String timeText = 'Recently';
+    if (timestamp is Timestamp) {
+      final date = timestamp.toDate();
+      final now = DateTime.now();
+      final difference = now.difference(date);
+
+      if (difference.inMinutes < 1) {
+        timeText = 'Just now';
+      } else if (difference.inHours < 1) {
+        timeText = '${difference.inMinutes}m ago';
+      } else if (difference.inDays < 1) {
+        timeText = '${difference.inHours}h ago';
+      } else if (difference.inDays < 7) {
+        timeText = '${difference.inDays}d ago';
+      } else {
+        timeText = '${date.day}/${date.month}/${date.year}';
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        elevation: 1,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onViewDetails,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                // Report Type Icon
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: typeColor.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(typeIcon, size: 18, color: typeColor),
+                ),
+
+                const SizedBox(width: 12),
+
+                // Report Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              status.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: statusColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 4),
+
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+
+                      const SizedBox(height: 4),
+
+                      Row(
+                        children: [
+                          Icon(
+                            FontAwesomeIcons.clock,
+                            size: 10,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            timeText,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
+                            ),
+                          ),
+
+                          const Spacer(),
+
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: typeColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              type == 'profile_report'
+                                  ? 'Profile'
+                                  : 'Problem',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: typeColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // View Details Arrow
+                const Icon(
+                  FontAwesomeIcons.chevronRight,
+                  size: 14,
+                  color: Colors.grey,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Detail Item for Report Details
+class _DetailItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color? valueColor;
+  final bool copyable;
+  final VoidCallback? onCopy;
+
+  const _DetailItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.valueColor,
+    this.copyable = false,
+    this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: Colors.grey),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        value,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: valueColor ?? Colors.black,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (copyable)
+                      IconButton(
+                        icon: const Icon(
+                          FontAwesomeIcons.copy,
+                          size: 14,
+                          color: Colors.blue,
+                        ),
+                        onPressed: onCopy,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -9,6 +9,7 @@ import 'package:zego_uikit_prebuilt_live_streaming/zego_uikit_prebuilt_live_stre
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
+import 'package:meet9ja/db_functions/user_service.dart'; // Add this import
 
 import '../aws/zego_recording_service.dart';
 
@@ -996,7 +997,7 @@ bool _isUnreserved(String char) {
       char == '~';
 }
 
-// Gift Overlay Widget
+// Gift Overlay Widget - UPDATED WITH BALANCE CHECKS
 class _GiftOverlay extends StatelessWidget {
   final String liveId;
   final String userId;
@@ -1075,20 +1076,15 @@ class _GiftOverlay extends StatelessWidget {
       int diamondCost,
       ) async {
     try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
+      // Check diamond balance using UserService helper method
+      final hasEnough = await _checkDiamondBalance(userId, diamondCost);
 
-      final userData = userDoc.data() as Map<String, dynamic>?;
-      final currentDiamonds =
-          (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
-
-      if (currentDiamonds < diamondCost) {
+      if (!hasEnough) {
+        final currentDiamonds = await _getCurrentDiamondBalance(userId);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Not enough diamonds! You need $diamondCost but have $currentDiamonds',
+              'Not enough diamonds! You need $diamondCost diamonds but only have $currentDiamonds.',
             ),
           ),
         );
@@ -1106,69 +1102,22 @@ class _GiftOverlay extends StatelessWidget {
         throw Exception('Host user ID not found');
       }
 
-      final batch = FirebaseFirestore.instance.batch();
+      final coinValue = diamondCost * 10; // 1 diamond = 10 coins
 
-      // Deduct diamonds from sender
-      batch.update(FirebaseFirestore.instance.collection('users').doc(userId), {
-        'wallet.diamond_balance': FieldValue.increment(-diamondCost),
-      });
-
-      // Convert diamonds to coins for receiver (1 diamond = X coins, adjust ratio as needed)
-      final coinValue = diamondCost * 10; // Example: 1 diamond = 10 coins
-
-      // Add coins to host's earnings
-      batch.update(
-        FirebaseFirestore.instance.collection('users').doc(hostUserId),
-        {
-          'wallet.coin_balance': FieldValue.increment(coinValue),
-          'wallet.total_earning': FieldValue.increment(coinValue.toDouble()),
-        },
-      );
-
-      // Record transaction
-      batch.set(
-        FirebaseFirestore.instance
-            .collection('transactions')
-            .doc('${DateTime.now().millisecondsSinceEpoch}_$userId'),
-        {
-          'transaction_id': '${DateTime.now().millisecondsSinceEpoch}_$userId',
-          'type': 'gift_sent',
-          'UID': userId,
-          'receiver_UID': hostUserId,
-          'diamond_amount': diamondCost,
-          'coin_value': coinValue,
-          'date_time': FieldValue.serverTimestamp(),
-          'given_live': liveId,
-          'gift_type': giftType,
-        },
-      );
-
-      // Record receiver transaction
-      batch.set(
-        FirebaseFirestore.instance
-            .collection('transactions')
-            .doc('${DateTime.now().millisecondsSinceEpoch}_$hostUserId'),
-        {
-          'transaction_id':
-          '${DateTime.now().millisecondsSinceEpoch}_$hostUserId',
-          'type': 'gift_received',
-          'UID': hostUserId,
-          'sender_UID': userId,
-          'diamond_amount': diamondCost,
-          'coin_value': coinValue,
-          'date_time': FieldValue.serverTimestamp(),
-          'received_live': liveId,
-          'gift_type': giftType,
-        },
+      // Use the UserService to process the gift transaction
+      await UserService.processGiftTransaction(
+        senderId: userId,
+        receiverId: hostUserId,
+        giftType: giftType,
+        diamondCost: diamondCost,
+        coinValue: coinValue,
       );
 
       // Update live stream gift total (in coins)
-      batch.update(
-        FirebaseFirestore.instance.collection('liveStreams').doc(liveId),
-        {'total_gift_value': FieldValue.increment(coinValue)},
-      );
-
-      await batch.commit();
+      await FirebaseFirestore.instance
+          .collection('liveStreams')
+          .doc(liveId)
+          .update({'total_gift_value': FieldValue.increment(coinValue)});
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1178,9 +1127,49 @@ class _GiftOverlay extends StatelessWidget {
 
       Navigator.of(context).pop();
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to send gift: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send gift: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<bool> _checkDiamondBalance(String userId, int requiredDiamonds) async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>?;
+        final currentDiamonds = (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
+        return currentDiamonds >= requiredDiamonds;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error checking diamond balance: $e');
+      return false;
+    }
+  }
+
+  Future<int> _getCurrentDiamondBalance(String userId) async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>?;
+        return (userData?['wallet']?['diamond_balance'] as int?) ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      print('❌ Error getting diamond balance: $e');
+      return 0;
     }
   }
 }

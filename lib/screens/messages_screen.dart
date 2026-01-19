@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:meet9ja/constants/ENVconfig.dart';
 import 'package:meet9ja/db_functions/user_service.dart';
-import 'package:meet9ja/screens/MatchedUserScreen.dart';
 import 'package:meet9ja/screens/activity_screen.dart';
 import 'package:meet9ja/screens/dating_profile.dart';
 import 'package:meet9ja/screens/profile_screen.dart';
@@ -38,11 +37,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
   List<_Conversation> _filteredChats = [];
   List<_StoryDisplay> _stories = [];
   List<_User> _allUsers = [];
+  Set<String> _matchedUserIds = {}; // Track currently matched user IDs
   bool _isLoading = true;
   bool _showNewChatOptions = false;
   StreamSubscription<QuerySnapshot>? _chatSubscription;
   StreamSubscription<QuerySnapshot>? _usersSubscription;
   StreamSubscription<QuerySnapshot>? _storiesSubscription;
+  StreamSubscription<QuerySnapshot>? _matchesSubscription; // Track matches changes
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -52,6 +53,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _searchController.addListener(_performSearch);
     _loadAllChats();
     _loadMatchedUsers();
+    _listenToMatches(); // Listen for match changes
     _initializeZegoCloud();
     _debugChatData(); // Debug helper
   }
@@ -61,8 +63,35 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _chatSubscription?.cancel();
     _usersSubscription?.cancel();
     _storiesSubscription?.cancel();
+    _matchesSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  // Listen to matches in real-time
+  void _listenToMatches() {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    _matchesSubscription = _firestore
+        .collection('matches')
+        .where('UID', isEqualTo: currentUser.uid)
+        .where('status', isEqualTo: 'match')
+        .where('is_mutual', isEqualTo: true)
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        final matchedIds = snapshot.docs
+            .map((doc) => doc.data()['matched_user_ID'] as String)
+            .toSet();
+        setState(() {
+          _matchedUserIds = matchedIds;
+        });
+        print('✅ Updated matched users: ${matchedIds.length} users');
+      }
+    }, onError: (e) {
+      print('❌ Error listening to matches: $e');
+    });
   }
 
   // Debug method to check chat data
@@ -72,6 +101,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       if (user == null) return;
 
       print('🔍 DEBUG: Checking chat data for user: ${user.uid}');
+      print('✅ Currently matched users: $_matchedUserIds');
 
       // Check all conversations
       final snapshot = await _firestore
@@ -86,16 +116,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         print('   Participants: ${data['participants']}');
         print('   Last message: ${data['lastMessage']}');
         print('   Last time: ${data['lastMessageTime']}');
-
-        // Check if current user is in participants
-        if (data['participants'] != null && data['participants'] is Map) {
-          final participants = data['participants'] as Map<String, dynamic>;
-          if (participants.containsKey(user.uid)) {
-            print('   ✅ Current user FOUND in this conversation');
-          } else {
-            print('   ❌ Current user NOT in this conversation');
-          }
-        }
       }
     } catch (e) {
       print('❌ Debug error: $e');
@@ -124,7 +144,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  // Load all users for messaging
   // Load matched users for messaging
   Future<void> _loadMatchedUsers() async {
     try {
@@ -141,7 +160,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       final matchedUserIds = matchesSnapshot.docs
           .map((doc) => doc.data()['matched_user_ID'] as String)
-          .toList();
+          .toSet();
+
+      setState(() {
+        _matchedUserIds = matchedUserIds;
+      });
 
       if (matchedUserIds.isEmpty) {
         setState(() {
@@ -153,7 +176,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       // Load user data for matched users
       final usersQuery = await _firestore
           .collection('users')
-          .where('UID', whereIn: matchedUserIds)
+          .where('UID', whereIn: matchedUserIds.toList())
           .get();
 
       if (mounted) {
@@ -172,40 +195,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
       }
     } catch (e) {
       print('❌ Error loading matched users: $e');
-      // Fallback: load all users if there's an error
-      _loadAllUsersAsFallback();
     }
   }
 
-// Fallback method to load all users
-  Future<void> _loadAllUsersAsFallback() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      final usersQuery = await _firestore
-          .collection('users')
-          .where('UID', isNotEqualTo: user.uid)
-          .get();
-
-      if (mounted) {
-        setState(() {
-          _allUsers = usersQuery.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            return _User(
-              id: data['UID'] ?? doc.id,
-              name: data['name'] ?? 'User',
-              avatar: _getFirstPhotoUrl(data['first_photos']) ?? 'https://i.pravatar.cc/200',
-              isOnline: data['is_online'] ?? false,
-            );
-          }).toList();
-        });
-        print('⚠ Loaded ${_allUsers.length} users (fallback)');
-      }
-    } catch (e) {
-      print('❌ Fallback error: $e');
-    }
-  }
   // Load ALL chat conversations
   Future<void> _loadAllChats() async {
     try {
@@ -217,7 +209,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       print('🔄 Loading ALL chats for user: ${user.uid}');
 
-      // Try different query strategies
       _chatSubscription = _firestore
           .collection('chat_conversations')
           .snapshots()
@@ -233,7 +224,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
               final participants = data['participants'] as Map<String, dynamic>?;
 
               if (participants != null && participants.containsKey(user.uid)) {
-                print('✅ Found conversation where user is participant: ${doc.id}');
                 final conversation = await _Conversation.fromFirestoreWithUserData(doc.id, data);
                 conversations.add(conversation);
               }
@@ -244,11 +234,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
           // Sort by last message time (newest first)
           conversations.sort((a, b) {
-            // If time is "Now", treat as most recent
             if (a.time == "Now" && b.time != "Now") return -1;
             if (b.time == "Now" && a.time != "Now") return 1;
 
-            // Try to parse time strings for sorting
             try {
               final aTime = _parseTimeString(a.time);
               final bTime = _parseTimeString(b.time);
@@ -265,12 +253,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
           });
 
           print('✅ Successfully loaded ${_chats.length} conversations');
-
-          // If no conversations, try alternative query
-          if (_chats.isEmpty) {
-            print('⚠ No conversations found with current query, trying alternative...');
-            _tryAlternativeChatQuery();
-          }
         }
       }, onError: (e) {
         print('❌ Chat subscription error: $e');
@@ -284,74 +266,20 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  // Alternative query method in case the first one fails
-  Future<void> _tryAlternativeChatQuery() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      print('🔄 Trying alternative chat query...');
-
-      // Get all conversations and filter locally
-      final snapshot = await _firestore
-          .collection('chat_conversations')
-          .get();
-
-      List<_Conversation> conversations = [];
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final participants = data['participants'] as Map<String, dynamic>?;
-
-        // Check if this conversation contains the current user
-        bool containsUser = false;
-
-        // Check participants map
-        if (participants != null) {
-          containsUser = participants.containsKey(user.uid);
-
-          // Also check if participants is a list (old format)
-          if (!containsUser && participants is List) {
-            containsUser = (participants as List).contains(user.uid);
-          }
-        }
-
-        if (containsUser) {
-          final conversation = await _Conversation.fromFirestoreWithUserData(doc.id, data);
-          conversations.add(conversation);
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _chats = conversations;
-          _filteredChats = List.from(_chats);
-        });
-        print('✅ Alternative query loaded ${_chats.length} conversations');
-      }
-    } catch (e) {
-      print('❌ Alternative query error: $e');
-    }
-  }
-
   int _parseTimeString(String time) {
     if (time == "Now") return 0;
 
     if (time.endsWith('m')) {
-      // Minutes ago
       final minutes = int.tryParse(time.replaceAll('m', '')) ?? 0;
       return minutes;
     } else if (time.endsWith('h')) {
-      // Hours ago
       final hours = int.tryParse(time.replaceAll('h', '')) ?? 0;
       return hours * 60;
     } else if (time.endsWith('d')) {
-      // Days ago
       final days = int.tryParse(time.replaceAll('d', '')) ?? 0;
       return days * 60 * 24;
     } else if (time.contains('/')) {
-      // Date like "12/25"
-      return 999999; // Old dates go to bottom
+      return 999999;
     }
 
     return 0;
@@ -485,11 +413,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
-  // Start chat with any user
+  // Start chat with any user (only matched users)
   void _startChatWithUser(_User user) async {
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return;
+
+      // Check if user is matched
+      if (!_matchedUserIds.contains(user.id)) {
+        _showUnmatchedPopup(user.name);
+        return;
+      }
 
       final conversationId = _getConversationId(currentUser.uid, user.id);
       await _ensureConversationExists(conversationId, currentUser.uid, user);
@@ -577,11 +511,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  // Open existing chat
+  // Open existing chat - CHECK IF USER IS STILL MATCHED
   void _openExistingChat(_Conversation chat) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return;
+
+      // Check if the other user is still matched
+      if (!_matchedUserIds.contains(chat.otherUserId)) {
+        _showUnmatchedPopup(chat.name);
+        return;
+      }
 
       await _markConversationAsRead(chat.id);
 
@@ -603,6 +543,63 @@ class _MessagesScreenState extends State<MessagesScreen> {
         SnackBar(content: Text('Failed to open chat: $e')),
       );
     }
+  }
+
+  // Show popup for unmatched users
+  void _showUnmatchedPopup(String userName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.heart_broken, color: Colors.red, size: 24),
+            SizedBox(width: 8),
+            Text(
+              'Unmatched',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$userName has been unmatched',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'You can only message users you are currently matched with.',
+              style: TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Optionally navigate to MatchedUsersScreen
+              // Navigator.push(
+              //   context,
+              //   MaterialPageRoute(
+              //     builder: (context) => MatchedUsersScreen(userId: _auth.currentUser!.uid),
+              //   ),
+              // );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('View Matches'),
+          ),
+        ],
+      ),
+    );
   }
 
   // Mark conversation as read
@@ -643,7 +640,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   // View user stories
-  // View user stories - updated to handle current user
   void _viewUserStory(_StoryDisplay storyDisplay) async {
     try {
       final user = _auth.currentUser;
@@ -688,6 +684,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       );
     }
   }
+
   Widget _buildTitleBar(BuildContext context) {
     if (_isSearching) {
       return Expanded(
@@ -767,14 +764,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     if (!_isSearching)
                       Row(
                         children: [
-                          // IconButton(
-                          //   icon: FaIcon(
-                          //     _showNewChatOptions ? FontAwesomeIcons.comments : FontAwesomeIcons.plus,
-                          //     color: AppColors.primary,
-                          //     size: 20,
-                          //   ),
-                          //   onPressed: _toggleNewChatOptions,
-                          // ),
                           IconButton(
                             icon: const FaIcon(
                               FontAwesomeIcons.magnifyingGlass,
@@ -1003,6 +992,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       ),
     );
   }
+
   Widget _buildEmptyChatsState() {
     return Container(
       padding: const EdgeInsets.all(40),
@@ -1041,10 +1031,143 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _ChatTile(
           chat: chat,
           onTap: () => _openExistingChat(chat),
+          isMatched: _matchedUserIds.contains(chat.otherUserId),
+          onUnmatchedTap: () => _showUnmatchedDetails(chat), // New callback
         ),
         const Divider(height: 0),
       ],
     )).toList();
+  }
+
+  // Show detailed information about unmatched chat
+  void _showUnmatchedDetails(_Conversation chat) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 60,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Header
+            Row(
+              children: [
+                Icon(Icons.heart_broken, color: Colors.red, size: 24),
+                const SizedBox(width: 8),
+                const Text(
+                  'Unmatched Chat',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Chat Info
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                radius: 25,
+                backgroundImage: NetworkImage(chat.avatar),
+              ),
+              title: Text(
+                chat.name,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text('Last active: ${chat.time}'),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Information
+            const Text(
+              'Chat Information',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            Text(
+              'You are no longer matched with ${chat.name}.',
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+
+            Text(
+              '• You cannot send new messages\n• Chat history is preserved\n• Match again to resume chatting',
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Actions
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // Option 1: Navigate to user's profile
+                      // _viewUserProfile(chat.otherUserId);
+
+                      // Option 2: Navigate to discover to find them again
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DiscoverScreen(),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: AppColors.primary),
+                    ),
+                    child: Text(
+                      'Find New Matches',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey[200],
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1093,9 +1216,6 @@ class _Conversation {
     if (currentUser == null) {
       throw Exception('User not authenticated');
     }
-
-    print('🔄 Parsing conversation: $id');
-    print('   Data: $data');
 
     // Handle participants - could be Map or List
     dynamic participantsData = data['participants'];
@@ -1292,7 +1412,128 @@ class _UserTile extends StatelessWidget {
   }
 }
 
-// ---------- Stories Circle ----------
+// ---------- Updated Chat Tile with unmatched indicator ----------
+// ---------- Updated Chat Tile with proper unmatched handling ----------
+class _ChatTile extends StatelessWidget {
+  const _ChatTile({
+    required this.chat,
+    required this.onTap,
+    required this.isMatched,
+    required this.onUnmatchedTap, // New callback for unmatched chats
+  });
+
+  final _Conversation chat;
+  final VoidCallback onTap;
+  final bool isMatched;
+  final VoidCallback onUnmatchedTap; // Callback for unmatched chats
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+      onTap: isMatched ? onTap : onUnmatchedTap, // Use different callback
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CircleAvatar(
+            radius: 26,
+            backgroundImage: NetworkImage(chat.avatar),
+            onBackgroundImageError: (exception, stackTrace) {
+              print('❌ Error loading avatar: $exception');
+            },
+          ),
+          if (!isMatched)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(
+                  Icons.heart_broken,
+                  size: 12,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          if (isMatched && chat.unread > 0)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  "${chat.unread}",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              chat.name,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: isMatched ? Colors.black : Colors.grey,
+                decoration: !isMatched ? TextDecoration.lineThrough : null,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            chat.time,
+            style: TextStyle(
+              fontSize: 12,
+              color: isMatched ? Colors.black54 : Colors.grey,
+            ),
+          ),
+        ],
+      ),
+      subtitle: Text(
+        isMatched ? chat.lastMessage : 'Unmatched',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: isMatched ? Colors.black.withOpacity(0.7) : Colors.red,
+          fontWeight: isMatched && chat.unread > 0 ? FontWeight.w800 : FontWeight.w500,
+          fontStyle: !isMatched ? FontStyle.italic : FontStyle.normal,
+        ),
+      ),
+      trailing: isMatched
+          ? const FaIcon(
+        FontAwesomeIcons.chevronRight,
+        color: Colors.black26,
+        size: 16,
+      )
+          : IconButton(
+        icon: const Icon(
+          Icons.info_outline,
+          color: Colors.red,
+          size: 18,
+        ),
+        onPressed: onUnmatchedTap,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+      ),
+    );
+  }
+}
 // ---------- Stories Circle ----------
 class _StoryCircle extends StatelessWidget {
   const _StoryCircle({
@@ -1372,82 +1613,6 @@ class _StoryCircle extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-// ---------- Chat List Tile ----------
-class _ChatTile extends StatelessWidget {
-  const _ChatTile({required this.chat, required this.onTap});
-  final _Conversation chat;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(vertical: 6),
-      onTap: onTap,
-      leading: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundImage: NetworkImage(chat.avatar),
-            onBackgroundImageError: (exception, stackTrace) {
-              print('❌ Error loading avatar: $exception');
-            },
-          ),
-          if (chat.unread > 0)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  "${chat.unread}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              chat.name,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Text(
-            chat.time,
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-        ],
-      ),
-      subtitle: Text(
-        chat.lastMessage,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: Colors.black.withOpacity(0.7),
-          fontWeight: chat.unread > 0 ? FontWeight.w800 : FontWeight.w500,
-        ),
-      ),
-      trailing: const FaIcon(
-        FontAwesomeIcons.chevronRight,
-        color: Colors.black26,
-        size: 16,
       ),
     );
   }
