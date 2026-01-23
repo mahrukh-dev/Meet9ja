@@ -46,12 +46,15 @@ class _HomeScreenState extends State<HomeScreen> {
   // Bottom navigation current index
   int _bottomNavIndex = 2; // Home is index 2 (People tab)
 
+  // Store user preferences/filters
+  Map<String, dynamic> _userPreferences = {};
+
   @override
   void initState() {
     super.initState();
     _pageCtrl = PageController(viewportFraction: 0.92);
     _currentPage = _pageCtrl.initialPage.toDouble();
-    _loadProfiles();
+    _loadUserPreferences();
   }
 
   @override
@@ -60,9 +63,38 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // Load profiles from Firebase
-  // In your _HomeScreenState class, update the _loadProfiles method:
+  // Load user preferences from Firestore
+  Future<void> _loadUserPreferences() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        await _loadProfiles();
+        return;
+      }
 
+      // Get user preferences
+      final prefDoc = await FirebaseFirestore.instance
+          .collection('preferences')
+          .doc(currentUser.uid)
+          .get();
+
+      if (prefDoc.exists) {
+        setState(() {
+          _userPreferences = prefDoc.data() ?? {};
+          print('📋 Loaded user preferences: $_userPreferences');
+        });
+      } else {
+        print('📋 No preferences found, using defaults');
+      }
+
+      await _loadProfiles();
+    } catch (e) {
+      print('❌ Error loading preferences: $e');
+      await _loadProfiles();
+    }
+  }
+
+  // Load profiles from Firebase with full filtering
   Future<void> _loadProfiles() async {
     try {
       print('🔄 Starting to load profiles...');
@@ -71,21 +103,26 @@ class _HomeScreenState extends State<HomeScreen> {
         _errorMessage = '';
       });
 
-      // First get current user's gender
+      // Get current user's gender
       final currentUserGender = await _getCurrentUserGender();
       print('👤 Current user gender: $currentUserGender');
 
       // Get all discovery profiles
       final allProfiles = await getDiscoveryProfiles();
+      print('📥 Total profiles found: ${allProfiles.length}');
 
-      // Filter profiles based on opposite gender
-      final filteredProfiles = allProfiles.where((profile) {
-        final profileGender = (profile['gender'] ?? 'male').toString().toLowerCase();
-        final targetGender = currentUserGender == 'male' ? 'female' : 'male';
-        return profileGender == targetGender;
-      }).toList();
+      // Apply comprehensive filtering
+      List<Map<String, dynamic>> filteredProfiles = [];
 
-      print('📥 Loaded ${filteredProfiles.length} filtered profiles (${currentUserGender == 'male' ? 'female' : 'male'})');
+      if (_userPreferences.isNotEmpty) {
+        // Apply all user filters if they exist
+        filteredProfiles = _applyAllFilters(allProfiles, currentUserGender);
+        print('🎯 Applied user filters, result: ${filteredProfiles.length} profiles');
+      } else {
+        // Default behavior: opposite gender only
+        filteredProfiles = _applyDefaultGenderFilter(allProfiles, currentUserGender);
+        print('🔧 Applied default filter, result: ${filteredProfiles.length} profiles');
+      }
 
       if (mounted) {
         setState(() {
@@ -104,60 +141,299 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-// Add this helper method to get current user's gender
+  // Apply default gender filter (opposite gender)
+  List<Map<String, dynamic>> _applyDefaultGenderFilter(
+      List<Map<String, dynamic>> profiles, String currentUserGender) {
+    return profiles.where((profile) {
+      final profileGender = (profile['gender'] ?? 'male').toString().toLowerCase();
+
+      // Default: males see females, females see males
+      if (currentUserGender == 'male') {
+        return profileGender == 'female';
+      } else {
+        return profileGender == 'male';
+      }
+    }).toList();
+  }
+
+  // Apply ALL user filters comprehensively
+  List<Map<String, dynamic>> _applyAllFilters(
+      List<Map<String, dynamic>> profiles, String currentUserGender) {
+    return profiles.where((profile) {
+      // 1. First check gender preference (highest priority)
+      if (!_passesGenderFilter(profile, currentUserGender)) {
+        return false;
+      }
+
+      // 2. Check age range
+      if (!_passesAgeFilter(profile)) {
+        return false;
+      }
+
+      // 3. Check interests (if any selected)
+      if (!_passesInterestFilter(profile)) {
+        return false;
+      }
+
+      // 4. Check verified status
+      if (!_passesVerifiedFilter(profile)) {
+        return false;
+      }
+
+      // 5. Check height range
+      if (!_passesHeightFilter(profile)) {
+        return false;
+      }
+
+      // 6. Check intentions (if any selected)
+      if (!_passesIntentionsFilter(profile)) {
+        return false;
+      }
+
+      // All filters passed
+      return true;
+    }).toList();
+  }
+
+  // Gender filter logic
+  bool _passesGenderFilter(Map<String, dynamic> profile, String currentUserGender) {
+    final profileGender = (profile['gender'] ?? 'male').toString().toLowerCase();
+    final userPreference = _userPreferences['whoToDate']?.toString().toLowerCase();
+
+    // If user has set a gender preference, use it
+    if (userPreference != null) {
+      if (userPreference == 'women') {
+        return profileGender == 'female';
+      } else if (userPreference == 'men') {
+        return profileGender == 'male';
+      } else if (userPreference == 'everyone') {
+        return true; // Show all genders
+      }
+    }
+
+    // Fallback to default opposite gender rule
+    if (currentUserGender == 'male') {
+      return profileGender == 'female';
+    } else {
+      return profileGender == 'male';
+    }
+  }
+
+  // Age filter logic
+  bool _passesAgeFilter(Map<String, dynamic> profile) {
+    final minAge = _userPreferences['ageRangeStart'] ?? 18;
+    final maxAge = _userPreferences['ageRangeEnd'] ?? 28;
+    final flexAge = _userPreferences['flexAgeIfRunOut'] ?? true;
+
+    final profileAge = getUserAge(profile);
+
+    // Check if age is within range
+    if (profileAge >= minAge && profileAge <= maxAge) {
+      return true;
+    }
+
+    // If not in range but flex is enabled, allow 2 years outside range
+    if (flexAge && (profileAge >= minAge - 2 && profileAge <= maxAge + 2)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Interest filter logic
+  bool _passesInterestFilter(Map<String, dynamic> profile) {
+    final selectedInterests = List<String>.from(_userPreferences['selectedInterests'] ?? []);
+    final flexInterest = _userPreferences['flexInterestIfRunOut'] ?? true;
+
+    // If no interests selected, pass the filter
+    if (selectedInterests.isEmpty) {
+      return true;
+    }
+
+    // Get profile interests
+    final profileInterests = List<String>.from(profile['interests'] ?? []);
+
+    // Check if profile has at least one matching interest
+    final hasMatchingInterest = selectedInterests.any((interest) =>
+        profileInterests.any((profileInterest) =>
+        profileInterest.toLowerCase().contains(interest.toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')) ||
+            interest.toLowerCase().contains(profileInterest.toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), ''))
+        )
+    );
+
+    // If flex is enabled and no matching interests, still pass
+    if (flexInterest && !hasMatchingInterest) {
+      return true;
+    }
+
+    return hasMatchingInterest;
+  }
+
+  // Verified filter logic
+  bool _passesVerifiedFilter(Map<String, dynamic> profile) {
+    final verifiedOnly = _userPreferences['verifiedOnly'] ?? true;
+
+    if (!verifiedOnly) {
+      return true; // If not requiring verification, pass all
+    }
+
+    // Check if profile is verified
+    final isVerified = profile['isVerified'] ?? profile['verified'] ?? false;
+    return isVerified == true;
+  }
+
+  // Height filter logic
+  bool _passesHeightFilter(Map<String, dynamic> profile) {
+    final minHeight = _userPreferences['heightRangeStart'] ?? 140;
+    final maxHeight = _userPreferences['heightRangeEnd'] ?? 200;
+    final flexHeight = _userPreferences['flexHeightIfRunOut'] ?? true;
+
+    // Get profile height (assuming it's stored in cm)
+    final profileHeight = _getProfileHeight(profile);
+
+    // If height is not available, pass the filter
+    if (profileHeight == null) {
+      return true;
+    }
+
+    // Check if height is within range
+    if (profileHeight >= minHeight && profileHeight <= maxHeight) {
+      return true;
+    }
+
+    // If flex is enabled and height is at extremes, allow
+    if (flexHeight) {
+      // Allow if at minimum or maximum range extremes
+      if (minHeight <= 140 && maxHeight >= 200) {
+        return true; // "Any height" setting
+      }
+    }
+
+    return false;
+  }
+
+  // Helper to get profile height
+  int? _getProfileHeight(Map<String, dynamic> profile) {
+    // Try different possible height fields
+    final height = profile['height'] ?? profile['height_cm'] ?? profile['heightCm'];
+
+    if (height is int) return height;
+    if (height is double) return height.toInt();
+    if (height is String) {
+      try {
+        return int.parse(height.replaceAll('cm', '').trim());
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Intentions filter logic
+  bool _passesIntentionsFilter(Map<String, dynamic> profile) {
+    final selectedIntentions = List<String>.from(_userPreferences['intentions'] ?? []);
+    final flexIntent = _userPreferences['flexIntentIfRunOut'] ?? false;
+
+    // If no intentions selected, pass the filter
+    if (selectedIntentions.isEmpty) {
+      return true;
+    }
+
+    // Get profile intentions
+    final profileIntentions = List<String>.from(profile['intentions'] ??
+        profile['looking_for'] ??
+        profile['goals'] ?? []);
+
+    // Check if profile has at least one matching intention
+    final hasMatchingIntention = selectedIntentions.any((intention) =>
+        profileIntentions.any((profileIntention) =>
+        profileIntention.toLowerCase().contains(intention.toLowerCase()) ||
+            intention.toLowerCase().contains(profileIntention.toLowerCase())
+        )
+    );
+
+    // If flex is enabled and no matching intentions, still pass
+    if (flexIntent && !hasMatchingIntention) {
+      return true;
+    }
+
+    return hasMatchingIntention;
+  }
+
+  // Helper method to get current user's gender
   Future<String> _getCurrentUserGender() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) return 'male'; // Default to male if no user
+      if (currentUser == null) return 'male';
 
-      // Get user data from Firestore
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid)
           .get();
 
       if (userDoc.exists) {
-        return (userDoc.data()?['gender'] ?? 'male').toString().toLowerCase();
+        final gender = (userDoc.data()?['gender'] ?? 'male').toString().toLowerCase();
+        return gender;
       }
-      return 'male'; // Default to male
+      return 'male';
     } catch (e) {
       print('❌ Error getting user gender: $e');
-      return 'male'; // Default to male on error
+      return 'male';
     }
   }
-  // Dummy data fallback
-  void _loadDummyData() {
-    setState(() {
-      _isLoading = false;
-      _errorMessage = '';
-      _profiles = [
-        {
-          'uid': 'demo_1',
-          'name': 'Sarah Johnson',
-          'age': 26,
-          'bio': 'Passionate traveler and foodie. Love exploring new cultures!',
-          'first_photos': {'photo1url': 'https://i.pravatar.cc/300?img=1'},
-          'type': 'premium',
-          'location': 'New York',
-          'interests': ['Travel', 'Food', 'Photography'],
-        },
-        {
-          'uid': 'demo_2',
-          'name': 'Mike Chen',
-          'age': 29,
-          'bio': 'Digital nomad and adventure seeker. Always planning my next trip!',
-          'first_photos': {'photo1url': 'https://i.pravatar.cc/300?img=5'},
-          'type': 'nonpremium',
-          'location': 'San Francisco',
-          'interests': ['Technology', 'Travel', 'Coffee'],
-        },
-      ];
+
+  // Get active filter count for display
+  int _getActiveFilterCount() {
+    int count = 0;
+
+    if (_userPreferences['whoToDate'] != null &&
+        _userPreferences['whoToDate'] != 'Women') { // "Women" is default for males
+      count++;
+    }
+
+    if (_userPreferences['ageRangeStart'] != 18 ||
+        _userPreferences['ageRangeEnd'] != 28) {
+      count++;
+    }
+
+    if ((_userPreferences['selectedInterests'] as List?)?.isNotEmpty == true) {
+      count++;
+    }
+
+    if (_userPreferences['verifiedOnly'] == true) {
+      count++;
+    }
+
+    if (_userPreferences['heightRangeStart'] != 140 ||
+        _userPreferences['heightRangeEnd'] != 200) {
+      count++;
+    }
+
+    if ((_userPreferences['intentions'] as List?)?.isNotEmpty == true) {
+      count++;
+    }
+
+    return count;
+  }
+
+  // Refresh profiles when returning from filters screen
+  void _refreshProfiles() {
+    _loadUserPreferences();
+  }
+
+  // Navigate to filters screen
+  void _openFilters() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => HomeScreenFilters()),
+    ).then((_) {
+      // Refresh profiles when returning from filters
+      _refreshProfiles();
     });
   }
 
+  // Rest of your existing methods remain the same...
   void _goNext() {
     if (_profiles.isEmpty) {
-      // No profiles, try to load more
       _loadProfiles();
       return;
     }
@@ -169,12 +445,10 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } else {
       print('🔄 Reached end of profiles, loading more...');
-      // Reached end, reload more profiles
       _loadProfiles();
     }
   }
 
-  // Like profile function - only triggered by ❤️ icon
   Future<void> _likeProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
@@ -183,14 +457,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await likeProfile(uid);
 
-      // Immediately remove the profile from the list
       if (mounted) {
         setState(() {
           _profiles.removeWhere((p) =>
           (p['uid'] == uid) || (p['UID'] == uid)
           );
 
-          // Reset index if needed
           if (_index >= _profiles.length && _profiles.isNotEmpty) {
             _index = _profiles.length - 1;
           } else if (_profiles.isEmpty) {
@@ -220,7 +492,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Pass profile function - only triggered by ❌ icon
   Future<void> _passProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
@@ -229,14 +500,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await passProfile(uid);
 
-      // Immediately remove the profile from the list
       if (mounted) {
         setState(() {
           _profiles.removeWhere((p) =>
           (p['uid'] == uid) || (p['UID'] == uid)
           );
 
-          // Reset index if needed
           if (_index >= _profiles.length && _profiles.isNotEmpty) {
             _index = _profiles.length - 1;
           } else if (_profiles.isEmpty) {
@@ -266,7 +535,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Navigate to profile details - only triggered by share icon or card tap
   void _navigateToProfileDetails(Map<String, dynamic> profile) {
     final String userId = profile['uid'] ?? profile['UID'];
 
@@ -274,8 +542,8 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => OtherDatingProfileScreen(
-          conversationId: '',// This is someone else's profile
-          userId: userId, // Pass the user ID to load their profile
+          conversationId: '',
+          userId: userId,
         ),
       ),
     );
@@ -283,19 +551,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    print('🏠 Building HomeScreen - Loading: $_isLoading, Profiles: ${_profiles.length}');
+    final activeFilterCount = _getActiveFilterCount();
+
     return Scaffold(
       body: Container(
         color: Colors.white,
         child: SafeArea(
           child: Column(
             children: [
-              // Reduced app bar height
+              // App bar with filter button
               Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 0), // Reduced vertical padding
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
                 child: Row(
                   children: [
-                    // Updated: Direct navigation to ExploreLiveScreen
+                    // Live pill
                     _LivePill(onTap: () {
                       Navigator.push(
                         context,
@@ -303,32 +572,101 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     }),
                     const Expanded(child: Center(child: _Meet9jaLogo())),
+                    // Filter button with badge
                     IconButton(
-                      icon: const Icon(
-                        Icons.filter_list_outlined,
-                        color: AppColors.primary,
-                        size: 20, // Smaller icon
+                      icon: Stack(
+                        children: [
+                          Icon(
+                            Icons.filter_list_outlined,
+                            color: AppColors.primary,
+                            size: 20,
+                          ),
+                          if (activeFilterCount > 0)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                constraints: const BoxConstraints(
+                                  minWidth: 12,
+                                  minHeight: 12,
+                                ),
+                                child: Text(
+                                  '$activeFilterCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => HomeScreenFilters()),
-                        );
-                      },
+                      onPressed: _openFilters,
                     ),
                   ],
                 ),
               ),
 
-              // Progress indicator - moved closer to cards
+              // // Show active filters summary
+              // if (activeFilterCount > 0)
+              //   Padding(
+              //     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              //     child: Container(
+              //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              //       decoration: BoxDecoration(
+              //         color: AppColors.primary.withOpacity(0.1),
+              //         borderRadius: BorderRadius.circular(12),
+              //         border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              //       ),
+              //       child: Row(
+              //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              //         children: [
+              //           Text(
+              //             '$activeFilterCount filter${activeFilterCount > 1 ? 's' : ''} active',
+              //             style: const TextStyle(
+              //               color: AppColors.primary,
+              //               fontSize: 12,
+              //               fontWeight: FontWeight.w600,
+              //             ),
+              //           ),
+              //           TextButton(
+              //             onPressed: _openFilters,
+              //             style: TextButton.styleFrom(
+              //               padding: EdgeInsets.zero,
+              //               minimumSize: Size.zero,
+              //               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              //             ),
+              //             child: const Text(
+              //               'View/Edit',
+              //               style: TextStyle(
+              //                 color: AppColors.primary,
+              //                 fontSize: 12,
+              //                 fontWeight: FontWeight.w700,
+              //               ),
+              //             ),
+              //           ),
+              //         ],
+              //       ),
+              //     ),
+              //   ),
+
+              // Progress indicator
               if (!_isLoading && _profiles.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 6), // Reduced vertical padding
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 6),
                   child: Row(
                     children: List.generate(_profiles.length, (i) {
                       final active = i <= _index;
                       return Expanded(
                         child: Container(
-                          height: 3, // Thinner progress bar
+                          height: 3,
                           margin: const EdgeInsets.symmetric(horizontal: 2),
                           decoration: BoxDecoration(
                             color: active ? AppColors.primary : Colors.black12,
@@ -340,7 +678,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              // Content Area - Expanded to take more space
+              // Content Area
               Expanded(
                 child: _isLoading
                     ? _buildLoadingState()
@@ -351,9 +689,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     : _buildProfilesList(),
               ),
 
-              // Bottom nav - ADDED BACK
+              // Bottom nav
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10), // Reduced padding
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
                 child: _BottomNav(
                   current: _bottomNavIndex,
                   onTap: (index) {
@@ -371,31 +709,29 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Handle bottom navigation tap
   void _handleBottomNavTap(int index) {
     switch (index) {
-      case 0: // Profile
+      case 0:
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => DatingProfileScreen()),
         );
         break;
-      case 1: // Discover
+      case 1:
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const DiscoverScreen()),
         );
         break;
-      case 2: // People (already on this screen)
-      // Do nothing, we're already here
+      case 2:
         break;
-      case 3: // Liked You (Activity)
+      case 3:
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => ActivityScreen()),
         );
         break;
-      case 4: // Chats
+      case 4:
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const MessagesScreen()),
@@ -445,23 +781,13 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton(
-                  onPressed: _loadProfiles,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Try Again'),
-                ),
-                const SizedBox(width: 12),
-                OutlinedButton(
-                  onPressed: _loadDummyData,
-                  child: const Text('Use Demo Data'),
-                ),
-              ],
+            ElevatedButton(
+              onPressed: _loadProfiles,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Try Again'),
             ),
           ],
         ),
@@ -470,6 +796,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildEmptyState() {
+    final activeFilterCount = _getActiveFilterCount();
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -491,8 +819,36 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 8),
+            if (activeFilterCount > 0)
+              Text(
+                'Your $activeFilterCount filter${activeFilterCount > 1 ? 's are' : ' is'} very specific',
+                style: const TextStyle(
+                  color: Colors.black54,
+                  fontSize: 14,
+                ),
+              ),
+            const SizedBox(height: 8),
+            if (_userPreferences['whoToDate'] != null)
+              Text(
+                'Gender: ${_userPreferences['whoToDate']}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            if (_userPreferences['ageRangeStart'] != null && _userPreferences['ageRangeEnd'] != null)
+              Text(
+                'Age: ${_userPreferences['ageRangeStart']} - ${_userPreferences['ageRangeEnd']} years',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            const SizedBox(height: 8),
             const Text(
-              'Check back later for new people in your area',
+              'Try adjusting your filters or check back later',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.black45,
@@ -500,13 +856,23 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _loadProfiles,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Refresh'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: _loadProfiles,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Refresh'),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton(
+                  onPressed: _openFilters,
+                  child: const Text('Adjust Filters'),
+                ),
+              ],
             ),
           ],
         ),
@@ -516,7 +882,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildProfilesList() {
     return RefreshIndicator(
-      onRefresh: _loadProfiles,
+      onRefresh: () async {
+        await _loadProfiles();
+      },
       color: AppColors.primary,
       child: NotificationListener<ScrollNotification>(
         onNotification: (n) {
@@ -557,7 +925,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ===== Updated Widgets for Real Data =====
+// ===== Rest of your widget classes remain exactly the same =====
 
 class _SwipeCard extends StatelessWidget {
   const _SwipeCard({
@@ -619,7 +987,7 @@ class _ProfileCard extends StatelessWidget {
               child: _ProfileImage(imageUrl: photoUrl),
             ),
 
-            // Share icon - triggers navigation
+            // Share icon
             Positioned(
               right: 10,
               top: 10,
@@ -673,14 +1041,11 @@ class _ProfileCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    // Bio row - removed job and education
                     if (bio.isNotEmpty && bio != 'No bio yet')
                       _InfoRow(icon: CupertinoIcons.text_bubble, text: bio),
                     const SizedBox(height: 10),
-                    // Action buttons - use GestureDetector to stop propagation
                     Row(
                       children: [
-                        // Cross icon - Pass profile only (no navigation)
                         GestureDetector(
                           onTap: onPass,
                           child: _PillBtn(
@@ -691,7 +1056,6 @@ class _ProfileCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        // Heart icon - Like profile only (no navigation)
                         GestureDetector(
                           onTap: onLike,
                           child: _PillBtn(
@@ -770,7 +1134,7 @@ class _Meet9jaLogo extends StatelessWidget {
     return Text(
       "Meet9ja",
       style: TextStyle(
-        fontSize: 22, // Slightly smaller logo
+        fontSize: 22,
         fontWeight: FontWeight.w900,
         letterSpacing: 0.2,
         color: Colors.black87,
@@ -801,12 +1165,12 @@ class _LivePill extends StatelessWidget {
           color: AppColors.primary.withOpacity(0.10),
           border: Border.all(color: AppColors.primary, width: 1.2),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), // Smaller padding
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 6, // Smaller dot
+              width: 6,
               height: 6,
               decoration: const BoxDecoration(
                 color: Colors.redAccent,
@@ -816,7 +1180,7 @@ class _LivePill extends StatelessWidget {
             const SizedBox(width: 4),
             const Icon(
               CupertinoIcons.tv,
-              size: 16, // Smaller icon
+              size: 16,
               color: AppColors.primary,
             ),
             const SizedBox(width: 3),
@@ -825,7 +1189,7 @@ class _LivePill extends StatelessWidget {
               style: TextStyle(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w900,
-                fontSize: 12, // Smaller font
+                fontSize: 12,
                 letterSpacing: 0.4,
               ),
             ),
@@ -845,14 +1209,14 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: Colors.white), // Smaller icon
+        Icon(icon, size: 16, color: Colors.white),
         const SizedBox(width: 6),
         Flexible(
           child: Text(
             text,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 14, // Slightly smaller font
+              fontSize: 14,
               fontWeight: FontWeight.w600,
               shadows: [Shadow(color: Colors.black38, blurRadius: 4)],
             ),
@@ -873,7 +1237,7 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5), // Smaller padding
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.9),
         borderRadius: BorderRadius.circular(999),
@@ -882,14 +1246,14 @@ class _Chip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_icon != null) ...[
-            Icon(_icon, size: 12, color: Colors.black87), // Smaller icon
+            Icon(_icon, size: 12, color: Colors.black87),
             const SizedBox(width: 4),
           ],
           Text(
             text,
             style: const TextStyle(
               color: Colors.black87,
-              fontSize: 11, // Smaller font
+              fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -919,8 +1283,8 @@ class _PillBtn extends StatelessWidget {
         child: Container(
           color: bg,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // Smaller padding
-            child: Icon(icon, color: fg, size: 20), // Smaller icon
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Icon(icon, color: fg, size: 20),
           ),
         ),
       ),
@@ -941,8 +1305,8 @@ class _CircleBtn extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(8), // Smaller padding
-        child: Icon(icon, size: 16, color: Colors.black87), // Smaller icon
+        padding: const EdgeInsets.all(8),
+        child: Icon(icon, size: 16, color: Colors.black87),
       ),
     );
   }
@@ -960,20 +1324,20 @@ class _BottomNav extends StatelessWidget {
       CupertinoIcons.person,
       FontAwesomeIcons.compass,
       FontAwesomeIcons.userGroup,
-      FontAwesomeIcons.heart, // Changed from heart to video
+      FontAwesomeIcons.heart,
       FontAwesomeIcons.comment,
     ];
     final labels = const [
       "Profile",
       "Discover",
       "People",
-      "Liked You", // Changed from "Liked You" to "Live"
+      "Liked You",
       "Chats",
     ];
 
     return Container(
-      height: 80, // Smaller bottom nav
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), // Reduced padding
+      height: 80,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
@@ -1005,8 +1369,7 @@ class _BottomNav extends StatelessWidget {
                   );
                   return;
                 }
-                if (i == 3 && current != 3) { // Changed from 4 to 3 for Live tab
-
+                if (i == 3 && current != 3) {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => ActivityScreen()),
@@ -1023,7 +1386,7 @@ class _BottomNav extends StatelessWidget {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4), // Smaller padding
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
                 decoration: BoxDecoration(
                   color: selected
                       ? AppColors.primary.withOpacity(0.08)
@@ -1035,17 +1398,17 @@ class _BottomNav extends StatelessWidget {
                   children: [
                     Icon(
                       icons[i],
-                      size: selected ? 26 : 24, // Smaller icons
+                      size: selected ? 26 : 24,
                       color: selected ? AppColors.primary : Colors.black54,
                     ),
-                    const SizedBox(height: 2), // Reduced spacing
+                    const SizedBox(height: 2),
                     Text(
                       labels[i],
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         height: 1.0,
-                        fontSize: 10, // Smaller font
+                        fontSize: 10,
                         fontWeight: selected
                             ? FontWeight.w800
                             : FontWeight.w600,

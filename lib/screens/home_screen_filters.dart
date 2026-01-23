@@ -15,10 +15,10 @@ class HomeScreenFilters extends StatefulWidget {
 
 class _HomeScreenFiltersState extends State<HomeScreenFilters> {
   // --- Basic Filters
-  String whoToDate = "Women";
-  RangeValues age = const RangeValues(18, 28);
+  String whoToDate = "Women"; // Default for male users
+  RangeValues age = const RangeValues(18, 60); // Full age range
   bool flexAgeIfRunOut = true;
-  String location = "10 miles";
+  String location = "Any distance";
   bool flexLocationIfRunOut = true;
 
   final List<String> allInterests = [
@@ -46,10 +46,10 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
 
   final Set<String> selectedInterests = {};
   bool flexInterestIfRunOut = true;
-  bool verifiedOnly = true;
+  bool verifiedOnly = false; // Default: show both verified and unverified
 
   // --- Advanced Filters
-  RangeValues heightCm = const RangeValues(140, 200);
+  RangeValues heightCm = const RangeValues(140, 200); // Full height range
   bool flexHeightIfRunOut = true;
 
   final List<_CheckItem> intentions = [
@@ -65,10 +65,39 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
   int tabIndex = 0;
   bool _isLoading = false;
 
+  // Store current user's gender
+  String _currentUserGender = 'male'; // Default to male
+
   @override
   void initState() {
     super.initState();
+    _getCurrentUserGender();
     _loadUserPreferences();
+  }
+
+  // Get current user's gender
+  Future<void> _getCurrentUserGender() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final gender = (userData['gender'] ?? 'male').toString().toLowerCase();
+        setState(() {
+          _currentUserGender = gender;
+          // Set default whoToDate based on user's gender
+          whoToDate = gender == 'male' ? 'Women' : 'Men';
+        });
+      }
+    } catch (e) {
+      print('Error getting user gender: $e');
+    }
   }
 
   Future<void> _loadUserPreferences() async {
@@ -86,20 +115,20 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
         setState(() {
-          whoToDate = data['whoToDate'] ?? "Women";
+          whoToDate = data['whoToDate'] ?? (whoToDate); // Use stored or default
           age = RangeValues(
             (data['ageRangeStart'] ?? 18).toDouble(),
-            (data['ageRangeEnd'] ?? 28).toDouble(),
+            (data['ageRangeEnd'] ?? 60).toDouble(),
           );
           flexAgeIfRunOut = data['flexAgeIfRunOut'] ?? true;
-          location = data['locationPreference'] ?? "10 miles";
+          location = data['locationPreference'] ?? "Any distance";
           flexLocationIfRunOut = data['flexLocationIfRunOut'] ?? true;
           selectedInterests.clear();
           selectedInterests.addAll(
             List<String>.from(data['selectedInterests'] ?? []),
           );
           flexInterestIfRunOut = data['flexInterestIfRunOut'] ?? true;
-          verifiedOnly = data['verifiedOnly'] ?? true;
+          verifiedOnly = data['verifiedOnly'] ?? false; // Default to false
           heightCm = RangeValues(
             (data['heightRangeStart'] ?? 140).toDouble(),
             (data['heightRangeEnd'] ?? 200).toDouble(),
@@ -154,16 +183,14 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
           .doc(user.uid)
           .set(preferencesData, SetOptions(merge: true));
 
-      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Filters saved successfully!'),
+          content: Text('Filters saved successfully! Profiles will refresh.'),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 2),
         ),
       );
 
-      // Navigate back
       if (mounted) {
         Navigator.pop(context);
       }
@@ -286,7 +313,7 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
                             padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
                           onPressed: _resetAll,
-                          child: const Text("Reset"),
+                          child: const Text("Reset to Default"),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -610,20 +637,50 @@ class _HomeScreenFiltersState extends State<HomeScreenFilters> {
 
   void _resetAll() {
     setState(() {
-      whoToDate = "Women";
-      age = const RangeValues(18, 28);
+      // Set gender based on current user's gender
+      if (_currentUserGender == 'male') {
+        whoToDate = "Women"; // Male users see females
+      } else {
+        whoToDate = "Men"; // Female users see males
+      }
+
+      // Full age range (18-60)
+      age = const RangeValues(18, 60);
       flexAgeIfRunOut = true;
-      location = "10 miles (New York, NY)";
+
+      // Any location
+      location = "Any distance";
       flexLocationIfRunOut = true;
+
+      // No specific interests
       selectedInterests.clear();
       flexInterestIfRunOut = true;
-      verifiedOnly = true;
+
+      // Show both verified and unverified profiles
+      verifiedOnly = false;
+
+      // Full height range
       heightCm = const RangeValues(140, 200);
       flexHeightIfRunOut = true;
+
+      // No specific intentions
       for (final it in intentions) it.checked = false;
       flexIntentIfRunOut = false;
+
       tabIndex = 0;
     });
+
+    // Show feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Reset to default: ${_currentUserGender == 'male' ? 'Women' : 'Men'}, All ages, Verified & Unverified',
+          style: const TextStyle(color: Colors.white),
+        ),
+        backgroundColor: AppColors.primary,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
 
