@@ -27,6 +27,7 @@ class MessagesScreen extends StatefulWidget {
   State<MessagesScreen> createState() => _MessagesScreenState();
 }
 
+
 class _MessagesScreenState extends State<MessagesScreen> {
   // --- Search State ---
   bool _isSearching = false;
@@ -43,7 +44,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   StreamSubscription<QuerySnapshot>? _chatSubscription;
   StreamSubscription<QuerySnapshot>? _usersSubscription;
   StreamSubscription<QuerySnapshot>? _storiesSubscription;
-  StreamSubscription<QuerySnapshot>? _matchesSubscription; // Track matches changes
+  StreamSubscription<QuerySnapshot>? _matchesSubscription;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -51,11 +52,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_performSearch);
-    _loadAllChats();
-    _loadMatchedUsers();
+    _loadMatchedUsers(); // Load matches first
     _listenToMatches(); // Listen for match changes
     _initializeZegoCloud();
-    _debugChatData(); // Debug helper
   }
 
   @override
@@ -79,47 +78,24 @@ class _MessagesScreenState extends State<MessagesScreen> {
         .where('status', isEqualTo: 'match')
         .where('is_mutual', isEqualTo: true)
         .snapshots()
-        .listen((snapshot) {
+        .listen((snapshot) async {
       if (mounted) {
         final matchedIds = snapshot.docs
             .map((doc) => doc.data()['matched_user_ID'] as String)
             .toSet();
+
         setState(() {
           _matchedUserIds = matchedIds;
         });
+
         print('✅ Updated matched users: ${matchedIds.length} users');
+
+        // Reload chats when matches change
+        _loadAllChats();
       }
     }, onError: (e) {
       print('❌ Error listening to matches: $e');
     });
-  }
-
-  // Debug method to check chat data
-  void _debugChatData() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      print('🔍 DEBUG: Checking chat data for user: ${user.uid}');
-      print('✅ Currently matched users: $_matchedUserIds');
-
-      // Check all conversations
-      final snapshot = await _firestore
-          .collection('chat_conversations')
-          .get();
-
-      print('📊 Total conversations in DB: ${snapshot.docs.length}');
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        print('\n📄 Conversation ID: ${doc.id}');
-        print('   Participants: ${data['participants']}');
-        print('   Last message: ${data['lastMessage']}');
-        print('   Last time: ${data['lastMessageTime']}');
-      }
-    } catch (e) {
-      print('❌ Debug error: $e');
-    }
   }
 
   // Initialize ZegoCloud ZIMKit
@@ -166,39 +142,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _matchedUserIds = matchedUserIds;
       });
 
-      if (matchedUserIds.isEmpty) {
-        setState(() {
-          _allUsers = [];
-        });
-        return;
-      }
+      print('✅ Loaded ${matchedUserIds.length} matched users');
 
-      // Load user data for matched users
-      final usersQuery = await _firestore
-          .collection('users')
-          .where('UID', whereIn: matchedUserIds.toList())
-          .get();
+      // Now load chats for these matched users
+      _loadAllChats();
 
-      if (mounted) {
-        setState(() {
-          _allUsers = usersQuery.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            return _User(
-              id: data['UID'] ?? doc.id,
-              name: data['name'] ?? 'User',
-              avatar: _getFirstPhotoUrl(data['first_photos']) ?? 'https://i.pravatar.cc/200',
-              isOnline: data['is_online'] ?? false,
-            );
-          }).toList();
-        });
-        print('✅ Loaded ${_allUsers.length} matched users for messaging');
-      }
     } catch (e) {
       print('❌ Error loading matched users: $e');
     }
   }
 
-  // Load ALL chat conversations
+  // Load ALL chat conversations - FILTERED BY MATCHED USERS
   Future<void> _loadAllChats() async {
     try {
       final user = _auth.currentUser;
@@ -207,7 +161,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
         return;
       }
 
-      print('🔄 Loading ALL chats for user: ${user.uid}');
+      print('🔄 Loading chats for user: ${user.uid}');
+      print('📋 Matched user IDs to filter: $_matchedUserIds');
+
+      _chatSubscription?.cancel(); // Cancel previous subscription
 
       _chatSubscription = _firestore
           .collection('chat_conversations')
@@ -224,8 +181,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
               final participants = data['participants'] as Map<String, dynamic>?;
 
               if (participants != null && participants.containsKey(user.uid)) {
-                final conversation = await _Conversation.fromFirestoreWithUserData(doc.id, data);
-                conversations.add(conversation);
+                // Get the conversation
+                final conversation = await _Conversation.fromFirestoreWithUserData(
+                    doc.id,
+                    data
+                );
+
+                // CRITICAL: Check if the other user is in matchedUserIds
+                if (_matchedUserIds.contains(conversation.otherUserId)) {
+                  conversations.add(conversation);
+                  print('✅ Added conversation with matched user: ${conversation.name}');
+                } else {
+                  print('❌ Filtered out conversation with unmatched user: ${conversation.name}');
+                }
               }
             } catch (e) {
               print('❌ Error processing conversation ${doc.id}: $e');
@@ -252,7 +220,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             _isLoading = false;
           });
 
-          print('✅ Successfully loaded ${_chats.length} conversations');
+          print('✅ Successfully loaded ${_chats.length} conversations (filtered by matches)');
         }
       }, onError: (e) {
         print('❌ Chat subscription error: $e');
@@ -300,6 +268,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final allUserIds = {user.uid, ...following};
 
       print('🔄 Loading stories for users: $allUserIds');
+
+      _storiesSubscription?.cancel(); // Cancel previous subscription
 
       _storiesSubscription = _firestore
           .collection('stories')
@@ -510,15 +480,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
       rethrow;
     }
   }
-
-  // Open existing chat - CHECK IF USER IS STILL MATCHED
+// Open existing chat - Since we're filtering by matched users, this should always work
   void _openExistingChat(_Conversation chat) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // Check if the other user is still matched
+      // All chats in the list should be with matched users, but double-check
       if (!_matchedUserIds.contains(chat.otherUserId)) {
+        print('⚠ Warning: Attempting to open chat with unmatched user: ${chat.name}');
         _showUnmatchedPopup(chat.name);
         return;
       }
@@ -544,7 +514,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
       );
     }
   }
-
   // Show popup for unmatched users
   void _showUnmatchedPopup(String userName) {
     showDialog(
@@ -579,23 +548,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('OK'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Optionally navigate to MatchedUsersScreen
-              // Navigator.push(
-              //   context,
-              //   MaterialPageRoute(
-              //     builder: (context) => MatchedUsersScreen(userId: _auth.currentUser!.uid),
-              //   ),
-              // );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('View Matches'),
           ),
         ],
       ),
@@ -1031,8 +983,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _ChatTile(
           chat: chat,
           onTap: () => _openExistingChat(chat),
-          isMatched: _matchedUserIds.contains(chat.otherUserId),
-          onUnmatchedTap: () => _showUnmatchedDetails(chat), // New callback
         ),
         const Divider(height: 0),
       ],
@@ -1412,26 +1362,21 @@ class _UserTile extends StatelessWidget {
   }
 }
 
-// ---------- Updated Chat Tile with unmatched indicator ----------
-// ---------- Updated Chat Tile with proper unmatched handling ----------
+// ---------- Chat Tile Component ----------
 class _ChatTile extends StatelessWidget {
   const _ChatTile({
     required this.chat,
     required this.onTap,
-    required this.isMatched,
-    required this.onUnmatchedTap, // New callback for unmatched chats
   });
 
   final _Conversation chat;
   final VoidCallback onTap;
-  final bool isMatched;
-  final VoidCallback onUnmatchedTap; // Callback for unmatched chats
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 6),
-      onTap: isMatched ? onTap : onUnmatchedTap, // Use different callback
+      onTap: onTap,
       leading: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1442,25 +1387,7 @@ class _ChatTile extends StatelessWidget {
               print('❌ Error loading avatar: $exception');
             },
           ),
-          if (!isMatched)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(
-                  Icons.heart_broken,
-                  size: 12,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          if (isMatched && chat.unread > 0)
+          if (chat.unread > 0)
             Positioned(
               right: -2,
               bottom: -2,
@@ -1487,10 +1414,9 @@ class _ChatTile extends StatelessWidget {
           Expanded(
             child: Text(
               chat.name,
-              style: TextStyle(
+              style: const TextStyle(
                 fontWeight: FontWeight.w900,
-                color: isMatched ? Colors.black : Colors.grey,
-                decoration: !isMatched ? TextDecoration.lineThrough : null,
+                color: Colors.black,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1498,38 +1424,26 @@ class _ChatTile extends StatelessWidget {
           ),
           Text(
             chat.time,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
-              color: isMatched ? Colors.black54 : Colors.grey,
+              color: Colors.black54,
             ),
           ),
         ],
       ),
       subtitle: Text(
-        isMatched ? chat.lastMessage : 'Unmatched',
+        chat.lastMessage,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: isMatched ? Colors.black.withOpacity(0.7) : Colors.red,
-          fontWeight: isMatched && chat.unread > 0 ? FontWeight.w800 : FontWeight.w500,
-          fontStyle: !isMatched ? FontStyle.italic : FontStyle.normal,
+          color: Colors.black.withOpacity(0.7),
+          fontWeight: chat.unread > 0 ? FontWeight.w800 : FontWeight.w500,
         ),
       ),
-      trailing: isMatched
-          ? const FaIcon(
+      trailing: const FaIcon(
         FontAwesomeIcons.chevronRight,
         color: Colors.black26,
         size: 16,
-      )
-          : IconButton(
-        icon: const Icon(
-          Icons.info_outline,
-          color: Colors.red,
-          size: 18,
-        ),
-        onPressed: onUnmatchedTap,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(),
       ),
     );
   }
