@@ -5,6 +5,7 @@ import '../models/post_model.dart';
 import '../models/story_model.dart';
 import '../models/user_model.dart';
 import 'image_service.dart';
+import 'match_service.dart';
 import 'notification_service.dart';
 
 class UserService {
@@ -239,76 +240,26 @@ class UserService {
     }
   }
 
-  // ============ LIKE/UNLIKE FUNCTIONALITY ============
   static Future<void> likeProfile(String currentUserId, String targetUserId) async {
-    try {
-      final batch = _firestore.batch();
-
-      // Add to current user's liked profiles
-      batch.update(_firestore.collection('users').doc(currentUserId), {
-        'liked_profiles': FieldValue.arrayUnion([targetUserId]),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      // Add to target user's liked by
-      batch.update(_firestore.collection('users').doc(targetUserId), {
-        'liked_by': FieldValue.arrayUnion([currentUserId]),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      // Check for mutual like (match)
-      final targetUserDoc = await _firestore.collection('users').doc(targetUserId).get();
-      if (targetUserDoc.exists) {
-        final targetData = targetUserDoc.data() as Map<String, dynamic>;
-        final targetLikedProfiles = List<String>.from(targetData['liked_profiles'] ?? []);
-
-        if (targetLikedProfiles.contains(currentUserId)) {
-          // It's a match! Create a match document
-          final matchId = '${currentUserId}_${targetUserId}_${DateTime.now().millisecondsSinceEpoch}';
-
-          // Get both users' data for notifications
-          final currentUserDoc = await _firestore.collection('users').doc(currentUserId).get();
-          final currentUserData = currentUserDoc.data() as Map<String, dynamic>;
-
-          final targetUserDoc = await _firestore.collection('users').doc(targetUserId).get();
-          final targetUserData = targetUserDoc.data() as Map<String, dynamic>;
-
-          final currentUserName = currentUserData['name'] ?? 'User';
-          final targetUserName = targetUserData['name'] ?? 'User';
-          final currentUserPhoto = getFirstPhotoUrl(currentUserData['first_photos']);
-          final targetUserPhoto = getFirstPhotoUrl(targetUserData['first_photos']);
-
-          await _firestore.collection('matches').doc(matchId).set({
-            'matchId': matchId,
-            'user1Id': currentUserId,
-            'user1Name': currentUserName,
-            'user2Id': targetUserId,
-            'user2Name': targetUserName,
-            'matchedAt': FieldValue.serverTimestamp(),
-            'status': 'active',
-          });
-
-          // Send match notification to both users with proper user data
-          await NotificationTriggers.onMutualMatch(
-            user1Id: currentUserId,
-            user1Name: currentUserName,
-            user1Photo: currentUserPhoto,
-            user2Id: targetUserId,
-            user2Name: targetUserName,
-            user2Photo: targetUserPhoto,
-            matchId: matchId,
-          );
-        }
-      }
-
-      await batch.commit();
-      print('✅ Liked profile: $targetUserId');
-    } catch (e) {
-      print('❌ Error liking profile: $e');
-      throw 'Failed to like profile: $e';
-    }
+    await MatchService.likeProfile(
+      currentUserId: currentUserId,
+      targetUserId: targetUserId,
+    );
   }
 
+  static Future<void> unlikeProfile(String currentUserId, String targetUserId) async {
+    await MatchService.unlikeProfile(
+      currentUserId: currentUserId,
+      targetUserId: targetUserId,
+    );
+  }
+
+  static Future<bool> checkIfLiked(String currentUserId, String targetUserId) async {
+    return await MatchService.checkIfLiked(
+      currentUserId: currentUserId,
+      targetUserId: targetUserId,
+    );
+  }
 // Helper method to get first photo
   static String? getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
     if (firstPhotos == null) return null;
@@ -321,46 +272,6 @@ class UserService {
     return null;
   }
 
-  static Future<void> unlikeProfile(String currentUserId, String targetUserId) async {
-    try {
-      final batch = _firestore.batch();
-
-      // Remove from current user's liked profiles
-      batch.update(_firestore.collection('users').doc(currentUserId), {
-        'liked_profiles': FieldValue.arrayRemove([targetUserId]),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      // Remove from target user's liked by
-      batch.update(_firestore.collection('users').doc(targetUserId), {
-        'liked_by': FieldValue.arrayRemove([currentUserId]),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      await batch.commit();
-      print('✅ Unliked profile: $targetUserId');
-    } catch (e) {
-      print('❌ Error unliking profile: $e');
-      throw 'Failed to unlike profile: $e';
-    }
-  }
-
-  static Future<bool> checkIfLiked(String currentUserId, String targetUserId) async {
-    try {
-      final userDoc = await _firestore.collection('users').doc(currentUserId).get();
-
-      if (userDoc.exists) {
-        final userData = userDoc.data() as Map<String, dynamic>;
-        final likedProfiles = List<String>.from(userData['liked_profiles'] ?? []);
-        return likedProfiles.contains(targetUserId);
-      }
-
-      return false;
-    } catch (e) {
-      print('❌ Error checking like status: $e');
-      return false;
-    }
-  }
 
   // ============ EXISTING FUNCTIONS ============
   // Fetch user profile data as UserModel

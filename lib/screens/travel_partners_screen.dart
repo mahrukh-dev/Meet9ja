@@ -10,6 +10,7 @@ import 'package:meet9ja/db_functions/passProfile.dart';
 import 'package:meet9ja/db_functions/getUserName.dart';
 import 'package:meet9ja/db_functions/isUserPremium.dart';
 import '../constants/app_colors.dart';
+import '../db_functions/match_service.dart';
 
 class TravelPartnersScreen extends StatefulWidget {
   final String city;
@@ -130,83 +131,43 @@ class _TravelPartnersScreenState extends State<TravelPartnersScreen> {
     }
   }
 
-  // Like user function - same logic as HomeScreen
   Future<void> _likeUser(UserModel user) async {
     try {
-      final userId = user.uid;
-      final name = user.name;
+      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
 
-      print('❤️ Liking travel partner: $userId');
+      await MatchService.likeProfile(
+        currentUserId: currentUserId,
+        targetUserId: user.uid,
+      );
 
-      // Call the same likeProfile function as HomeScreen
-      await likeProfile(userId);
-
-      // Immediately remove from list and add to liked set
+      // Remove from local list
       if (mounted) {
         setState(() {
-          _travelPartners.removeWhere((u) => u.uid == userId);
-          _likedUsers.add(userId);
+          _travelPartners.removeWhere((u) => u.uid == user.uid);
         });
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("You liked $name"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 800),
-          backgroundColor: Colors.green,
-        ),
-      );
     } catch (e) {
-      print('❌ Error in _likeUser: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1500),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Handle error
     }
   }
 
-  // Pass user function - same logic as HomeScreen
   Future<void> _passUser(UserModel user) async {
     try {
-      final userId = user.uid;
-      final name = user.name;
+      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
 
-      print('👎 Passing on travel partner: $userId');
+      await MatchService.passProfile(
+        currentUserId: currentUserId,
+        targetUserId: user.uid,
+      );
 
-      // Call the same passProfile function as HomeScreen
-      await passProfile(userId);
-
-      // Immediately remove from list and add to passed set
+      // Remove from local list
       if (mounted) {
         setState(() {
-          _travelPartners.removeWhere((u) => u.uid == userId);
-          _passedUsers.add(userId);
+          _travelPartners.removeWhere((u) => u.uid == user.uid);
         });
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("You passed on $name"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 700),
-          backgroundColor: Colors.orange,
-        ),
-      );
     } catch (e) {
-      print('❌ Error in _passUser: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1500),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Handle error
     }
   }
 

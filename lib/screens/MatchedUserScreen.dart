@@ -17,7 +17,7 @@ class MatchedUsersScreen extends StatefulWidget {
 
 class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
   List<UserModel> _matchedUsers = [];
-  Map<String, bool> _isUserMatched = {}; // Track match status for each user
+  Map<String, bool> _isUserMatched = {};
   bool _isLoading = true;
   String? _error;
 
@@ -43,39 +43,191 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
         return;
       }
 
-      // Get mutual matches where both users have liked each other
+      print('🔄 Loading matches for user: ${currentUser.uid}');
+
+      // OPTION 1: Check matches collection for any match records
       final matchesSnapshot = await FirebaseFirestore.instance
           .collection('matches')
           .where('UID', isEqualTo: currentUser.uid)
           .where('status', isEqualTo: 'match')
-          .where('is_mutual', isEqualTo: true)
           .get();
 
+      print('📊 Found ${matchesSnapshot.docs.length} match documents');
+
+      // Extract matched user IDs
       final matchedUserIds = matchesSnapshot.docs
-          .map((doc) => doc.data()['matched_user_ID'] as String)
+          .map((doc) {
+        final data = doc.data();
+        print('Match document data: $data');
+        return data['matched_user_ID'] as String?;
+      })
+          .where((id) => id != null)
+          .toSet()
           .toList();
 
-      final users = await Future.wait(
-        matchedUserIds.map((userId) => UserService.getUserProfile(userId)),
-      );
+      print('🎯 Matched user IDs: $matchedUserIds');
 
-      // Initialize match status for all users
-      final matchStatusMap = <String, bool>{};
-      for (var user in users.whereType<UserModel>()) {
-        matchStatusMap[user.uid] = true; // All users in this list are matched
+      // OPTION 2: Check user's liked_profiles and see who also liked back
+      if (matchedUserIds.isEmpty) {
+        print('⚠ No matches in matches collection, checking user data...');
+
+        // Get current user's liked profiles
+        final currentUserDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
+
+        if (currentUserDoc.exists) {
+          final currentUserData = currentUserDoc.data()!;
+          final myLikedProfiles = List<String>.from(
+              currentUserData['liked_profiles'] ?? []);
+
+          print('❤️ My liked profiles: $myLikedProfiles');
+
+          // Check each liked profile to see if they also liked me
+          for (final likedUserId in myLikedProfiles) {
+            try {
+              final likedUserDoc = await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(likedUserId)
+                  .get();
+
+              if (likedUserDoc.exists) {
+                final likedUserData = likedUserDoc.data()!;
+                final theirLikedProfiles = List<String>.from(
+                    likedUserData['liked_profiles'] ?? []);
+
+                if (theirLikedProfiles.contains(currentUser.uid)) {
+                  // It's a mutual match!
+                  matchedUserIds.add(likedUserId);
+                }
+              }
+            } catch (e) {
+              print('⚠ Error checking user $likedUserId: $e');
+            }
+          }
+        }
       }
 
-      setState(() {
-        _matchedUsers = users.whereType<UserModel>().toList();
-        _isUserMatched = matchStatusMap;
-        _isLoading = false;
-      });
+      // OPTION 3: Check matches by conversation ID pattern
+      if (matchedUserIds.isEmpty) {
+        print('⚠ Checking for matches using ID pattern...');
+
+        // Look for documents where current user is user1Id or user2Id
+        final user1Matches = await FirebaseFirestore.instance
+            .collection('matches')
+            .where('user1Id', isEqualTo: currentUser.uid)
+            .get();
+
+        final user2Matches = await FirebaseFirestore.instance
+            .collection('matches')
+            .where('user2Id', isEqualTo: currentUser.uid)
+            .get();
+
+        for (var doc in user1Matches.docs) {
+          final data = doc.data();
+          final user2Id = data['user2Id'] as String?;
+          if (user2Id != null && !matchedUserIds.contains(user2Id)) {
+            matchedUserIds.add(user2Id);
+          }
+        }
+
+        for (var doc in user2Matches.docs) {
+          final data = doc.data();
+          final user1Id = data['user1Id'] as String?;
+          if (user1Id != null && !matchedUserIds.contains(user1Id)) {
+            matchedUserIds.add(user1Id);
+          }
+        }
+      }
+
+      print('✅ Final matched user IDs: $matchedUserIds');
+
+      // Fetch user profiles
+      if (matchedUserIds.isNotEmpty) {
+        final users = await Future.wait(
+          matchedUserIds.map((userId) => UserService.getUserProfile(userId!)),
+        );
+
+        final validUsers = users.whereType<UserModel>().toList();
+        final matchStatusMap = <String, bool>{};
+
+        for (var user in validUsers) {
+          matchStatusMap[user.uid] = true;
+        }
+
+        setState(() {
+          _matchedUsers = validUsers;
+          _isUserMatched = matchStatusMap;
+          _isLoading = false;
+        });
+
+        print('🎉 Loaded ${_matchedUsers.length} matched users');
+      } else {
+        setState(() {
+          _matchedUsers = [];
+          _isLoading = false;
+        });
+        print('📭 No matches found');
+      }
+
     } catch (e) {
+      print('❌ Error loading matched users: $e');
       setState(() {
         _error = 'Failed to load matches: $e';
         _isLoading = false;
       });
     }
+  }
+
+  // Add this debug function to check your database structure
+  Future<void> _debugDatabaseStructure() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    print('\n=== DATABASE STRUCTURE DEBUG ===');
+
+    // Check user document
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+
+    if (userDoc.exists) {
+      final data = userDoc.data()!;
+      print('📋 User document fields:');
+      data.forEach((key, value) {
+        print('  $key: $value');
+      });
+    }
+
+    // Check all matches
+    final allMatches = await FirebaseFirestore.instance
+        .collection('matches')
+        .where('UID', isEqualTo: currentUser.uid)
+        .get();
+
+    print('\n🎯 All matches for current user:');
+    for (var doc in allMatches.docs) {
+      print('  Document ID: ${doc.id}');
+      print('  Data: ${doc.data()}');
+    }
+
+    // Check if there are any documents with current user as user1Id or user2Id
+    final asUser1 = await FirebaseFirestore.instance
+        .collection('matches')
+        .where('user1Id', isEqualTo: currentUser.uid)
+        .get();
+
+    final asUser2 = await FirebaseFirestore.instance
+        .collection('matches')
+        .where('user2Id', isEqualTo: currentUser.uid)
+        .get();
+
+    print('\n👤 Matches as user1Id: ${asUser1.docs.length}');
+    print('👤 Matches as user2Id: ${asUser2.docs.length}');
+
+    print('=== END DEBUG ===\n');
   }
 
   Future<void> _toggleMatch(UserModel user) async {
@@ -88,17 +240,25 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
       if (isCurrentlyMatched) {
         // Unmatch the user
         await _unmatchProfile(user.uid);
+
+        // Remove from local list
+        setState(() {
+          _matchedUsers.removeWhere((u) => u.uid == user.uid);
+          _isUserMatched.remove(user.uid);
+        });
       } else {
         // Match the user (like profile)
         await _likeProfile(user.uid);
+
+        // Add to matched list
+        setState(() {
+          if (!_matchedUsers.any((u) => u.uid == user.uid)) {
+            _matchedUsers.add(user);
+          }
+          _isUserMatched[user.uid] = true;
+        });
       }
 
-      // Update local state
-      setState(() {
-        _isUserMatched[user.uid] = !isCurrentlyMatched;
-      });
-
-      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -110,6 +270,7 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
         ),
       );
     } catch (e) {
+      print('❌ Error toggling match: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to ${_isUserMatched[user.uid] ?? false ? 'unmatch' : 'match'}: $e'),
@@ -546,6 +707,8 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
             onPressed: _loadMatchedUsers,
             tooltip: 'Refresh',
           ),
+          // Debug button - remove in production
+
         ],
       ),
       body: _isLoading
@@ -588,7 +751,7 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
             color: Colors.orange,
           ),
           const SizedBox(height: 16),
-          Text(
+          const Text(
             'Error Loading Matches',
             style: TextStyle(
               fontSize: 18,
@@ -601,7 +764,7 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
             child: Text(
               _error!,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.black45),
+              style: const TextStyle(fontSize: 14, color: Colors.black45),
             ),
           ),
           const SizedBox(height: 20),
@@ -620,36 +783,48 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            FontAwesomeIcons.heart,
-            size: 80,
-            color: Colors.grey.shade300,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No matches yet',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.black54,
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              FontAwesomeIcons.heart,
+              size: 80,
+              color: Colors.grey.shade300,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              'When you match with someone, they will appear here',
-              textAlign: TextAlign.center,
+            const SizedBox(height: 16),
+            const Text(
+              'No matches yet',
               style: TextStyle(
-                fontSize: 14,
-                color: Colors.black45,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                'When you match with someone, they will appear here',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.black45,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _loadMatchedUsers,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Refresh'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -669,117 +844,140 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
             margin: const EdgeInsets.only(bottom: 12),
             elevation: 2,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _showUserActionsBottomSheet(user),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    // Profile Image
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundImage: profilePhotoUrl != null
-                          ? NetworkImage(profilePhotoUrl)
-                          : const NetworkImage("https://i.pravatar.cc/100?img=8")
-                      as ImageProvider,
-                    ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  // Profile Image
+                  CircleAvatar(
+                    radius: 25,
+                    backgroundImage: profilePhotoUrl != null
+                        ? NetworkImage(profilePhotoUrl)
+                        : const NetworkImage("https://i.pravatar.cc/100?img=8")
+                    as ImageProvider,
+                  ),
 
-                    const SizedBox(width: 12),
+                  const SizedBox(width: 12),
 
-                    // User Info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            user.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            UserService.getDisplayUsername(user),
-                            style: const TextStyle(
-                              color: Colors.black54,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-
-                        ],
-                      ),
-                    ),
-
-                    // Match Status and Action Button
-                    Column(
+                  // User Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isMatched ? Colors.red.withOpacity(0.1) : AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
+                        Text(
+                          user.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                FontAwesomeIcons.heart,
-                                size: 12,
-                                color: isMatched ? Colors.red : AppColors.primary,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                isMatched ? 'Matched' : 'Match',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isMatched ? Colors.red : AppColors.primary,
-                                ),
-                              ),
-                            ],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          UserService.getDisplayUsername(user),
+                          style: const TextStyle(
+                            color: Colors.black54,
                           ),
                         ),
-
-                        const SizedBox(height: 8),
-
-                        // Action Button
-                        ElevatedButton.icon(
-                          onPressed: () => _toggleMatch(user),
-                          icon: Icon(
-                            isMatched ? FontAwesomeIcons.heartCrack : FontAwesomeIcons.heart,
-                            size: 14,
-                          ),
-                          label: Text(
-                            isMatched ? 'Unmatch' : 'Match',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isMatched ? Colors.grey.shade100 : AppColors.primary,
-                            foregroundColor: isMatched ? Colors.red : Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text(
+                              '${user.age} years',
+                              style: const TextStyle(
+                                color: Colors.black54,
+                                fontSize: 14,
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 8),
+                            if (user.gender.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  user.gender,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
+                  ),
 
-                    // More Options Button
-                    IconButton(
-                      icon: const Icon(
-                        FontAwesomeIcons.ellipsisVertical,
-                        size: 16,
-                        color: Colors.grey,
+                  // Match Status and Action Button
+                  Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isMatched ? AppColors.primary.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              FontAwesomeIcons.heart,
+                              size: 12,
+                              color: isMatched ? AppColors.primary : Colors.grey,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isMatched ? 'Matched' : 'Match',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isMatched ? AppColors.primary : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      onPressed: () => _showUserActionsBottomSheet(user),
+
+                      const SizedBox(height: 8),
+
+                      // Action Button
+                      ElevatedButton.icon(
+                        onPressed: () => _toggleMatch(user),
+                        icon: Icon(
+                          isMatched ? FontAwesomeIcons.heartCrack : FontAwesomeIcons.heart,
+                          size: 14,
+                        ),
+                        label: Text(
+                          isMatched ? 'Unmatch' : 'Match',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isMatched ? Colors.grey.shade100 : AppColors.primary,
+                          foregroundColor: isMatched ? Colors.red : Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // More Options Button
+                  IconButton(
+                    icon: const Icon(
+                      FontAwesomeIcons.ellipsisVertical,
+                      size: 16,
+                      color: Colors.grey,
                     ),
-                  ],
-                ),
+                    onPressed: () => _showUserActionsBottomSheet(user),
+                  ),
+                ],
               ),
             ),
           );
@@ -789,7 +987,6 @@ class _MatchedUsersScreenState extends State<MatchedUsersScreen> {
   }
 }
 
-// Report Reason Tile Widget
 class _ReportReasonTile extends StatelessWidget {
   final String value;
   final String groupValue;

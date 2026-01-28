@@ -19,6 +19,7 @@ import '../db_functions/getUserName.dart';
 import '../db_functions/getUserPhotoUrl.dart';
 import '../db_functions/isUserPremium.dart';
 import '../db_functions/likeProfile.dart';
+import '../db_functions/match_service.dart';
 import '../db_functions/passProfile.dart';
 import '../db_functions/user_service.dart';
 import 'MatchedUserScreen.dart';
@@ -452,88 +453,45 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _likeProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
-      final String name = getUserName(profile);
-      print('❤️ Liking profile: $uid');
+      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
 
-      await likeProfile(uid);
+      await MatchService.likeProfile(
+        currentUserId: currentUserId,
+        targetUserId: uid,
+      );
 
+      // Remove from local list
       if (mounted) {
         setState(() {
-          _profiles.removeWhere((p) =>
-          (p['uid'] == uid) || (p['UID'] == uid)
-          );
-
-          if (_index >= _profiles.length && _profiles.isNotEmpty) {
-            _index = _profiles.length - 1;
-          } else if (_profiles.isEmpty) {
-            _index = 0;
-          }
+          _profiles.removeWhere((p) => (p['uid'] == uid) || (p['UID'] == uid));
         });
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("You liked $name"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 800),
-          backgroundColor: Colors.green,
-        ),
-      );
     } catch (e) {
-      print('❌ Error in _likeProfile: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1500),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Handle error
     }
   }
 
   Future<void> _passProfile(Map<String, dynamic> profile) async {
     try {
       final String uid = profile['uid'] ?? profile['UID'];
-      final String name = getUserName(profile);
-      print('👎 Passing on profile: $uid');
+      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
 
-      await passProfile(uid);
+      await MatchService.passProfile(
+        currentUserId: currentUserId,
+        targetUserId: uid,
+      );
 
+      // Remove from local list
       if (mounted) {
         setState(() {
-          _profiles.removeWhere((p) =>
-          (p['uid'] == uid) || (p['UID'] == uid)
-          );
-
-          if (_index >= _profiles.length && _profiles.isNotEmpty) {
-            _index = _profiles.length - 1;
-          } else if (_profiles.isEmpty) {
-            _index = 0;
-          }
+          _profiles.removeWhere((p) => (p['uid'] == uid) || (p['UID'] == uid));
         });
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("You passed on $name"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 700),
-          backgroundColor: Colors.orange,
-        ),
-      );
     } catch (e) {
-      print('❌ Error in _passProfile: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1500),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Handle error
     }
   }
+
 
   void _navigateToProfileDetails(Map<String, dynamic> profile) {
     final String userId = profile['uid'] ?? profile['UID'];

@@ -27,7 +27,6 @@ class MessagesScreen extends StatefulWidget {
   State<MessagesScreen> createState() => _MessagesScreenState();
 }
 
-
 class _MessagesScreenState extends State<MessagesScreen> {
   // --- Search State ---
   bool _isSearching = false;
@@ -37,8 +36,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
   List<_Conversation> _chats = [];
   List<_Conversation> _filteredChats = [];
   List<_StoryDisplay> _stories = [];
-  List<_User> _allUsers = [];
-  Set<String> _matchedUserIds = {}; // Track currently matched user IDs
+  List<_User> _matchedUsers = []; // List of matched users for new chat
+  Set<String> _matchedUserIds = {}; // Track matched user IDs
   bool _isLoading = true;
   bool _showNewChatOptions = false;
   StreamSubscription<QuerySnapshot>? _chatSubscription;
@@ -67,31 +66,192 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.dispose();
   }
 
+  // Load matched users using the same logic as MatchedUsersScreen
+  Future<void> _loadMatchedUsers() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      print('🔄 Loading matches for user: ${currentUser.uid}');
+
+      // OPTION 1: Check matches collection for any match records
+      final matchesSnapshot = await _firestore
+          .collection('matches')
+          .where('UID', isEqualTo: currentUser.uid)
+          .where('status', isEqualTo: 'match')
+          .get();
+
+      print('📊 Found ${matchesSnapshot.docs.length} match documents');
+
+      // Extract matched user IDs
+      // In the _loadMatchedUsers() method, update this part:
+
+// Extract matched user IDs
+      final matchedUserIds = matchesSnapshot.docs
+          .map((doc) {
+        final data = doc.data();
+        print('Match document data: $data');
+        return data['matched_user_ID'] as String?;
+      })
+          .where((id) => id != null)
+          .map((id) => id!) // Convert from String? to String
+          .toSet();
+
+      print('🎯 Matched user IDs from matches collection: $matchedUserIds');
+      // OPTION 2: Check user's liked_profiles and see who also liked back
+      if (matchedUserIds.isEmpty) {
+        print('⚠ No matches in matches collection, checking user data...');
+
+        // Get current user's liked profiles
+        final currentUserDoc = await _firestore
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
+
+        if (currentUserDoc.exists) {
+          final currentUserData = currentUserDoc.data()!;
+          final myLikedProfiles = List<String>.from(
+              currentUserData['liked_profiles'] ?? []);
+
+          print('❤️ My liked profiles: $myLikedProfiles');
+
+          // Check each liked profile to see if they also liked me
+          for (final likedUserId in myLikedProfiles) {
+            try {
+              final likedUserDoc = await _firestore
+                  .collection('users')
+                  .doc(likedUserId)
+                  .get();
+
+              if (likedUserDoc.exists) {
+                final likedUserData = likedUserDoc.data()!;
+                final theirLikedProfiles = List<String>.from(
+                    likedUserData['liked_profiles'] ?? []);
+
+                if (theirLikedProfiles.contains(currentUser.uid)) {
+                  // It's a mutual match!
+                  matchedUserIds.add(likedUserId);
+                }
+              }
+            } catch (e) {
+              print('⚠ Error checking user $likedUserId: $e');
+            }
+          }
+        }
+      }
+
+      // OPTION 3: Check matches by conversation ID pattern
+      if (matchedUserIds.isEmpty) {
+        print('⚠ Checking for matches using ID pattern...');
+
+        // Look for documents where current user is user1Id or user2Id
+        final user1Matches = await _firestore
+            .collection('matches')
+            .where('user1Id', isEqualTo: currentUser.uid)
+            .get();
+
+        final user2Matches = await _firestore
+            .collection('matches')
+            .where('user2Id', isEqualTo: currentUser.uid)
+            .get();
+
+        for (var doc in user1Matches.docs) {
+          final data = doc.data();
+          final user2Id = data['user2Id'] as String?;
+          if (user2Id != null && !matchedUserIds.contains(user2Id)) {
+            matchedUserIds.add(user2Id);
+          }
+        }
+
+        for (var doc in user2Matches.docs) {
+          final data = doc.data();
+          final user1Id = data['user1Id'] as String?;
+          if (user1Id != null && !matchedUserIds.contains(user1Id)) {
+            matchedUserIds.add(user1Id);
+          }
+        }
+      }
+
+      print('✅ Final matched user IDs: $matchedUserIds');
+
+      // Store matched user IDs
+      setState(() {
+        _matchedUserIds = matchedUserIds.toSet();
+      });
+
+      // Fetch user profiles for matched users
+      if (matchedUserIds.isNotEmpty) {
+        final users = await Future.wait(
+          matchedUserIds.map((userId) async {
+            try {
+              final userDoc = await _firestore.collection('users').doc(userId).get();
+              if (userDoc.exists) {
+                final data = userDoc.data()!;
+                return _User(
+                  id: userId!,
+                  name: data['name'] ?? 'User',
+                  avatar: _getFirstPhotoUrl(data['first_photos']) ?? 'https://i.pravatar.cc/150?img=1',
+                  isOnline: data['isOnline'] ?? false,
+                );
+              }
+            } catch (e) {
+              print('⚠ Error fetching user $userId: $e');
+            }
+            return null;
+          }),
+        );
+
+        final validUsers = users.whereType<_User>().toList();
+        setState(() {
+          _matchedUsers = validUsers;
+        });
+
+        print('🎉 Loaded ${_matchedUsers.length} matched users for messaging');
+      } else {
+        setState(() {
+          _matchedUsers = [];
+        });
+        print('📭 No matches found');
+      }
+
+      // Now load chats for these matched users
+      _loadAllChats();
+
+    } catch (e) {
+      print('❌ Error loading matched users: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   // Listen to matches in real-time
   void _listenToMatches() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
+    _matchesSubscription?.cancel(); // Cancel previous subscription
+
     _matchesSubscription = _firestore
         .collection('matches')
         .where('UID', isEqualTo: currentUser.uid)
         .where('status', isEqualTo: 'match')
-        .where('is_mutual', isEqualTo: true)
         .snapshots()
         .listen((snapshot) async {
       if (mounted) {
-        final matchedIds = snapshot.docs
-            .map((doc) => doc.data()['matched_user_ID'] as String)
-            .toSet();
+        print('🔄 Match update detected: ${snapshot.docs.length} documents');
 
-        setState(() {
-          _matchedUserIds = matchedIds;
-        });
-
-        print('✅ Updated matched users: ${matchedIds.length} users');
-
-        // Reload chats when matches change
-        _loadAllChats();
+        // Re-run the match loading logic
+        await _loadMatchedUsers();
       }
     }, onError: (e) {
       print('❌ Error listening to matches: $e');
@@ -117,38 +277,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
       print('✅ ZegoCloud ZIMKit initialized and user connected');
     } catch (e) {
       print('❌ ZegoCloud ZIMKit initialization error: $e');
-    }
-  }
-
-  // Load matched users for messaging
-  Future<void> _loadMatchedUsers() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      // Get mutual matches
-      final matchesSnapshot = await _firestore
-          .collection('matches')
-          .where('UID', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'match')
-          .where('is_mutual', isEqualTo: true)
-          .get();
-
-      final matchedUserIds = matchesSnapshot.docs
-          .map((doc) => doc.data()['matched_user_ID'] as String)
-          .toSet();
-
-      setState(() {
-        _matchedUserIds = matchedUserIds;
-      });
-
-      print('✅ Loaded ${matchedUserIds.length} matched users');
-
-      // Now load chats for these matched users
-      _loadAllChats();
-
-    } catch (e) {
-      print('❌ Error loading matched users: $e');
     }
   }
 
@@ -253,6 +381,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return 0;
   }
 
+  // Helper function to get first photo URL
+  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
+    if (firstPhotos == null) return null;
+    for (var i = 1; i <= 4; i++) {
+      final photoUrl = firstPhotos['photo${i}url']?.toString();
+      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
+        return photoUrl;
+      }
+    }
+    return null;
+  }
+
   // Load stories from followed users and current user
   Future<void> _loadStories() async {
     try {
@@ -343,17 +483,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     } catch (e) {
       print('❌ Error loading stories: $e');
     }
-  }
-
-  String? _getFirstPhotoUrl(Map<String, dynamic>? firstPhotos) {
-    if (firstPhotos == null) return null;
-    for (var i = 1; i <= 4; i++) {
-      final photoUrl = firstPhotos['photo${i}url']?.toString();
-      if (photoUrl != null && photoUrl.isNotEmpty && photoUrl != 'null') {
-        return photoUrl;
-      }
-    }
-    return null;
   }
 
   // Search functionality
@@ -480,7 +609,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
       rethrow;
     }
   }
-// Open existing chat - Since we're filtering by matched users, this should always work
+
+  // Open existing chat - Since we're filtering by matched users, this should always work
   void _openExistingChat(_Conversation chat) async {
     try {
       final user = _auth.currentUser;
@@ -514,6 +644,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       );
     }
   }
+
   // Show popup for unmatched users
   void _showUnmatchedPopup(String userName) {
     showDialog(
@@ -857,12 +988,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
         ),
 
+        // Search bar for matched users
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: TextField(
-            controller: TextEditingController(),
+            onChanged: (value) {
+              setState(() {}); // Trigger rebuild for search
+            },
             decoration: InputDecoration(
-              hintText: "Search users...",
+              hintText: "Search matched users...",
               prefixIcon: const Icon(Icons.search, color: AppColors.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(25),
@@ -871,32 +1005,63 @@ class _MessagesScreenState extends State<MessagesScreen> {
               filled: true,
               fillColor: Colors.grey[100],
             ),
-            onChanged: (value) {
-              // Implement user search here
-            },
+          ),
+        ),
+
+        // Header showing count
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                'Matched Users (${_matchedUsers.length})',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: Colors.black54,
+                ),
+              ),
+              const Spacer(),
+              if (_matchedUsers.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        FontAwesomeIcons.heart,
+                        size: 12,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Matched',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ),
 
         Expanded(
-          child: _allUsers.isEmpty
-              ? _buildNoUsersState()
-              : ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _allUsers.length,
-            itemBuilder: (context, index) {
-              final user = _allUsers[index];
-              return _UserTile(
-                user: user,
-                onTap: () => _startChatWithUser(user),
-              );
-            },
-          ),
+          child: _matchedUsers.isEmpty
+              ? _buildNoMatchesState()
+              : _buildMatchedUsersList(),
         ),
       ],
     );
   }
 
-  Widget _buildNoUsersState() {
+  Widget _buildNoMatchesState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -945,6 +1110,56 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
+  Widget _buildMatchedUsersList() {
+    final searchText = _searchController.text.toLowerCase().trim();
+    final filteredUsers = searchText.isEmpty
+        ? _matchedUsers
+        : _matchedUsers.where((user) =>
+        user.name.toLowerCase().contains(searchText)).toList();
+
+    if (filteredUsers.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              FontAwesomeIcons.search,
+              size: 64,
+              color: Colors.grey[300],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No users found',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No matches found for "$searchText"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: filteredUsers.length,
+      itemBuilder: (context, index) {
+        final user = filteredUsers[index];
+        return _UserTile(
+          user: user,
+          onTap: () => _startChatWithUser(user),
+        );
+      },
+    );
+  }
+
   Widget _buildEmptyChatsState() {
     return Container(
       padding: const EdgeInsets.all(40),
@@ -987,137 +1202,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
         const Divider(height: 0),
       ],
     )).toList();
-  }
-
-  // Show detailed information about unmatched chat
-  void _showUnmatchedDetails(_Conversation chat) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 60,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Header
-            Row(
-              children: [
-                Icon(Icons.heart_broken, color: Colors.red, size: 24),
-                const SizedBox(width: 8),
-                const Text(
-                  'Unmatched Chat',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Chat Info
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(
-                radius: 25,
-                backgroundImage: NetworkImage(chat.avatar),
-              ),
-              title: Text(
-                chat.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text('Last active: ${chat.time}'),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Information
-            const Text(
-              'Chat Information',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            Text(
-              'You are no longer matched with ${chat.name}.',
-              style: const TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-
-            Text(
-              '• You cannot send new messages\n• Chat history is preserved\n• Match again to resume chatting',
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Actions
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      // Option 1: Navigate to user's profile
-                      // _viewUserProfile(chat.otherUserId);
-
-                      // Option 2: Navigate to discover to find them again
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const DiscoverScreen(),
-                        ),
-                      );
-                    },
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      side: BorderSide(color: AppColors.primary),
-                    ),
-                    child: Text(
-                      'Find New Matches',
-                      style: TextStyle(color: AppColors.primary),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[200],
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text('Close'),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -1320,31 +1404,48 @@ class _UserTile extends StatelessWidget {
             radius: 24,
             backgroundImage: NetworkImage(user.avatar),
           ),
-          if (user.isOnline)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
               ),
             ),
+          ),
         ],
       ),
       title: Text(
         user.name,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
-      subtitle: Text(
-        user.isOnline ? 'Online' : 'Offline',
-        style: TextStyle(
-          color: user.isOnline ? Colors.green : Colors.grey,
-          fontSize: 12,
+      subtitle: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              FontAwesomeIcons.heart,
+              size: 10,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Matched',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
         ),
       ),
       trailing: Container(
@@ -1422,6 +1523,33 @@ class _ChatTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  FontAwesomeIcons.heart,
+                  size: 10,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  'Matched',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
           Text(
             chat.time,
             style: const TextStyle(
@@ -1448,6 +1576,7 @@ class _ChatTile extends StatelessWidget {
     );
   }
 }
+
 // ---------- Stories Circle ----------
 class _StoryCircle extends StatelessWidget {
   const _StoryCircle({
