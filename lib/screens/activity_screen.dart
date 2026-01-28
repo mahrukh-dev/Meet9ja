@@ -970,7 +970,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ProfileScreen(userId: userId),
+        builder: (context) => ProfileScreen(userId: userId, isMyProfile: false,),
       ),
     );
   }

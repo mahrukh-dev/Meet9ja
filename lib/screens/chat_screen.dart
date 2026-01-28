@@ -64,6 +64,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadMessages();
     _markMessagesAsRead();
 
+    // Initialize ZegoUIKit
+    _initZegoUIKit();
+
     // Listen for text changes to update send button
     _textController.addListener(() {
       if (mounted) {
@@ -81,6 +84,19 @@ class _ChatScreenState extends State<ChatScreen> {
     _stopRecording();
     _audioRecorder.closeRecorder();
     super.dispose();
+  }
+
+  // Initialize ZegoUIKit
+  void _initZegoUIKit() async {
+    try {
+      await ZegoUIKit().init(
+        appID: Env.zegoAppID,
+        appSign: Env.zegoAppSign,
+      );
+      print('✅ ZegoUIKit initialized successfully');
+    } catch (e) {
+      print('❌ Error initializing ZegoUIKit: $e');
+    }
   }
 
   // Initialize audio recorder
@@ -167,7 +183,139 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Send text message - IMPROVED VERSION
+  // Start voice call - FIXED VERSION
+  void _startVoiceCall() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to make calls')),
+      );
+      return;
+    }
+
+    try {
+      // Generate consistent call ID for this conversation
+      final callID = 'voice_call_${widget.conversationId}';
+
+      // Save call invitation to Firestore so other user can join
+      await _saveCallInvitation(callID, 'voice');
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ZegoUIKitPrebuiltCall(
+            appID: Env.zegoAppID,
+            appSign: Env.zegoAppSign,
+            callID: callID,
+            userID: user.uid,
+            userName: user.displayName ?? 'User ${user.uid.substring(0, 6)}',
+            config: ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall()
+
+          ),
+        ),
+      );
+
+      print('✅ Voice call started with ID: $callID');
+    } catch (e) {
+      print('❌ Error starting voice call: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start call: $e')),
+      );
+    }
+  }
+
+  // Start video call - FIXED VERSION
+  void _startVideoCall() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to make calls')),
+      );
+      return;
+    }
+
+    try {
+      // Generate consistent call ID for this conversation
+      final callID = 'video_call_${widget.conversationId}';
+
+      // Save call invitation to Firestore so other user can join
+      await _saveCallInvitation(callID, 'video');
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ZegoUIKitPrebuiltCall(
+            appID: Env.zegoAppID,
+            appSign: Env.zegoAppSign,
+            callID: callID,
+            userID: user.uid,
+            userName: user.displayName ?? 'User ${user.uid.substring(0, 6)}',
+            config: ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall(),
+          ),
+        ),
+      );
+
+      print('✅ Video call started with ID: $callID');
+    } catch (e) {
+      print('❌ Error starting video call: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start call: $e')),
+      );
+    }
+  }
+
+  // Save call invitation to Firestore (for notification purposes)
+  Future<void> _saveCallInvitation(String callID, String callType) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      // Create call invitation document
+      await _firestore.collection('call_invitations').doc(callID).set({
+        'callID': callID,
+        'callType': callType,
+        'conversationId': widget.conversationId,
+        'callerId': user.uid,
+        'callerName': user.displayName ?? 'User',
+        'receiverId': widget.otherUserId,
+        'receiverName': widget.otherUserName,
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'ringing',
+      }, SetOptions(merge: true));
+
+      // Also save to call history
+      await _saveCallHistory(callType, callID);
+
+      print('✅ Call invitation saved: $callID');
+    } catch (e) {
+      print('❌ Error saving call invitation: $e');
+    }
+  }
+
+  // Save call history to Firestore
+  Future<void> _saveCallHistory(String callType, String callID) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await _firestore.collection('call_history').add({
+        'callID': callID,
+        'callType': callType,
+        'conversationId': widget.conversationId,
+        'callerId': user.uid,
+        'receiverId': widget.otherUserId,
+        'startTime': FieldValue.serverTimestamp(),
+        'endTime': null,
+        'duration': 0,
+        'status': 'initiated',
+      });
+      print('✅ Call history saved: $callType');
+    } catch (e) {
+      print('❌ Error saving call history: $e');
+    }
+  }
+
+  // Send text message
   void _sendTextMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
@@ -304,7 +452,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Save message to Firestore - FIXED VERSION
+  // Save message to Firestore
   Future<void> _saveMessageToFirestore({
     required String type,
     required String text,
@@ -337,7 +485,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       print('✅ Message saved to messages subcollection: $text');
 
-      // Update or create conversation document with ALL required fields
+      // Update or create conversation document
       final conversationData = {
         'conversationId': widget.conversationId,
         'participants': {
@@ -418,7 +566,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Start voice recording - FIXED VERSION
+  // Start voice recording
   void _startVoiceRecording() async {
     try {
       // Check if recorder is ready
@@ -445,7 +593,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
       _recordingPath = '${tempDir.path}/$fileName';
 
-      // Start recording with simpler configuration
+      // Start recording
       await _audioRecorder.startRecorder(
         toFile: _recordingPath!,
         codec: Codec.aacMP4,
@@ -548,7 +696,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Play voice note - Using AudioPlayer for simplicity
+  // Play voice note
   void _playVoiceNote(String messageId, String mediaUrl, int duration) async {
     try {
       if (_isPlayingVoiceNote && _currentPlayingVoiceNote == messageId) {
@@ -569,7 +717,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _currentPlayingVoiceNote = messageId;
         });
 
-        // Play the actual audio from Firebase Storage using AudioPlayer
+        // Play the actual audio from Firebase Storage
         await _audioPlayer.play(UrlSource(mediaUrl));
 
         // Listen for completion
@@ -593,112 +741,6 @@ class _ChatScreenState extends State<ChatScreen> {
         _isPlayingVoiceNote = false;
         _currentPlayingVoiceNote = null;
       });
-    }
-  }
-
-  // Start voice call
-  void _startVoiceCall() async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sign in to make calls')),
-      );
-      return;
-    }
-
-    try {
-      await ZegoUIKit().init(
-        appID: Env.zegoAppID,
-        appSign: Env.zegoAppSign,
-      );
-
-      final callID = 'voice_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}';
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ZegoUIKitPrebuiltCall(
-              appID: Env.zegoAppID,
-              appSign: Env.zegoAppSign,
-              callID: callID,
-              userID: user.uid,
-              userName: user.displayName ?? 'User',
-              config: ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall()
-          ),
-        ),
-      );
-
-      await _saveCallHistory('voice');
-      print('✅ Voice call started');
-    } catch (e) {
-      print('❌ Error starting voice call: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start call: $e')),
-      );
-    }
-  }
-
-  // Start video call
-  void _startVideoCall() async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sign in to make calls')),
-      );
-      return;
-    }
-
-    try {
-      await ZegoUIKit().init(
-        appID: Env.zegoAppID,
-        appSign: Env.zegoAppSign,
-      );
-
-      final callID = 'video_call_${widget.conversationId}_${DateTime.now().millisecondsSinceEpoch}';
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ZegoUIKitPrebuiltCall(
-              appID: Env.zegoAppID,
-              appSign: Env.zegoAppSign,
-              callID: callID,
-              userID: user.uid,
-              userName: user.displayName ?? 'User',
-              config: ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-          ),
-        ),
-      );
-
-      await _saveCallHistory('video');
-      print('✅ Video call started');
-    } catch (e) {
-      print('❌ Error starting video call: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start call: $e')),
-      );
-    }
-  }
-
-  // Save call history to Firestore
-  Future<void> _saveCallHistory(String callType) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      await _firestore.collection('call_history').add({
-        'UID': user.uid,
-        'call_with': {
-          'friendUID': widget.otherUserId,
-          'start_date_time': FieldValue.serverTimestamp(),
-          'end_date_time': null,
-          'call_type': callType,
-        },
-        'created_at': FieldValue.serverTimestamp(),
-      });
-      print('✅ Call history saved: $callType');
-    } catch (e) {
-      print('❌ Error saving call history: $e');
     }
   }
 
@@ -1177,7 +1219,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Build the bottom input bar - UPDATED TO REMOVE RED RECORDING UI
+  // Build the bottom input bar
   Widget _buildInputBar() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1232,11 +1274,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
 
-                  // Voice recording button - now shows recording status in a snackbar instead of red UI
+                  // Voice recording button
                   GestureDetector(
                     onLongPressStart: (_) {
                       _startVoiceRecording();
-                      // Show recording started snackbar
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Row(
@@ -1247,13 +1288,12 @@ class _ChatScreenState extends State<ChatScreen> {
                             ],
                           ),
                           backgroundColor: Colors.black87,
-                          duration: Duration(hours: 1), // Long duration until released
+                          duration: Duration(hours: 1),
                         ),
                       );
                     },
                     onLongPressEnd: (_) {
                       _stopVoiceRecording();
-                      // Hide the recording snackbar
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     },
                     child: Container(
