@@ -897,6 +897,6 @@ class _BackgroundLines extends CustomPainter {
     }
   }
 
-  @override
+  @overridein
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
