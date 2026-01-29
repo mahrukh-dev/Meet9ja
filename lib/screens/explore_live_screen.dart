@@ -59,6 +59,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   final Map<String, VideoPlayerController> _videoControllers = {};
   final Map<String, ChewieController> _chewieControllers = {};
   final Map<String, bool> _videoInitialized = {};
+  final Map<String, bool> _videoLoading = {};
   String? _currentPlayingVideoId;
 
   // Track visibility of play/pause overlay
@@ -75,16 +76,23 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   bool _isScreenActive = true;
   bool _isDisposed = false;
 
-  // Optimization flags
-  bool _shouldLoadClips = true;
-  bool _clipsLoaded = false;
-  Completer<void>? _clipsLoadingCompleter;
+  // Video preloading
+  int _preloadNext = 1;
+  int _preloadPrev = 1;
+  bool _isScrolling = false;
+  Timer? _scrollDebounceTimer;
 
   // Pagination for clips
   int _clipsPage = 0;
-  final int _clipsPerPage = 10;
+  final int _clipsPerPage = 15;
   bool _loadingMoreClips = false;
   bool _hasMoreClips = true;
+  DocumentSnapshot? _lastClipsDocument;
+
+  // Video performance optimization
+  bool _clipsLoaded = false;
+  final Map<String, Completer<void>> _videoLoadingCompleters = {};
+  final Set<String> _videosToDispose = {};
 
   @override
   void initState() {
@@ -104,9 +112,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _tab.addListener(_handleTabChange);
     _followingPageController.addListener(_handleFollowingPageChange);
     _clipsPageController.addListener(_handleClipsPageChange);
-
-    // Initialize clips loading completer
-    _clipsLoadingCompleter = Completer<void>();
   }
 
   Future<void> _loadFollowingUsers() async {
@@ -139,9 +144,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         final prevItem = _followingReels[_currentFollowingPage];
         if (prevItem.mediaType == 'video') {
           _pauseVideo(prevItem.postId);
-          setState(() {
-            _showPlayPauseOverlay[prevItem.postId] = false;
-          });
         }
       }
 
@@ -160,8 +162,15 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
     final page = _clipsPageController.page?.round() ?? 0;
 
+    // Debounce scrolling
+    _isScrolling = true;
+    _scrollDebounceTimer?.cancel();
+    _scrollDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+      _isScrolling = false;
+    });
+
     // Load more clips if we're near the end
-    if (page >= _clipsReels.length - 3 && _hasMoreClips && !_loadingMoreClips) {
+    if (page >= _clipsReels.length - 5 && _hasMoreClips && !_loadingMoreClips) {
       _loadMoreClips();
     }
 
@@ -171,9 +180,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         final prevItem = _clipsReels[_currentClipsPage];
         if (prevItem.mediaType == 'video') {
           _pauseVideo(prevItem.postId);
-          setState(() {
-            _showPlayPauseOverlay[prevItem.postId] = false;
-          });
         }
       }
 
@@ -184,9 +190,75 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         final item = _clipsReels[page];
         if (item.mediaType == 'video') {
           _playVideo(item.postId);
+          _preloadAdjacentVideos(page);
+        }
+      }
+
+      // Clean up far away videos
+      _cleanupDistantVideos(page);
+    }
+  }
+
+  void _preloadAdjacentVideos(int currentPage) {
+    // Preload next videos
+    for (int i = 1; i <= _preloadNext; i++) {
+      final nextIndex = currentPage + i;
+      if (nextIndex < _clipsReels.length) {
+        final nextItem = _clipsReels[nextIndex];
+        if (nextItem.mediaType == 'video' && !_videoInitialized.containsKey(nextItem.postId)) {
+          _initializeVideoController(nextItem);
         }
       }
     }
+
+    // Preload previous videos
+    for (int i = 1; i <= _preloadPrev; i++) {
+      final prevIndex = currentPage - i;
+      if (prevIndex >= 0) {
+        final prevItem = _clipsReels[prevIndex];
+        if (prevItem.mediaType == 'video' && !_videoInitialized.containsKey(prevItem.postId)) {
+          _initializeVideoController(prevItem);
+        }
+      }
+    }
+  }
+
+  void _cleanupDistantVideos(int currentPage) {
+    final maxDistance = 3;
+    final videosToKeep = <String>{};
+
+    // Mark videos to keep
+    for (int i = -maxDistance; i <= maxDistance; i++) {
+      final index = currentPage + i;
+      if (index >= 0 && index < _clipsReels.length) {
+        final item = _clipsReels[index];
+        if (item.mediaType == 'video') {
+          videosToKeep.add(item.postId);
+        }
+      }
+    }
+
+    // Dispose of videos that are too far away
+    final allVideoIds = _videoControllers.keys.toList();
+    for (final videoId in allVideoIds) {
+      if (!videosToKeep.contains(videoId) && videoId != _currentPlayingVideoId) {
+        _videosToDispose.add(videoId);
+      }
+    }
+
+    // Dispose in next frame to avoid jank
+    if (_videosToDispose.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _disposeVideosInSet();
+      });
+    }
+  }
+
+  void _disposeVideosInSet() {
+    for (final videoId in _videosToDispose) {
+      _disposeVideoController(videoId);
+    }
+    _videosToDispose.clear();
   }
 
   @override
@@ -204,9 +276,14 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
         break;
       case AppLifecycleState.resumed:
         _isScreenActive = true;
-        // Only resume if we're on clips tab
-        if (_tab.index == 2 && _currentPlayingVideoId != null) {
-          _playVideo(_currentPlayingVideoId!);
+        // Only resume if we're on clips tab and screen is visible
+        if (_tab.index == 2 && _currentPlayingVideoId != null && mounted) {
+          // Add a small delay to ensure UI is ready
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted && !_isDisposed && _isScreenActive && _tab.index == 2) {
+              _playVideo(_currentPlayingVideoId!);
+            }
+          });
         }
         break;
       case AppLifecycleState.detached:
@@ -223,18 +300,26 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _pauseAllVideos();
 
     // Load clips only when switching to clips tab
-    if (_tab.index == 2 && !_clipsLoaded && _shouldLoadClips) {
+    if (_tab.index == 2 && !_clipsLoaded) {
       _loadClipsData();
+    } else if (_tab.index != 2) {
+      // Pause videos when leaving clips tab
+      _pauseAllVideos();
+      // Dispose controllers when leaving clips tab to save memory
+      if (_tab.index == 0 || _tab.index == 1) {
+        _disposeAllVideoControllers();
+      }
     }
 
     // Play video only if we're on clips tab and have a current page
-    if (_tab.index == 2 && _clipsReels.isNotEmpty && _currentClipsPage < _clipsReels.length) {
+    if (_tab.index == 2 && _clipsLoaded && _clipsReels.isNotEmpty && _currentClipsPage < _clipsReels.length) {
       final item = _clipsReels[_currentClipsPage];
       if (item.mediaType == 'video') {
         // Initialize video if needed, then play
         _initializeVideoController(item).then((_) {
-          if (mounted && !_isDisposed) {
+          if (mounted && !_isDisposed && _isScreenActive && _tab.index == 2) {
             _playVideo(item.postId);
+            _preloadAdjacentVideos(_currentClipsPage);
           }
         });
       }
@@ -250,37 +335,87 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _currentPlayingVideoId = null;
   }
 
+  void _disposeVideoController(String videoId) {
+    if (_videoControllers.containsKey(videoId)) {
+      try {
+        _chewieControllers[videoId]?.dispose();
+        _videoControllers[videoId]?.dispose();
+      } catch (e) {
+        print('Error disposing video controller $videoId: $e');
+      }
+
+      _chewieControllers.remove(videoId);
+      _videoControllers.remove(videoId);
+      _videoInitialized.remove(videoId);
+      _videoLoading.remove(videoId);
+      _showPlayPauseOverlay.remove(videoId);
+      _videoLoadingCompleters.remove(videoId);
+    }
+  }
+
   void _disposeAllVideoControllers() {
     _hideOverlayTimer?.cancel();
     _hideOverlayTimer = null;
 
-    for (var controller in _chewieControllers.values) {
-      controller.dispose();
+    final videoIds = _videoControllers.keys.toList();
+    for (final videoId in videoIds) {
+      _disposeVideoController(videoId);
     }
-    for (var controller in _videoControllers.values) {
-      controller.dispose();
-    }
-    _videoControllers.clear();
-    _chewieControllers.clear();
-    _videoInitialized.clear();
-    _showPlayPauseOverlay.clear();
   }
 
   Future<void> _initializeVideoController(_ReelItem item) async {
-    if (_isDisposed) return;
-
-    if (item.mediaType != 'video' || _videoInitialized[item.postId] == true) {
+    if (_isDisposed || item.mediaType != 'video') {
       return;
+    }
+
+    final videoId = item.postId;
+
+    // Don't reinitialize if already initializing or initialized
+    if (_videoInitialized[videoId] == true || _videoLoading[videoId] == true) {
+      return;
+    }
+
+    // Create a completer for this video
+    if (!_videoLoadingCompleters.containsKey(videoId)) {
+      _videoLoadingCompleters[videoId] = Completer<void>();
     }
 
     try {
       print('📹 Initializing video for ${item.postId}');
 
-      final videoController = VideoPlayerController.network(item.thumb)
-        ..setLooping(true)
-        ..setVolume(1.0);
+      // Mark as loading
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _videoLoading[videoId] = true;
+        });
+      }
 
+      // Use cached controller if available
+      if (_videoControllers.containsKey(videoId)) {
+        return;
+      }
+
+      final videoController = VideoPlayerController.network(
+        item.thumb,
+        videoPlayerOptions: VideoPlayerOptions(
+          mixWithOthers: true,
+          allowBackgroundPlayback: false,
+        ),
+      );
+
+      // Set up error handling
+      videoController.addListener(() {
+        if (videoController.value.hasError) {
+          print('❌ Video error for $videoId: ${videoController.value.errorDescription}');
+        }
+      });
+
+      // Initialize video
       await videoController.initialize();
+
+      // Set volume and looping
+      await videoController.setVolume(1.0);
+      await videoController.setLooping(true);
 
       final chewieController = ChewieController(
         videoPlayerController: videoController,
@@ -295,23 +430,46 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           backgroundColor: Colors.grey,
           bufferedColor: Colors.grey.shade300,
         ),
+        errorBuilder: (context, errorMessage) {
+          return Center(
+            child: Text(
+              'Video loading error',
+              style: TextStyle(color: Colors.white),
+            ),
+          );
+        },
       );
 
       if (mounted && !_isDisposed) {
         setState(() {
-          _videoControllers[item.postId] = videoController;
-          _chewieControllers[item.postId] = chewieController;
-          _videoInitialized[item.postId] = true;
-          _showPlayPauseOverlay[item.postId] = false;
+          _videoControllers[videoId] = videoController;
+          _chewieControllers[videoId] = chewieController;
+          _videoInitialized[videoId] = true;
+          _videoLoading[videoId] = false;
+          _showPlayPauseOverlay[videoId] = false;
         });
       }
+
+      // Complete the completer
+      if (_videoLoadingCompleters.containsKey(videoId) && !_videoLoadingCompleters[videoId]!.isCompleted) {
+        _videoLoadingCompleters[videoId]!.complete();
+      }
+
+      print('✅ Video initialized for $videoId');
     } catch (e) {
       print('❌ Error initializing video for ${item.postId}: $e');
+
       // Mark as initialized even on error to prevent retries
       if (mounted && !_isDisposed) {
         setState(() {
-          _videoInitialized[item.postId] = true;
+          _videoInitialized[videoId] = true;
+          _videoLoading[videoId] = false;
         });
+      }
+
+      // Complete the completer with error
+      if (_videoLoadingCompleters.containsKey(videoId) && !_videoLoadingCompleters[videoId]!.isCompleted) {
+        _videoLoadingCompleters[videoId]!.completeError(e);
       }
     }
   }
@@ -345,7 +503,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       });
 
       // Hide overlay after 1.5 seconds
-      _hideOverlayTimer = Timer(const Duration(milliseconds: 1500), () {
+      _hideOverlayTimer = Timer(const Duration(milliseconds: 200), () {
         if (mounted && !_isDisposed && _videoControllers.containsKey(postId)) {
           final isStillPlaying = _videoControllers[postId]!.value.isPlaying;
           if (isStillPlaying) {
@@ -358,8 +516,18 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     }
   }
 
-  void _playVideo(String postId) {
-    if (_isDisposed || !_videoControllers.containsKey(postId)) return;
+  Future<void> _playVideo(String postId) async {
+    if (_isDisposed || !_videoControllers.containsKey(postId)) {
+      print('⚠️ Cannot play video $postId: controller not found');
+      return;
+    }
+
+    // If video is still loading, wait for it
+    if (_videoLoading[postId] == true) {
+      if (_videoLoadingCompleters.containsKey(postId)) {
+        await _videoLoadingCompleters[postId]!.future;
+      }
+    }
 
     print('▶️ Playing video $postId');
 
@@ -371,46 +539,56 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       _pauseVideo(_currentPlayingVideoId!);
     }
 
-    // Play new video
-    _videoControllers[postId]!.play();
+    try {
+      await _videoControllers[postId]!.play();
 
-    if (mounted && !_isDisposed) {
-      setState(() {
-        _currentPlayingVideoId = postId;
-        _showPlayPauseOverlay[postId] = true;
-      });
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _currentPlayingVideoId = postId;
+          _showPlayPauseOverlay[postId] = true;
+        });
 
-      // Hide overlay after 1.5 seconds
-      _hideOverlayTimer = Timer(const Duration(milliseconds: 1500), () {
-        if (mounted && !_isDisposed && _videoControllers.containsKey(postId)) {
-          final isStillPlaying = _videoControllers[postId]!.value.isPlaying;
-          if (isStillPlaying) {
-            setState(() {
-              _showPlayPauseOverlay[postId] = false;
-            });
+        // Hide overlay after 1.5 seconds
+        _hideOverlayTimer = Timer(const Duration(milliseconds: 200), () {
+          if (mounted && !_isDisposed && _videoControllers.containsKey(postId)) {
+            final isStillPlaying = _videoControllers[postId]!.value.isPlaying;
+            if (isStillPlaying) {
+              setState(() {
+                _showPlayPauseOverlay[postId] = false;
+              });
+            }
           }
-        }
-      });
+        });
+      }
+    } catch (e) {
+      print('❌ Error playing video $postId: $e');
     }
   }
 
   void _pauseVideo(String postId) {
-    if (_isDisposed || !_videoControllers.containsKey(postId)) return;
+    if (_isDisposed || !_videoControllers.containsKey(postId)) {
+      print('⚠️ Cannot pause video $postId: controller not found');
+      return;
+    }
 
     print('⏸️ Pausing video $postId');
 
     // Cancel hide timer
     _hideOverlayTimer?.cancel();
 
-    _videoControllers[postId]!.pause();
+    try {
+      _videoControllers[postId]!.pause();
 
-    if (mounted && !_isDisposed) {
-      setState(() {
-        _showPlayPauseOverlay[postId] = true;
-        if (_currentPlayingVideoId == postId) {
-          _currentPlayingVideoId = null;
-        }
-      });
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _showPlayPauseOverlay[postId] = true;
+          if (_currentPlayingVideoId == postId) {
+            _currentPlayingVideoId = null;
+          }
+        });
+      }
+    } catch (e) {
+      print('❌ Error pausing video $postId: $e');
     }
   }
 
@@ -433,6 +611,8 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
     _clipsPageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
 
+    _scrollDebounceTimer?.cancel();
+    _scrollDebounceTimer = null;
     _hideOverlayTimer?.cancel();
     _hideOverlayTimer = null;
 
@@ -679,13 +859,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 
   Future<void> _loadClipsData() async {
-    if (!_shouldLoadClips || _clipsLoaded || _loadingMoreClips) return;
+    if (_clipsLoaded || _loadingMoreClips) return;
 
     try {
       setState(() => _loadingMoreClips = true);
       _clipsPage = 0;
 
-      final clips = await _getClipsPage(_clipsPage);
+      final clips = await _getClipsPage(0);
 
       if (mounted && !_isDisposed) {
         setState(() {
@@ -695,12 +875,13 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           _hasMoreClips = clips.length == _clipsPerPage;
         });
 
-        // Complete the completer so widgets know clips are loaded
-        if (!_clipsLoadingCompleter!.isCompleted) {
-          _clipsLoadingCompleter!.complete();
+        // Initialize first 3 videos
+        final videosToInitialize = clips.take(3).where((item) => item.mediaType == 'video').toList();
+        for (final video in videosToInitialize) {
+          _initializeVideoController(video);
         }
 
-        // Initialize first video if we're on clips tab
+        // Play first video if we're on clips tab
         if (_tab.index == 2 && clips.isNotEmpty) {
           final firstClip = clips.first;
           if (firstClip.mediaType == 'video') {
@@ -736,10 +917,15 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           _hasMoreClips = moreClips.length == _clipsPerPage;
         });
 
-        // Initialize videos for new clips
-        for (final clip in moreClips) {
-          if (clip.mediaType == 'video') {
-            _initializeVideoController(clip);
+        // Preload videos for new clips that are near current position
+        final currentIndex = _currentClipsPage;
+        for (int i = 0; i < moreClips.length; i++) {
+          final item = moreClips[i];
+          final globalIndex = _clipsReels.length - moreClips.length + i;
+
+          // Only preload if within 3 positions of current
+          if (item.mediaType == 'video' && (globalIndex - currentIndex).abs() <= 3) {
+            _initializeVideoController(item);
           }
         }
       }
@@ -871,7 +1057,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
               timestamp: data['created_at'] as Timestamp?,
               likes: List<Map<String, dynamic>>.from(data['likes'] ?? []),
               comments: List<Map<String, dynamic>>.from(data['comments'] ?? []),
-              mediaType: data['media_type'] ?? 'image',
+              mediaType: data['type'] ?? 'image',
             );
           } catch (e) {
             print('❌ Error loading user data for $userId: $e');
@@ -892,20 +1078,22 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
 
   Future<List<_ReelItem>> _getClipsPage(int page) async {
     try {
-      final startAfter = page == 0 ? null : _getLastDocForPage(page);
-
       Query query = FirebaseFirestore.instance
           .collection('user_feed')
+          .where('type', isEqualTo: 'video')
           .orderBy('date_time', descending: true)
           .limit(_clipsPerPage);
 
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
+      if (page > 0 && _lastClipsDocument != null) {
+        query = query.startAfterDocument(_lastClipsDocument!);
       }
 
       final snapshot = await query.get();
 
       if (snapshot.docs.isEmpty) return [];
+
+      // Store last document for pagination
+      _lastClipsDocument = snapshot.docs.last;
 
       final reels = await Future.wait(
         snapshot.docs.map((doc) async {
@@ -918,7 +1106,7 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           final isVideo = mediaUrl.contains('.mp4') ||
               mediaUrl.contains('.mov') ||
               mediaUrl.contains('.avi') ||
-              data['media_type'] == 'video';
+              data['type'] == 'video';
 
           if (!isVideo) return null;
 
@@ -958,16 +1146,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
       print('Error getting clips page $page: $e');
       return [];
     }
-  }
-
-  DocumentSnapshot? _getLastDocForPage(int page) {
-    final itemIndex = page * _clipsPerPage - 1;
-    if (itemIndex >= 0 && itemIndex < _clipsReels.length) {
-      // We need to store document snapshots along with clips
-      // For now, return null - you'll need to implement proper pagination
-      return null;
-    }
-    return null;
   }
 
   void _setupLiveStreamListener() {
@@ -1643,29 +1821,25 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
   }
 
   Widget _buildClipsTab() {
-    return FutureBuilder(
-      future: _clipsLoadingCompleter?.future,
-      builder: (context, snapshot) {
-        if (!_clipsLoaded) {
-          return _buildLoadingClips();
-        }
+    if (!_clipsLoaded) {
+      return _buildLoadingClips();
+    }
 
-        return _ReelsFeed(
-          items: _clipsReels,
-          showStories: false,
-          onLike: _likePost,
-          onComment: _showComments,
-          onShare: _sharePost,
-          onProfileTap: _navigateToUserProfile,
-          onVideoTap: _onVideoTap,
-          onPlayPause: (item) => _onVideoTap(item),
-          isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
-          showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
-          pageController: _clipsPageController,
-          isLoadingMore: _loadingMoreClips,
-          hasMore: _hasMoreClips,
-        );
-      },
+    return _ReelsFeed(
+      items: _clipsReels,
+      showStories: false,
+      onLike: _likePost,
+      onComment: _showComments,
+      onShare: _sharePost,
+      onProfileTap: _navigateToUserProfile,
+      onVideoTap: _onVideoTap,
+      onPlayPause: (item) => _onVideoTap(item),
+      isVideoPlaying: (item) => item.mediaType == 'video' ? _isVideoPlaying(item.postId) : false,
+      showPlayPauseOverlay: (item) => item.mediaType == 'video' ? (_showPlayPauseOverlay[item.postId] ?? false) : false,
+      videoLoading: (item) => item.mediaType == 'video' ? (_videoLoading[item.postId] ?? false) : false,
+      pageController: _clipsPageController,
+      isLoadingMore: _loadingMoreClips,
+      hasMore: _hasMoreClips,
     );
   }
 
@@ -1685,9 +1859,6 @@ class _ExploreLiveScreenState extends State<ExploreLiveScreen>
           const SizedBox(height: 8),
           TextButton(
             onPressed: () {
-              setState(() {
-                _shouldLoadClips = true;
-              });
               _loadClipsData();
             },
             child: const Text(
@@ -2110,6 +2281,7 @@ class _ReelsFeed extends StatefulWidget {
     required this.onPlayPause,
     required this.isVideoPlaying,
     required this.showPlayPauseOverlay,
+    required this.videoLoading,
     this.pageController,
     this.isLoadingMore = false,
     this.hasMore = true,
@@ -2125,6 +2297,7 @@ class _ReelsFeed extends StatefulWidget {
   final Function(_ReelItem) onPlayPause;
   final bool Function(_ReelItem) isVideoPlaying;
   final bool Function(_ReelItem) showPlayPauseOverlay;
+  final bool Function(_ReelItem) videoLoading;
   final PageController? pageController;
   final bool isLoadingMore;
   final bool hasMore;
@@ -2174,6 +2347,7 @@ class _ReelsFeedState extends State<_ReelsFeed> {
           onPlayPause: widget.onPlayPause,
           isVideoPlaying: widget.isVideoPlaying(it),
           showPlayPauseOverlay: widget.showPlayPauseOverlay(it),
+          videoLoading: widget.videoLoading(it),
         );
       },
     );
@@ -2187,12 +2361,12 @@ class _ReelsFeedState extends State<_ReelsFeed> {
           const Icon(FontAwesomeIcons.film, size: 64, color: Colors.white54),
           const SizedBox(height: 16),
           const Text(
-            'No content from other users',
+            'No video clips available',
             style: TextStyle(color: Colors.white, fontSize: 18),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Check back later for new content from other users',
+            'Check back later for new video content',
             style: TextStyle(color: Colors.white54),
           ),
         ],
@@ -2212,6 +2386,7 @@ class _ReelContent extends StatefulWidget {
   final Function(_ReelItem) onPlayPause;
   final bool isVideoPlaying;
   final bool showPlayPauseOverlay;
+  final bool videoLoading;
 
   const _ReelContent({
     required this.item,
@@ -2224,6 +2399,7 @@ class _ReelContent extends StatefulWidget {
     required this.onPlayPause,
     required this.isVideoPlaying,
     required this.showPlayPauseOverlay,
+    required this.videoLoading,
   });
 
   @override
@@ -2274,6 +2450,17 @@ class _ReelContentState extends State<_ReelContent> {
                   ),
                 );
               },
+            ),
+
+          // Loading indicator for videos
+          if (widget.item.mediaType == 'video' && widget.videoLoading)
+            Container(
+              color: Colors.black.withOpacity(0.7),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
             ),
 
           // Play/Pause Overlay
