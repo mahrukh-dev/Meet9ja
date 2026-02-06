@@ -2,16 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Camera & Microphone -->
     <key>NSCameraUsageDescription</key>
-    <string>This app needs camera access to stream live video</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>This app needs microphone access to stream live audio</string>
+    <string>Meet9ja needs camera access for video calls, live streaming, and taking photos</string>
 
-<key>NSAppTransportSecurity</key>
-<dict>
-    <key>NSAllowsArbitraryLoads</key>
-    <true/>
-</dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Meet9ja needs microphone access for voice calls, live streaming, and voice messages</string>
+
+    <!-- App Transport Security -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+
+    <!-- URL Schemes -->
     <key>LSApplicationQueriesSchemes</key>
     <array>
         <string>https</string>
@@ -24,119 +29,162 @@
         <string>youtube</string>
     </array>
 
-    <!-- ========== LOCATION PERMISSIONS ========== -->
+    <!-- Location Permissions -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Meet9ja needs your location to track travel history and show nearby users</string>
 
-        <!-- Location Usage Description (Required) -->
-        <key>NSLocationWhenInUseUsageDescription</key>
-        <string>Meet9ja needs your location to track travel history and show nearby users</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Meet9ja needs your location to track travel history even when the app is in the background</string>
 
-        <!-- For Always authorization (if needed) -->
-        <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-        <string>Meet9ja needs your location to track travel history even when the app is in the background</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>Meet9ja needs your location to track travel history even when the app is in the background</string>
 
-        <!-- For background location updates -->
-        <key>NSLocationAlwaysUsageDescription</key>
-        <string>Meet9ja needs your location to track travel history even when the app is in the background</string>
+    <key>NSLocationUsageDescription</key>
+    <string>Meet9ja needs your location to track travel history and show nearby users</string>
 
-        <!-- For significant location changes -->
-        <key>NSLocationUsageDescription</key>
-        <string>Meet9ja needs your location to track travel history and show nearby users</string>
+    <!-- Background Modes -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+        <string>fetch</string>
+        <string>audio</string>
+        <string>voip</string>
+    </array>
 
-        <!-- Enable background modes for location updates -->
-        <key>UIBackgroundModes</key>
-        <array>
-            <string>location</string>
-            <string>fetch</string>
-        </array>
+    <!-- Photo Library -->
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Meet9ja needs access to your photo library to add location pictures to your travel history and share images</string>
 
-        <!-- ========== PHOTO LIBRARY PERMISSIONS ========== -->
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Meet9ja needs access to add photos to your library for location pictures</string>
 
-        <!-- For picking location photos from gallery -->
-        <key>NSPhotoLibraryUsageDescription</key>
-        <string>Meet9ja needs access to your photo library to add location pictures to your travel history</string>
+    <key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+    <true/>
 
-        <!-- For iOS 14+ - Limited photo library access -->
-        <key>NSPhotoLibraryAddUsageDescription</key>
-        <string>Meet9ja needs access to add photos to your library for location pictures</string>
+    <!-- Notifications -->
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>Meet9ja would like to send you travel alerts, notifications, and call alerts</string>
 
-        <!-- ========== CAMERA PERMISSIONS ========== -->
+    <key>NSUserNotificationUsageDescription</key>
+    <string>Meet9ja would like to send you travel alerts, notifications, and call alerts</string>
 
-        <!-- If you want to allow camera access for taking location photos -->
-        <key>NSCameraUsageDescription</key>
-        <string>Meet9ja needs camera access to take photos of your travel locations</string>
+    <!-- CallKit Configuration -->
+    <key>CXProviderConfiguration</key>
+    <dict>
+        <key>MaximumCallGroups</key>
+        <integer>2</integer>
+        <key>MaximumCallsPerCallGroup</key>
+        <integer>1</integer>
+        <key>IncludesCallsInRecents</key>
+        <true/>
+        <key>SupportsVideo</key>
+        <true/>
+        <key>RingtoneSound</key>
+        <string>ringtone.caf</string>
+    </dict>
 
-        <!-- ========== OTHER PERMISSIONS ========== -->
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    </array>
 
-        <!-- For notifications (if you have travel alerts) -->
-        <key>NSUserNotificationsUsageDescription</key>
-        <string>Meet9ja would like to send you travel alerts and notifications</string>
+    <!-- Audio Session -->
+    <key>UIAudioSessionCategory</key>
+    <string>playAndRecord</string>
 
-        <!-- For iOS 12+ notifications -->
-        <key>NSUserNotificationUsageDescription</key>
-        <string>Meet9ja would like to send you travel alerts and notifications</string>
+    <key>UIAudioSessionCategoryOptions</key>
+    <array>
+        <string>mixWithOthers</string>
+        <string>duckOthers</string>
+        <string>allowBluetooth</string>
+        <string>allowBluetoothA2DP</string>
+        <string>defaultToSpeaker</string>
+    </array>
 
-        <!-- ========== APP TRANSPORT SECURITY ========== -->
+    <key>AVAudioSession</key>
+    <dict>
+        <key>AVAudioSessionCategory</key>
+        <string>AVAudioSessionCategoryPlayAndRecord</string>
+        <key>AVAudioSessionMode</key>
+        <string>AVAudioSessionModeVoiceChat</string>
+        <key>AVAudioSessionCategoryOptions</key>
+        <integer>1097</integer>
+    </dict>
 
-        <!-- Allow arbitrary loads for Firebase/APIs -->
-        <key>NSAppTransportSecurity</key>
+    <!-- Motion Detection -->
+    <key>NSMotionUsageDescription</key>
+    <string>Meet9ja needs motion detection for better call experience and activity tracking</string>
+
+    <!-- Status Bar -->
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+
+    <!-- iOS 15+ -->
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+        <key>UISceneConfigurations</key>
         <dict>
-            <key>NSAllowsArbitraryLoads</key>
-            <true/>
+            <key>UIWindowSceneSessionRoleApplication</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>Default Configuration</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>FlutterSceneDelegate</string>
+                </dict>
+            </array>
         </dict>
+    </dict>
 
+    <!-- Bundle Info -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>Meet9ja</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>meet9ja</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(FLUTTER_BUILD_NAME)</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleVersion</key>
+    <string>$(FLUTTER_BUILD_NUMBER)</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+    <key>UIMainStoryboardFile</key>
+    <string>Main</string>
 
-	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleDisplayName</key>
-	<string>Meet9ja</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>meet9ja</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-    <string>This app needs access to photos to let you share images.</string>
-    <key>NSCameraUsageDescription</key>
-    <string>This app needs access to the camera to take photos.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>This app needs access to the microphone for video recording.</string>
-	<key>CFBundlePackageType</key>
-	<key>NSCameraUsageDescription</key>
-    <string>We need access to your camera to enable live streaming.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>We need access to your microphone to record audio during the live stream.</string>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>$(FLUTTER_BUILD_NAME)</string>
-	<key>CFBundleSignature</key>
-	<string>????</string>
-	<key>CFBundleVersion</key>
-	<string>$(FLUTTER_BUILD_NUMBER)</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
-	<key>UIMainStoryboardFile</key>
-	<string>Main</string>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
+    <!-- Orientation -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- Performance -->
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
 </dict>
 </plist>

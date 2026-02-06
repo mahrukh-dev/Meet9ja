@@ -76,6 +76,8 @@ dependencies:
   fluttertoast: ^8.2.2
   shimmer: ^2.0.0
 
+  flutter_local_notifications: ^20.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -100,5 +102,6 @@ flutter:
     - assets/images/bg3.jpg
     - assets/images/bg4.jpg
     - assets/.env
+    - assets/audio/ringtone.mp3
 #    - packages/zego_uikit_prebuilt_live_streaming/assets/
 #    - packages/zego_uikit_prebuilt_live_streaming/assets/icons/

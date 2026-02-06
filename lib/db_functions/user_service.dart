@@ -962,6 +962,50 @@ class UserService {
     return user.type == 'premium';
   }
 
+  // Get current user's username
+  static Future<String?> getCurrentUsername() async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return null;
+
+      final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        return userData['username'] as String?;
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error getting current username: $e');
+      return null;
+    }
+  }
+// Get current user's display name (username with @ prefix)
+  static Future<String> getCurrentDisplayName() async {
+    try {
+      final username = await getCurrentUsername();
+      if (username != null && username.isNotEmpty) {
+        return '@$username';
+      }
+
+      // Fallback to user's display name from Firebase Auth
+      final currentUser = _auth.currentUser;
+      if (currentUser?.displayName != null) {
+        return currentUser!.displayName!;
+      }
+
+      // Fallback to email or UID
+      if (currentUser?.email != null) {
+        return currentUser!.email!.split('@')[0];
+      }
+
+      return 'User ${currentUser?.uid.substring(0, 6)}';
+    } catch (e) {
+      print('❌ Error getting display name: $e');
+      return 'User';
+    }
+  }
   // In UserService class, add these methods:
 
   static Future<bool> isUserPremium(String userId) async {

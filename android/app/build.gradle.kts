@@ -16,6 +16,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -31,6 +32,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // ADD THIS LINE - Enable multidex
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -45,4 +49,13 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// CORRECTED DEPENDENCIES SECTION:
+dependencies {
+    // Add core library desugaring dependency - CORRECT SYNTAX
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+
+    // Also add multidex if your minSdk is below 21
+    implementation("androidx.multidex:multidex:2.0.1")
 }
